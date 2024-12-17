@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
+    env_file:
+      - .env # Load environment variables from .env file
