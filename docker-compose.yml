@@ -7,7 +7,7 @@ services:
       replicas: 2
       placement:
         constraints:
-          - node.labes.d-registry==true
+          - node.labels.d-registry == true
     ports:
       - "5000:5000"
     volumes:
