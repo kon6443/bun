@@ -13,7 +13,8 @@ services:
     volumes:
       - /mnt/registry-data:/var/lib/registry
   express-server:
-    build: .
+    image: 10.64.213.236:5000/express-server:latest
+    # build: .
     restart: unless-stopped
     ports:
       - "3500:3500" # Use the variable from .env
