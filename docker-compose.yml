@@ -4,7 +4,11 @@ services:
   express-server:
     image: 10.64.213.236:5000/express-server:latest
     # build: .
-    restart: unless-stopped
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: unless-stopped
+    # restart: unless-stopped
     ports:
       - "3500:3500" # Use the variable from .env
       # - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
