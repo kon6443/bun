@@ -10,8 +10,8 @@ services:
         condition: unless-stopped
     # restart: unless-stopped
     ports:
-      - "3500:3500" # Use the variable from .env
-      # - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
+      # - "3500:3500" # Use the variable from .env
+      - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
     env_file:
       - ./.env # Load environment variables from .env file
   # d-registry:
