@@ -40,7 +40,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 app.use("/api", router);
 
-const server = app.listen(port, () => {
+const server = app.listen(port, "0.0.0.0", () => {
   console.log(`Listening on port ${port}...`);
 });
 
