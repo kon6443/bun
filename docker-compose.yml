@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  express-server:
+    image: 10.64.213.236:5000/express-server:latest
+    # build: .
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: unless-stopped
+    # restart: unless-stopped
+    ports:
+      # - "3500:3500" # Use the variable from .env
+      - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
+    env_file:
+      - ./.env # Load environment variables from .env file
+  # d-registry:
+  #   image: registry:2
+  #   deploy:
+  #     replicas: 2
+  #     placement:
+  #       constraints:
+  #         - node.labels.d-registry == true
+  #   ports:
+  #     - "5000:5000"
+  #   volumes:
+  #     - /mnt/registry-data:/var/lib/registry
+#####################
+
+# docker service d-registry 관련
+# docker service create \
+#   --name d-registry \
+#   --publish 5000:5000 \
+#   --replicas 1 \
+#   --constraint 'node.labels.d-registry == true' \
+#   --mount type=bind,source=/mnt/registry-data,target=/var/lib/registry \
+#   registry:2
