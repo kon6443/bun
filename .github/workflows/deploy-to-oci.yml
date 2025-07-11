@@ -17,6 +17,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # --- 수정된 부분 시작 ---
+      # Buildx를 위한 별도의 설정 파일을 생성합니다.
+      - name: Create BuildKit config for insecure registry
+        run: |
+          mkdir -p .buildkit
+          printf '[registry."${{ secrets.DOCKER_REGISTRY_URL }}"]\n  http = true\n' > .buildkit/buildkitd.toml
+
+      # setup-buildx-action에 위에서 만든 설정 파일을 알려줍니다.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          config: .buildkit/buildkitd.toml
+      # --- 수정된 부분 끝 ---
+
       - name: Configure Docker for insecure registry
         run: |
           sudo mkdir -p /etc/docker
