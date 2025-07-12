@@ -17,14 +17,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure Docker for insecure registry
-        run: |
-          sudo mkdir -p /etc/docker
-          echo '{"insecure-registries": ["${{ secrets.DOCKER_REGISTRY_URL }}"]}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
+      # - name: Configure Docker for insecure registry
+      # run: |
+      # sudo mkdir -p /etc/docker
+      # echo '{"insecure-registries": ["${{ secrets.DOCKER_REGISTRY_URL }}"]}' | sudo tee /etc/docker/daemon.json
+      # sudo systemctl restart docker
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      # =================================================================
+      # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 이 부분을 추가해주세요 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+      - name: Diagnose from Runner
+        run: |
+          echo "================== CURL VERBOSE LOG =================="
+          curl --verbose https://fivesouth.duckdns.org/v2/
+          echo "======================================================"
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 이 부분을 추가해주세요 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # =================================================================
 
       - name: Login to Docker Registry
         uses: docker/login-action@v3
