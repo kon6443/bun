@@ -6,8 +6,8 @@ on:
       - main
 
 env:
-  IMAGE_NAME: sys_express # Docker 이미지 이름을 원하는 대로 수정하세요.
-  DOCKER_REGISTRY_URL: ${{ secrets.DOCKER_REGISTRY_URL }}
+# 이제 이 변수는 배포 단계에서만 사용합니다.
+IMAGE_NAME: sys_express
 
 jobs:
   build-and-deploy:
@@ -18,51 +18,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set short git SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-
+      # 1. (필수) insecure 옵션을 다시 켭니다. 프록시 없이 직접 통신하므로 HTTP를 사용해야 합니다.
       - name: Configure Docker for insecure registry
         run: |
           sudo mkdir -p /etc/docker
-          echo '{"insecure-registries": ["${{ secrets.DOCKER_REGISTRY_URL }}"]}' | sudo tee /etc/docker/daemon.json
+          echo '{"insecure-registries": ["${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}"]}' | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
+
+      - name: Set short git SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      # =================================================================
-      # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 이 부분을 추가해주세요 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-      - name: Diagnose from Runner
-        run: |
-          echo "================== CURL VERBOSE LOG =================="
-          curl --verbose https://fivesouth.duckdns.org/v2/
-          echo "======================================================"
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 이 부분을 추가해주세요 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-      # =================================================================
 
+      # 2. (수정) Caddy를 거치지 않고 레지스트리 서비스(5000번 포트)에 직접 로그인합니다.
       - name: Login to Docker Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.DOCKER_REGISTRY_URL }}
+          registry: ${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # ========================== 교체해보기로 =======================
-      # - name: Build and push Docker image
-      # uses: docker/build-push-action@v5
-      # with:
-      # context: .
-      # push: true
-      # tags: ${{ secrets.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-      # cache-from: type=gha
-      # cache-to: type=gha,mode=max
-
+      # 3. (수정) Caddy를 거치지 않고 레지스트리 서비스에 직접 푸시합니다.
       - name: Build and push Docker image with shell commands
         run: |
-          # 이미지 태그를 생성합니다. (예: fivesouth.duckdns.org/sys_express:6c172cae)
-          IMAGE_TAG="${{ env.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
-          # Docker 빌드
+          IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA}}"
           docker build -t $IMAGE_TAG .
-          # Docker 푸시
           docker push $IMAGE_TAG
 
       - name: Deploy to Swarm
@@ -72,25 +53,6 @@ jobs:
           username: ${{ secrets.SWARM_MANAGER_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            # ssh-action 스크립트에서도 동일한 이미지 태그를 사용하도록 수정합니다.
-            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
+            # 배포 시에는 Swarm 내부 네트워크 주소를 사용합니다. 이 부분은 원래대로 둡니다.
+            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA}}"
             docker service update --image $IMAGE_TAG sys_express
-
-      # ============= 제일 최근까지 사용하던거
-      # - name: Deploy to Swarm
-      #   uses: appleboy/ssh-action@master
-      #   with:
-      #     host: ${{ secrets.SWARM_MANAGER_HOST }}
-      #     username: ${{ secrets.SWARM_MANAGER_USER }}
-      #     key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
-      #     script: |
-      #       docker service update --image ${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }} sys_express
-
-      # - name: Deploy to Swarm
-      #   uses: appleboy/ssh-action@master
-      #   with:
-      #     host: ${{ secrets.SWARM_MANAGER_HOST }}
-      #     username: ${{ secrets.SWARM_MANAGER_USER }}
-      #     key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
-      #     script: |
-      #       docker service update --image ${{ secrets.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }} sys_express
