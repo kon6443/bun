@@ -18,6 +18,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set short git SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
       # - name: Configure Docker for insecure registry
       # run: |
       # sudo mkdir -p /etc/docker
@@ -56,7 +59,7 @@ jobs:
       - name: Build and push Docker image with shell commands
         run: |
           # 이미지 태그를 생성합니다. (예: fivesouth.duckdns.org/sys_express:6c172cae)
-          IMAGE_TAG="${{ env.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ substr(github.sha, 0, 8) }}"
+          IMAGE_TAG="${{ env.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
           # Docker 빌드
           docker build -t $IMAGE_TAG .
           # Docker 푸시
@@ -70,7 +73,7 @@ jobs:
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
             # ssh-action 스크립트에서도 동일한 이미지 태그를 사용하도록 수정합니다.
-            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{substr(github.sha, 0, 8) }}"
+            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
             docker service update --image $IMAGE_TAG sys_express
 
       # ============= 제일 최근까지 사용하던거
