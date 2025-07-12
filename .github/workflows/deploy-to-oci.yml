@@ -49,4 +49,13 @@ jobs:
           username: ${{ secrets.SWARM_MANAGER_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            docker service update --image ${{ secrets.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }} sys_express
+            docker service update --image ${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }} sys_express
+
+      # - name: Deploy to Swarm
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.SWARM_MANAGER_HOST }}
+      #     username: ${{ secrets.SWARM_MANAGER_USER }}
+      #     key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+      #     script: |
+      #       docker service update --image ${{ secrets.DOCKER_REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }} sys_express
