@@ -6,8 +6,9 @@ on:
       - main
 
 env:
-# 이제 이 변수는 배포 단계에서만 사용합니다.
-IMAGE_NAME: sys_express
+  IMAGE_NAME: sys_express
+  # 레지스트리 주소를 변수로 만들어 재사용성을 높입니다.
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}
 
 jobs:
   build-and-deploy:
@@ -18,41 +19,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. (필수) insecure 옵션을 다시 켭니다. 프록시 없이 직접 통신하므로 HTTP를 사용해야 합니다.
-      - name: Configure Docker for insecure registry
-        run: |
-          sudo mkdir -p /etc/docker
-          echo '{"insecure-registries": ["${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}"]}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
+      # -- 이 단계는 불안정하므로 완전히 제거합니다. --
+      # - name: Configure Docker for insecure registry
+      #   ...
 
       - name: Set short git SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+        id: vars # 이후 단계에서 참조할 수 있도록 id를 부여합니다.
+        run: echo "sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 2. (수정) Caddy를 거치지 않고 레지스트리 서비스(5000번 포트)에 직접 로그인합니다.
-      - name: Login to Docker Registry
-        uses: docker/login-action@v3
+      # Login, Build, Push 단계를 하나로 통합합니다.
+      # docker/build-push-action이 내부적으로 로그인을 처리합니다.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          registry: ${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}
+          context: .
+          # insecure-registries를 사용해야 할 경우, buildx 설정에 추가하는 것을 고려해야 하지만
+          # 가장 좋은 해결책은 Let's Encrypt 등을 이용해 레지스트리에 HTTPS를 적용하는 것입니다.
+          push: true
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha }}
+          # Docker Hub가 아닌 사설 레지스트리에 로그인 정보를 전달합니다.
+          registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 3. (수정) Caddy를 거치지 않고 레지스트리 서비스에 직접 푸시합니다.
-      - name: Build and push Docker image with shell commands
-        run: |
-          IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_HOST_AND_PORT }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA}}"
-          docker build -t $IMAGE_TAG .
-          docker push $IMAGE_TAG
-
       - name: Deploy to Swarm
-        uses: appleboy/ssh-action@master
+        # master 대신 특정 버전을 사용합니다.
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SWARM_MANAGER_HOST }}
           username: ${{ secrets.SWARM_MANAGER_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            # 배포 시에는 Swarm 내부 네트워크 주소를 사용합니다. 이 부분은 원래대로 둡니다.
-            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA}}"
+            # Swarm 노드는 내부망 주소로 이미지를 받아옵니다.
+            IMAGE_TAG="${{ secrets.DOCKER_REGISTRY_INTERNAL_URL }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha }}"
             docker service update --image $IMAGE_TAG sys_express
