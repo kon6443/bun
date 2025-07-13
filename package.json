@@ -2,10 +2,13 @@
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "discord.js": "^14.21.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
     "express-async-errors": "^3.1.1",
-    "helmet": "^8.0.0"
+    "helmet": "^8.0.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2"
