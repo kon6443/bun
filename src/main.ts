@@ -11,6 +11,7 @@ const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const helmet = require("helmet");
+const { swaggerUi, specs, externalSpecs } = require("./modules/swagger");
 
 // need to working on in.
 // const { swaggerUi, specs } = require("./modules/swagger");
@@ -21,12 +22,30 @@ const app = express();
 const port = process.env.EXPRESS_PORT || 3500;
 const domain = process.env.DOMAIN;
 
-// app.use(cors(corsOptions));
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost",
+  "http://localhost:3000",
+  "http://localhost:3500",
+];
+
+const corsOptions = {
+  origin: function (origin: any, callback: any) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+// app.use(cors());
 app.use(helmet());
 app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
+if (isLocal) app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const now = new Date();
