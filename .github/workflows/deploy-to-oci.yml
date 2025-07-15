@@ -32,4 +32,4 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            docker service update --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
+            docker service update --with-registry-auth --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
