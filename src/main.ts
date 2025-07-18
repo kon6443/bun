@@ -1,8 +1,7 @@
 import express from "express";
-import { CookieOptions, NextFunction, Request, Response } from "express";
-
+import { NextFunction, Request, Response } from "express";
 import "express-async-errors";
-import * as path from "path";
+import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
 
 // router
 import router from "./routers/index";
@@ -53,14 +52,35 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const month = now.getMonth() + 1;
   const date = now.getDate();
   // const message = `${year}.${month}.${date}[${req.method}]:: ${domain}:${port}${req.originalUrl}`;
-  const message = `${year}.${month}.${date}::[${req.method}] ${domain}:${port}${req.originalUrl}`;
+  const message = `${year}.${month}.${date}::[${req.method}] ${domain}${req.originalUrl}`;
   console.log(message);
   next();
 });
 app.use("/api", router);
 
-const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`Listening on port ${port}...`);
-});
+// const server = app.listen(port, "0.0.0.0", () => {
+//   console.log(`Listening on port ${port}...`);
+// });
+// server.on("error", console.error);
 
-server.on("error", console.error);
+const startServer = async () => {
+  try {
+    await oracleAutonomousRepository.initialize();
+
+    const server = app.listen(port, "0.0.0.0", () => {
+      console.log(`Listening on port ${port}...`);
+    });
+
+    server.on("error", console.error);
+  } catch (err) {
+    console.error("서버 시작 중 오류 발생:", err);
+    process.exit(1);
+  }
+};
+
+startServer();
+
+process.on("SIGINT", async () => {
+  await oracleAutonomousRepository.close();
+  process.exit(0);
+});
