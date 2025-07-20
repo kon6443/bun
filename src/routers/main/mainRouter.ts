@@ -10,7 +10,10 @@ mainRouter.get("/", (req: Request, res: Response) => {
 });
 
 mainRouter.get("/health-check", async (req: Request, res: Response) => {
-  // const rrr = await oracleAutonomousRepository.execute(sql);
+  const sql = "SELECT * FROM users";
+  console.log("health-check router:", sql);
+  const users = await oracleAutonomousRepository.execute(sql);
+  console.log("users:", users);
   const status = 200;
   res.status(status).json({ message: "CONNECTION HEALTHY" });
 });

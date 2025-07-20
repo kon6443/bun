@@ -27,7 +27,6 @@ class OracleAutonomousRepository {
     try {
       console.log("데이터베이스 커넥션 풀을 초기화합니다...");
       // oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient' }); // Instant Client 경로 설정이 필요한 경우
-      //   console.log(dbConfig);
       oracledb.initOracleClient({
         libDir: process.env.ORACLE_LIB_DIR,
         configDir: process.env.ORACLE_WALLET_PATH,

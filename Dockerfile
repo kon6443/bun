@@ -1,20 +1,24 @@
-# Use the official Bun image
-FROM oven/bun:latest
+FROM node:20-alpine
 
-# Set the working directory
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy package.json and bun.lockb first (for caching dependencies)
-COPY package.json bun.lockb ./
+# Install pnpm globally
+RUN npm install -g pnpm
 
-# Install dependencies
-RUN bun install
+# Copy package.json and pnpm-lock.yaml first to leverage Docker's build cache
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies using pnpm
+# --frozen-lockfile ensures that the exac versions from pnpm-lock.yaml are used
+RUN pnpm install --frozen-lockfile
 
 # Copy the rest of your application code
 COPY . .
 
-# Expose the port your app runs on
+# Expose the port your application runs on
 EXPOSE 3500
 
-# Command to run your application
-CMD ["bun", "src/main.ts"]
+# Command to run your application using tsx via pnpm exec
+# pnpm exec will find tsx in node_modules/.bin
+CMD ["pnpm", "exec", "tsx", "src/main.ts"]
