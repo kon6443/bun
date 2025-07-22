@@ -27,10 +27,6 @@ class OracleAutonomousRepository {
     try {
       console.log("데이터베이스 커넥션 풀을 초기화합니다...");
       // oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient' }); // Instant Client 경로 설정이 필요한 경우
-      console.log("LD_LIBRARY_PATH:", process.env.LD_LIBRARY_PATH);
-      console.log("libDir:", process.env.ORACLE_LIB_DIR);
-      console.log("configDir:", process.env.ORACLE_WALLET_PATH);
-      console.log("connectStr:", process.env.ORACLE_DB_CONNECT_STR);
       oracledb.initOracleClient({
         libDir: process.env.ORACLE_LIB_DIR,
         configDir: process.env.ORACLE_WALLET_PATH,
@@ -59,7 +55,8 @@ class OracleAutonomousRepository {
     sql: string,
     binds: oracledb.BindParameters = {},
     options: oracledb.ExecuteOptions = {}
-  ): Promise<oracledb.Result<T> | undefined> {
+    //   ): Promise<oracledb.Result<T> | undefined> {
+  ): Promise<any | undefined> {
     let connection: oracledb.Connection | undefined;
     if (!this.pool) {
       console.error(
@@ -81,7 +78,7 @@ class OracleAutonomousRepository {
         binds,
         defaultOptions
       );
-      return result;
+      return result ? result.rows : undefined;
     } catch (err) {
       console.error("쿼리 실행 중 오류 발생:", err);
       throw err;
