@@ -1,4 +1,13 @@
-FROM node:20-alpine
+FROM node:20-bullseye-slim
+
+# 필요한 패키지만 설치 (불필요한 것 제거)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libaio1 \
+    libnsl2 \
+    libstdc++6 \
+    libgcc-s1 \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container
 WORKDIR /app

@@ -1,2 +1,6 @@
 
 node_modules/
+
+# local env filesß
+.env
+.env.*
