@@ -32,4 +32,10 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            docker service update --with-registry-auth --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
+            ENV_PATH="/home/ubuntu/desktop/deploy/sys/config/env/.env"
+            docker service update \
+            --with-registry-auth \
+            $(grep -vE '^#|^$' $ENV_PATH | awk '{print "--env-add", $0}') \
+            --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
+          # script: |
+          #   docker service update --with-registry-auth --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
