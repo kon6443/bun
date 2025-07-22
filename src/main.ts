@@ -10,7 +10,7 @@ const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const helmet = require("helmet");
-const { swaggerUi, specs, externalSpecs } = require("./modules/swagger");
+const { swaggerUi, specs } = require("./modules/swagger");
 
 // need to working on in.
 // const { swaggerUi, specs } = require("./modules/swagger");
@@ -57,11 +57,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 app.use("/api", router);
-
-// const server = app.listen(port, "0.0.0.0", () => {
-//   console.log(`Listening on port ${port}...`);
-// });
-// server.on("error", console.error);
 
 const startServer = async () => {
   try {
