@@ -37,5 +37,3 @@ jobs:
             --with-registry-auth \
             $(grep -vE '^#|^$' $ENV_PATH | awk '{print "--env-add", $0}') \
             --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
-          # script: |
-          #   docker service update --with-registry-auth --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express

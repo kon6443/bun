@@ -19,6 +19,62 @@ const dbConfig: OracleConfigType = {
 class OracleAutonomousRepository {
   private pool: oracledb.Pool | undefined;
 
+  // snakeToCamel(str: string) {
+  //   return str.replace(/_([a-z])/g, function (match, group1) {
+  //     return group1.toUpperCase();
+  //   });
+  // }
+
+  // snakeToCamel(s: string): string {
+  //   return s.replace(/([-_][a-z])/g, (group) =>
+  //     group.toUpperCase().replace("_", "")
+  //   );
+  // }
+
+  snakeToCamel(s: string): string {
+    return s
+      .toLowerCase()
+      .replace(/([-_][a-z])/g, (group) => group.toUpperCase().replace("_", ""));
+  }
+
+  camelToSnake(s: string): string {
+    return s
+      .replace(/([A-Z])/g, (c) => `_${c.toLowerCase()}`) // uppercase 앞에 _
+      .replace(/^_/, "");
+    // return (
+    //   s
+    //     // 첫 글자는 무조건 소문자로
+    //     .replace(/^[A-Z]/, (c) => c.toLowerCase())
+    //     // "myFieldName" → "my_field_name"
+    //     .replace(/([A-Z])/g, (c) => "_" + c.toLowerCase())
+    // );
+  }
+
+  keysToSnake<T extends object>(obj: T): Record<string, any> {
+    if (obj == null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map((i) => this.keysToSnake(i)) as any;
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        this.camelToSnake(k),
+        this.keysToSnake(v),
+      ])
+    );
+  }
+
+  keysToCamel = (o: any): any => {
+    if (Array.isArray(o)) {
+      return o.map(this.keysToCamel);
+    } else if (o !== null && typeof o === "object") {
+      return Object.fromEntries(
+        Object.entries(o).map(([k, v]) => [
+          this.snakeToCamel(k),
+          this.keysToCamel(v),
+        ])
+      );
+    }
+    return o;
+  };
+
   /**
    * 데이터베이스 커넥션 풀을 초기화합니다.
    * 애플리케이션 시작 시 한 번 호출해야 합니다.
@@ -73,12 +129,75 @@ class OracleAutonomousRepository {
         ...options,
       };
 
+      // const snakeKey = (key: string) =>
+      //   this.camelToSnake(key).replace(/^_/, "");
+      // sql = sql.replace(/:([A-Za-z]\w*)/g, (_, key) => `:${snakeKey(key)}`);
+      sql = sql
+        .replace(/:([A-Za-z]\w*)\b/g, (_, key) => `:${this.camelToSnake(key)}`)
+        .replace(
+          /\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z]\w*)\b/g,
+          (_, alias, col) => `${alias}.${this.camelToSnake(col)}`
+        )
+        // ③ INSERT INTO 테이블(col1, col2, …) 컬럼 리스트 변환
+        .replace(
+          /(\bINSERT\s+INTO\s+[A-Za-z_]\w*\b\s*)\(([^)]+)\)/gi,
+          (_, prefix, list) => {
+            const cols = list
+              .split(/\s*,\s*/)
+              .map((c) => this.camelToSnake(c.trim()));
+            return `${prefix}(${cols.join(", ")})`;
+          }
+        )
+        .replace(
+          /(RETURNING\s+)([\w\s,:]+)(\s+INTO\s+[\w\s,:]+)/gi,
+          (_, prefix, cols, suffix) => {
+            const colList = cols
+              .split(",")
+              .map((col) => this.camelToSnake(col.trim()))
+              .join(", ");
+            return `${prefix}${colList}${suffix}`;
+          }
+        );
+      binds = this.keysToSnake(binds);
+      // if (sql.includes("RETURNING")) {
+      //   binds.new_id = { dir: oracledb.BIND_OUT, type: oracledb.NUMBER };
+      // }
+      if (sql.includes("RETURNING")) {
+        const match = sql.match(/RETURNING\s+(.+?)\s+INTO\s+(.+)/i);
+        if (match) {
+          const intoFields = match[2]
+            .split(",")
+            .map((field) => field.trim().replace(/^:/, ""));
+          for (const field of intoFields) {
+            // oracledb.BIND_OUT = 3003, NUMBER은 원하는 타입으로 고정 or 동적 처리 가능
+            binds[field] = { dir: oracledb.BIND_OUT, type: oracledb.NUMBER };
+          }
+        }
+      }
       const result: oracledb.Result<T> = await connection.execute(
         sql,
         binds,
         defaultOptions
       );
-      return result ? result.rows : undefined;
+      // if (!result) return undefined;
+      // return Array.isArray(result)
+      //   ? result.rows?.map((r) => this.keysToCamel(r))
+      //   : result;
+
+      if (result.rows) {
+        return result.rows.map((row) => this.keysToCamel(row as any));
+      }
+
+      if (result.rowsAffected) {
+        return {
+          success: true,
+          outBinds: this.keysToCamel(result.outBinds),
+          // rowsAffected: result.rowsAffected,
+        };
+      }
+
+      // return result.rows?.map((r) => this.keysToCamel(r));
+      // return result ? result.rows : undefined;
     } catch (err) {
       console.error("쿼리 실행 중 오류 발생:", err);
       throw err;
