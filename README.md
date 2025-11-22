@@ -1,4 +1,12 @@
-# bun
+# pnpm
 
-241205:lxc-dev_home_1
+## Installation
+```
+pnpm i
+```
+
+## Run
+```
+pnpm run dev
+```
 
