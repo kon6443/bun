@@ -8,7 +8,7 @@ class TrashController {
         // const sql = `SELECT * FROM users`;
         const sql = `SELECT count(*) as cnt FROM users`;
         const fns: Function[] = [];
-        for(let i=0; i<5; i++) {
+        for(let i=0; i<1; i++) {
             fns.push(()=>oracleAutonomousRepository.execute(sql));
         }
         let results = (await Promise.all(fns.map(fn=>fn()))).flat();
