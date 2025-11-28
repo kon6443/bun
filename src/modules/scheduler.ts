@@ -19,7 +19,7 @@ import trashControllerInstance from '../controllers/trashController';
 
 let env = process.env.ENV?.toUpperCase() ?? '';
 let taskNumber = Number(process.env.TASK_SLOT);
-env = 'QA'; // for testing
+// env = 'QA'; // for testing
 taskNumber = 1; // for testing
 console.log('env:', env);
 const taskSlots = ['QA', 'PROD'];
