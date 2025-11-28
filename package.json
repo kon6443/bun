@@ -7,6 +7,7 @@
     "express": "^4.21.1",
     "express-async-errors": "^3.1.1",
     "helmet": "^8.0.0",
+    "node-schedule": "^2.1.1",
     "oracledb": "^6.8.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"

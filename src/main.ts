@@ -2,6 +2,7 @@ import express from "express";
 import { NextFunction, Request, Response } from "express";
 import "express-async-errors";
 import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
+import scheduleJobs from './modules/scheduler';
 
 // router
 import router from "./routers/index";
@@ -38,6 +39,8 @@ const corsOptions = {
   },
   credentials: true,
 };
+
+scheduleJobs();
 
 app.use(cors(corsOptions));
 // app.use(cors());
