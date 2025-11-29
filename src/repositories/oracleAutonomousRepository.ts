@@ -90,7 +90,7 @@ class OracleAutonomousRepository {
       this.pool = await oracledb.createPool({
         ...dbConfig,
         poolMin: 1,
-        poolMax: 10,
+        poolMax: 3,
         poolIncrement: 1,
       });
       console.log("데이터베이스 커넥션 풀이 성공적으로 초기화되었습니다.");
