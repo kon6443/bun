@@ -21,15 +21,21 @@ let env = process.env.ENV?.toUpperCase() ?? '';
 let taskNumber = Number(process.env.TASK_SLOT);
 // env = 'QA'; // for testing
 taskNumber = 1; // for testing
-console.log('env:', env);
 const taskSlots = ['QA', 'PROD'];
 
 const scheduleJobs = () => {
   if (taskSlots.includes(env) && taskNumber == 1) {
+
     // OCI 인스턴스 쓰레기 작업 실행: 1분마다 실행
     // schedule.scheduleJob('0/2 * * * * *', () =>
     schedule.scheduleJob('0/30 * * * * *', () =>
       handleAsyncTryCatch(trashControllerInstance.doTrash),
+    );
+
+    // OCI 인스턴스 쓰레기 작업 실행: 1분마다 실행
+    // schedule.scheduleJob('0/2 * * * * *', () =>
+    schedule.scheduleJob('0/30 * * * * *', () =>
+      handleAsyncTryCatch(trashControllerInstance.runCpuIntensiveLoop),
     );
 
   }
