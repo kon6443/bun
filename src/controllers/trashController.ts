@@ -23,7 +23,7 @@ class TrashController {
    * CPU 사용률을 인위적으로 높이기 위한 대량 연산 루프 예제
    * iterations 값을 키울수록 더 높은 부하를 유발합니다.
    */
-  runCpuIntensiveLoop(iterations = 50_000_000) {
+  runCpuIntensiveLoop(iterations = 5_000_000) {
     let accumulator = 0;
 
     for (let i = 0; i < iterations; i++) {
