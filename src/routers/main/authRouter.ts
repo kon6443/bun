@@ -20,7 +20,7 @@ const authRouter = express.Router();
  *       in: cookie
  *       name: access_token
  * paths:
- *   /api/auth/kakao:
+ *   /api/v1/auth/kakao:
  *     post:
  *       summary: '카카오 로그인 & 회원가입'
  *       description: '카카오 로그인 & 회원가입'
@@ -62,11 +62,11 @@ const authRouter = express.Router();
  */
 authRouter.post("/kakao", async (req: Request, res: Response) => {
   const kakaoUserSign = req.body;
-  const userId = await authControllerInstance.postKakaoSignInUp({
+  const { userId, loginType } = await authControllerInstance.postKakaoSignInUp({
     kakaoUserSign,
   });
   const status = 200;
-  res.status(status).json({ message: "KAKAO LOGIN SUCCESS", userId });
+  res.status(status).json({ message: "KAKAO LOGIN SUCCESS", userId, loginType });
 });
 
 export default authRouter;
