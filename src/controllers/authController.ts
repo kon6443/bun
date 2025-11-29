@@ -25,17 +25,21 @@ class AuthController {
         kakaoIds: [kakaoId],
         isActivateds: [1 as Pick<UserType, "isActivated">],
       });
+      const loginType = "KAKAO";
       let userId;
       // 내부 Users 테이블에 없을 경우 회원가입 처리
       if (!user) {
         userId = await authServiceInstance.userSignUp({
           user: { kakaoId, kakaoNickname } as UserType,
         });
-        return userId;
+        return { userId, loginType };
+        // return userId;
       }
       // 로그인한 userId 응답
       userId = user.userId;
-      return userId;
+      // console.log("userId", userId);
+      return { userId, loginType };
+      // return userId;
     } catch (err) {
       throw err;
       // utilServiceInstance.handleError(err);
