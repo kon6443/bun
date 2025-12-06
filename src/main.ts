@@ -1,6 +1,8 @@
+import "reflect-metadata";
 import express from "express";
 import { NextFunction, Request, Response } from "express";
 import "express-async-errors";
+import { AppDataSource } from "./database/data-source";
 import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
 import scheduleJobs from './modules/scheduler';
 
@@ -65,6 +67,11 @@ app.use("/api/v1", router);
 
 const startServer = async () => {
   try {
+    // TypeORM 초기화
+    await AppDataSource.initialize();
+    console.log("TypeORM 데이터베이스 연결 성공");
+
+    // 기존 Oracle Repository도 유지 (필요한 경우)
     await oracleAutonomousRepository.initialize();
 
     const server = app.listen(port, "0.0.0.0", () => {
@@ -81,6 +88,10 @@ const startServer = async () => {
 startServer();
 
 process.on("SIGINT", async () => {
+  if (AppDataSource.isInitialized) {
+    await AppDataSource.destroy();
+    console.log("TypeORM 데이터베이스 연결 종료");
+  }
   await oracleAutonomousRepository.close();
   process.exit(0);
 });
@@ -120,8 +131,10 @@ function errorHandler(err: any, req: any, res: any, next: any) {
   // } else {
   //   errStatus = err.status;
   // }
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || "Internal Server Error";
   return res
-    .status(err.status)
-    .json({ status: err.status, message: err.message });
+    .status(status)
+    .json({ status, message });
 }
 app.use(errorHandler);
