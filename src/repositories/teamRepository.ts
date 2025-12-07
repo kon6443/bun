@@ -1,4 +1,6 @@
-import { oracleAutonomousRepository } from "./oracleAutonomousRepository";
+import { AppDataSource } from "../database/data-source";
+import { Team } from "../entities/Team";
+import { TeamMember } from "../entities/TeamMember";
 
 export type TeamRow = {
   teamId: number;
@@ -11,25 +13,23 @@ export type TeamRow = {
 
 class TeamRepository {
   async findTeamsByUserId(userId: number): Promise<TeamRow[]> {
-    const sql = `
-      SELECT
-        t.team_id AS team_id,
-        t.team_name AS team_name,
-        t.description AS description,
-        t.owner_id AS owner_id,
-        t.created_at AS created_at,
-        tm.role AS member_role
-      FROM teams t
-      INNER JOIN team_members tm ON tm.team_id = t.team_id
-      WHERE tm.user_id = :userId
-      ORDER BY t.created_at DESC
-    `;
+    const teamMemberRepository = AppDataSource.getRepository(TeamMember);
 
-    const rows = (await oracleAutonomousRepository.execute<TeamRow>(sql, {
-      userId,
-    })) as TeamRow[] | undefined;
+    const teamMembers = await teamMemberRepository
+      .createQueryBuilder("tm")
+      .innerJoinAndSelect("tm.team", "team")
+      .where("tm.userId = :userId", { userId })
+      .orderBy("team.createdAt", "DESC")
+      .getMany();
 
-    return rows ?? [];
+    return teamMembers.map((tm) => ({
+      teamId: tm.team.teamId,
+      teamName: tm.team.teamName,
+      description: tm.team.description || undefined,
+      ownerId: tm.team.ownerId,
+      createdAt: tm.team.createdAt,
+      memberRole: tm.role,
+    }));
   }
 }
 

@@ -9,8 +9,10 @@
     "helmet": "^8.0.0",
     "node-schedule": "^2.1.1",
     "oracledb": "^6.8.0",
+    "reflect-metadata": "^0.2.2",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "typeorm": "^0.3.28"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

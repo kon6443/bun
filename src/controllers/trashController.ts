@@ -1,19 +1,14 @@
-import { oracleAutonomousRepository } from "../repositories/oracleAutonomousRepository";
+import { AppDataSource } from "../database/data-source";
+import { User } from "../entities/User";
 
 class TrashController {
   constructor() {}
 
   async doTrash() {
     try {
-        // const sql = `SELECT * FROM users`;
-        const sql = `SELECT count(*) as cnt FROM users`;
-        const fns: Function[] = [];
-        for(let i=0; i<1; i++) {
-            fns.push(()=>oracleAutonomousRepository.execute(sql));
-        }
-        let results = (await Promise.all(fns.map(fn=>fn()))).flat();
-        const total = results.reduce((acc, curr) => acc + Number(curr.cnt), 0);
-        console.log('total:', total);
+        const userRepository = AppDataSource.getRepository(User);
+        const count = await userRepository.count();
+        console.log('total:', count);
     } catch (err) {
       throw err;
     }
