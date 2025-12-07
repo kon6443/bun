@@ -1,7 +1,8 @@
 import express from "express";
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import path from "path";
 import fs from "fs";
+import fileShareServiceInstance from "../../services/fileShareService";
 
 const fileShareRouter = express.Router();
 
@@ -9,37 +10,106 @@ const fileShareRouter = express.Router();
 // 로컬: 프로젝트 최상단의 shared 폴더
 // 배포: Docker 컨테이너의 /app/shared (볼륨 마운팅된 경로)
 const isLocal = process.env.ENV?.toUpperCase() == "LOCAL";
-const SHARED_DIR = isLocal 
+const SHARED_BASE_DIR = isLocal 
   ? path.join(process.cwd(), "shared") 
   : "/app/shared";
 
-// 디렉토리가 없으면 생성
-if (!fs.existsSync(SHARED_DIR)) {
-  fs.mkdirSync(SHARED_DIR, { recursive: true });
+/**
+ * DB 기반 shareId와 API Key 인증 미들웨어
+ * 쿼리 파라미터(?shareId=xxx&key=yyy) 또는 헤더(X-Share-Id, X-API-Key)로 전달
+ * DB에서 shareId와 API Key 둘 다 매칭되는지 검증
+ */
+const apiKeyMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // 쿼리 파라미터 또는 헤더에서 shareId와 API key 가져오기
+    const shareId = (req.query.shareId as string) || (req.headers['x-share-id'] as string);
+    const apiKey = (req.query.apiKey as string) || (req.headers['x-api-key'] as string);
+
+    if (!shareId) {
+      return res.status(401).json({
+        status: 401,
+        message: "인증이 필요합니다. shareId를 제공해주세요.",
+      });
+    }
+
+    if (!apiKey) {
+      return res.status(401).json({
+        status: 401,
+        message: "인증이 필요합니다. API key를 제공해주세요.",
+      });
+    }
+
+    // DB에서 shareId와 API Key 둘 다 매칭되는지 검증
+    const isValid = await fileShareServiceInstance.validateShareIdAndApiKey(shareId, apiKey);
+
+    if (!isValid) {
+      return res.status(401).json({
+        status: 401,
+        message: "인증 실패. shareId와 API key가 일치하지 않습니다.",
+      });
+    }
+
+    // 인증 성공: shareId를 request에 저장
+    (req as any).shareId = shareId;
+
+    next();
+  } catch (error) {
+    console.error("shareId와 API Key 인증 중 오류:", error);
+    return res.status(500).json({
+      status: 500,
+      message: "인증 처리 중 오류가 발생했습니다.",
+    });
+  }
+};
+
+// 기본 디렉토리가 없으면 생성
+if (!fs.existsSync(SHARED_BASE_DIR)) {
+  fs.mkdirSync(SHARED_BASE_DIR, { recursive: true });
 }
 
 /**
  * 공유 가능한 파일 목록 조회
- * GET /api/v1/files
+ * GET /api/v1/files?shareId=donald&apiKey=YOUR_API_KEY
+ * 또는 헤더: X-Share-Id: donald, X-API-Key: YOUR_API_KEY
+ * shareId별로 자신의 디렉토리만 조회 가능
  */
-fileShareRouter.get("/", (req: Request, res: Response) => {
+fileShareRouter.get("/", apiKeyMiddleware, (req: Request, res: Response) => {
   try {
-    const files = fs.readdirSync(SHARED_DIR).map((filename) => {
-      const filePath = path.join(SHARED_DIR, filename);
-      const stats = fs.statSync(filePath);
-      return {
-        filename,
-        size: stats.size,
-        sizeMB: (stats.size / (1024 * 1024)).toFixed(2),
-        created: stats.birthtime,
-        modified: stats.mtime,
-      };
-    });
+    const shareId = (req as any).shareId;
+    const shareDir = path.join(SHARED_BASE_DIR, shareId);
+
+    // shareId 디렉토리가 없으면 빈 배열 반환
+    if (!fs.existsSync(shareDir)) {
+      return res.json({
+        status: 200,
+        message: "SUCCESS",
+        // directory: shareDir,
+        files: [],
+      });
+    }
+
+    const files = fs.readdirSync(shareDir)
+      .filter((filename) => {
+        // 디렉토리는 제외하고 파일만
+        const filePath = path.join(shareDir, filename);
+        return fs.statSync(filePath).isFile();
+      })
+      .map((filename) => {
+        const filePath = path.join(shareDir, filename);
+        const stats = fs.statSync(filePath);
+        return {
+          filename,
+          size: stats.size,
+          sizeMB: (stats.size / (1024 * 1024)).toFixed(2),
+          crtdAt: stats.birthtime,
+          mdfdAt: stats.mtime,
+        };
+      });
 
     res.json({
       status: 200,
       message: "SUCCESS",
-      directory: SHARED_DIR,
+    //   directory: shareDir,
       files,
     });
   } catch (error: any) {
@@ -52,10 +122,13 @@ fileShareRouter.get("/", (req: Request, res: Response) => {
 
 /**
  * 파일 다운로드
- * GET /api/v1/files/:filename
+ * GET /api/v1/files/:filename?shareId=donald&key=YOUR_API_KEY
+ * 또는 헤더: X-Share-Id: donald, X-API-Key: YOUR_API_KEY
+ * shareId별로 자신의 디렉토리만 접근 가능
  */
-fileShareRouter.get("/:filename", (req: Request, res: Response) => {
+fileShareRouter.get("/:filename", apiKeyMiddleware, (req: Request, res: Response) => {
   try {
+    const shareId = (req as any).shareId;
     const filename = req.params.filename;
     
     // 경로 탐색 공격 방지: 상대 경로(..) 제거
@@ -67,13 +140,15 @@ fileShareRouter.get("/:filename", (req: Request, res: Response) => {
       });
     }
     
-    const filePath = path.join(SHARED_DIR, safeFilename);
+    // shareId별 디렉토리 경로
+    const shareDir = path.join(SHARED_BASE_DIR, shareId);
+    const filePath = path.join(shareDir, safeFilename);
     
-    // 절대 경로로 변환하여 SHARED_DIR 밖으로 나가는지 확인
+    // 절대 경로로 변환하여 shareId 디렉토리 밖으로 나가는지 확인
     const resolvedFilePath = path.resolve(filePath);
-    const resolvedSharedDir = path.resolve(SHARED_DIR);
+    const resolvedShareDir = path.resolve(shareDir);
     
-    if (!resolvedFilePath.startsWith(resolvedSharedDir)) {
+    if (!resolvedFilePath.startsWith(resolvedShareDir)) {
       return res.status(403).json({
         status: 403,
         message: "접근이 거부되었습니다.",
