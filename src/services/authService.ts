@@ -1,8 +1,10 @@
-import { oracleAutonomousRepository } from "../repositories/oracleAutonomousRepository";
+import { AppDataSource } from "../database/data-source";
+import { User } from "../entities/User";
 import utilServiceInstance from "./utils";
+import { In } from "typeorm";
 
 export type UserType = {
-  kakaoId?: string;
+  kakaoId?: number;
   kakaoNickname?: string;
   isActivated?: 0 | 1;
 };
@@ -14,7 +16,7 @@ class AuthService {
     accessToken,
   }: {
     accessToken?: string;
-  }): Promise<Pick<UserType, "kakaoId">> {
+  }): Promise<number> {
     if (!accessToken)
       throw utilServiceInstance.handleError({
         message: "UNAUTHORIZED",
@@ -39,90 +41,69 @@ class AuthService {
         status: 401,
       });
     }
-    const user = await kakaoRes.json();
+    const user = await kakaoRes.json() as { id: number };
     return user.id;
   }
 
+  /**
+   * 조건에 맞는 사용자들을 조회합니다.
+   * 
+   * @param kakaoIds - 조회할 카카오 ID 배열 (문자열 배열 또는 객체 배열 모두 가능)
+   * @param isActivateds - 활성화 상태 배열 (0: 비활성, 1: 활성)
+   * @returns 조건에 맞는 사용자 배열 (없으면 빈 배열)
+   * 
+   * @example
+   * // 여러 사용자 조회
+   * const users = await getUserBy({ kakaoIds: [123, 456] });
+   * 
+   * // 단일 사용자 조회 (호출부에서 구조 분해 할당)
+   * const [user] = await getUserBy({ kakaoIds: [123] });
+   */
   async getUserBy({
     kakaoIds,
     isActivateds,
   }: {
-    kakaoIds: Pick<UserType, "kakaoId">[];
-    isActivateds?: Pick<UserType, "isActivated">[];
-  }) {
-    const selects: string[] = [
-      "u.userId",
-      "u.userName",
-      "u.birth",
-      "u.kakaoId",
-      "u.kakaoEmail",
-      "u.createdDate",
-      "u.isActivated",
-    ];
-    const wheres: string[] = [];
-    const values: { [key: string]: Pick<UserType, "kakaoId" | "isActivated"> } =
-      {};
+    kakaoIds?: number[];
+    isActivateds?: (0 | 1)[];
+  }): Promise<User[]> {
+    const userRepository = AppDataSource.getRepository(User);
+    
+    // TypeORM의 FindOptionsWhere 타입 사용
+    const where: {
+      kakaoId?: any;
+      isActivated?: any;
+    } = {};
 
-    if (kakaoIds[0]) {
-      const kakaoIdStmt: string = kakaoIds
-        .map((kakaoId, i: number) => {
-          values[`kakaoId${i}`] = kakaoId;
-          return `:kakaoId${i}`;
-        })
-        .join(", ");
-      wheres.push(`u.kakaoId IN (${kakaoIdStmt})`);
+    if (kakaoIds?.length) {
+      where.kakaoId = In(kakaoIds);
     }
 
     if (isActivateds?.length) {
-      const isActivatedStmt: string = isActivateds
-        .map((isActivated, i: number) => {
-          values[`isActivated${i}`] = isActivated;
-          return `:isActivated${i}`;
-        })
-        .join(", ");
-      wheres.push(`u.isActivated IN (${isActivatedStmt})`);
+      where.isActivated = In(isActivateds);
     }
 
-    const whereStmt: string = wheres[0]
-      ? `WHERE\n  ${wheres.join(" AND ")}`
-      : "";
-    const selectStmt: string = `
-    SELECT ${selects.join(", ")}
-    FROM Users u
-    ${whereStmt}`;
-    const users = await oracleAutonomousRepository.execute(
-      selectStmt,
-      values as any
-    );
+    // 조건이 하나도 없으면 빈 배열 반환
+    if (Object.keys(where).length === 0) {
+      return [];
+    }
+
+    const users = await userRepository.find({ where });
     return users;
   }
 
   async userSignUp({ user }: { user: UserType }) {
     const { kakaoNickname, kakaoId } = user;
-    const inserts: string[] = [];
-    const values: {
-      [key: string]: Pick<
-        UserType,
-        "kakaoId" | "isActivated" | "kakaoNickname"
-      >;
-    } = {};
-    if (kakaoId) {
-      inserts.push(":kakaoId");
-      values.kakaoId = kakaoId as Pick<UserType, "kakaoId">;
-    }
-    if (kakaoNickname) {
-      inserts.push(":userName");
-      values.userName = kakaoNickname as Pick<UserType, "kakaoNickname">;
-    }
-    const insertStmt: string = `
-    INSERT INTO users (${inserts.map((col) => col.replace(":", "")).join(", ")})
-    VALUES (${inserts.join(", ")})
-    RETURNING userId INTO :userId`;
-    const res = await oracleAutonomousRepository.execute(
-      insertStmt,
-      values as any
-    );
-    return res.outBinds?.userId[0];
+    const userRepository = AppDataSource.getRepository(User);
+
+    const newUser = userRepository.create({
+      kakaoId: kakaoId!,
+      userName: kakaoNickname || null,
+      isActivated: 1,
+      createdDate: new Date(),
+    });
+
+    const savedUser = await userRepository.save(newUser);
+    return savedUser.userId;
   }
 }
 

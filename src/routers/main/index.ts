@@ -4,6 +4,7 @@ import mainRouter from "./mainRouter";
 import authRouter from "./authRouter";
 import discordRouter from "./discordRouter";
 import teamRouter from "./teamRouter";
+import fileShareRouter from "./fileShareRouter";
 
 const router = express.Router();
 
@@ -11,5 +12,6 @@ router.use("/", mainRouter);
 router.use("/auth", authRouter);
 router.use("/discord", discordRouter);
 router.use("/teams", teamRouter);
+router.use("/files", fileShareRouter);
 
 export default router;

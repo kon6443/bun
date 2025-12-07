@@ -2,7 +2,7 @@ import authServiceInstance from "../services/authService";
 import { UserType } from "../services/authService";
 
 export type KakaoUserSignType = {
-  kakaoId: string;
+  kakaoId: number;
   kakaoNickname: string;
   accessToken: string;
 };
@@ -20,10 +20,11 @@ class AuthController {
 
       // 카카오 accessToken 검증 요청, 응답으로 kakaoId 수신
       const kakaoId = await authServiceInstance.getKakaoId({ accessToken });
-      // 카카오로부터 응답받은 kakaoId 로 내부 Users 테이블 유저 검색
+      // 카카오로부터 응답받은 kakaoId 로 내부 USERS 테이블 유저 검색
+      // 구조 분해 할당으로 첫 번째 사용자만 가져옴 (없으면 undefined)
       const [user] = await authServiceInstance.getUserBy({
         kakaoIds: [kakaoId],
-        isActivateds: [1 as Pick<UserType, "isActivated">],
+        isActivateds: [1],
       });
       const loginType = "KAKAO";
       let userId;
