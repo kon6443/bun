@@ -3,7 +3,7 @@ import express from "express";
 import { NextFunction, Request, Response } from "express";
 import "express-async-errors";
 import { AppDataSource } from "./database/data-source";
-import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
+// import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
 import scheduleJobs from './modules/scheduler';
 
 // router
@@ -72,7 +72,7 @@ const startServer = async () => {
     console.log("TypeORM 데이터베이스 연결 성공");
 
     // 기존 Oracle Repository도 유지 (필요한 경우)
-    await oracleAutonomousRepository.initialize();
+    // await oracleAutonomousRepository.initialize();
 
     const server = app.listen(port, "0.0.0.0", () => {
       console.log(`Listening on port ${port}...`);
@@ -92,7 +92,7 @@ process.on("SIGINT", async () => {
     await AppDataSource.destroy();
     console.log("TypeORM 데이터베이스 연결 종료");
   }
-  await oracleAutonomousRepository.close();
+  // await oracleAutonomousRepository.close();
   process.exit(0);
 });
 

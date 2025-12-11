@@ -230,4 +230,4 @@ class OracleAutonomousRepository {
   }
 }
 
-export const oracleAutonomousRepository = new OracleAutonomousRepository();
+// export const oracleAutonomousRepository = new OracleAutonomousRepository();
