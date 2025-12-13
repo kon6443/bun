@@ -1,140 +1,101 @@
-import "reflect-metadata";
-import express from "express";
-import { NextFunction, Request, Response } from "express";
-import "express-async-errors";
-import { AppDataSource } from "./database/data-source";
-import { oracleAutonomousRepository } from "./repositories/oracleAutonomousRepository";
-import scheduleJobs from './modules/scheduler';
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 
-// router
-import router from "./routers/index";
-
-const bodyParser = require("body-parser");
-const cookieParser = require("cookie-parser");
-const cors = require("cors");
-const helmet = require("helmet");
-const { swaggerUi, specs } = require("./modules/swagger");
-
-// need to working on in.
-// const { swaggerUi, specs } = require("./modules/swagger");
-
-const isLocal = process.env.ENV?.toUpperCase() == "LOCAL";
-
-const app = express();
-const port = process.env.EXPRESS_PORT || 3500;
-const domain = process.env.DOMAIN;
-
-const allowedOrigins = [
-  "http://localhost",
-  "http://localhost:3000",
-  "http://localhost:3500",
-  "https://fivesouth.duckdns.org",
-];
-
-const corsOptions = {
-  origin: function (origin: any, callback: any) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-};
-
-scheduleJobs();
-
-app.use(cors(corsOptions));
-// app.use(cors());
-app.use(helmet());
-app.use(cookieParser());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-if (isLocal) app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
-
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const date = now.getDate();
-  // const message = `${year}.${month}.${date}[${req.method}]:: ${domain}:${port}${req.originalUrl}`;
-  const message = `${year}.${month}.${date}::[${req.method}] ${domain}${req.originalUrl}`;
-  console.log(message);
-  next();
-});
-
-app.use("/api/v1", router);
-
-const startServer = async () => {
+async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+  
   try {
-    // TypeORM 초기화
-    await AppDataSource.initialize();
-    console.log("TypeORM 데이터베이스 연결 성공");
-
-    // 기존 Oracle Repository도 유지 (필요한 경우)
-    await oracleAutonomousRepository.initialize();
-
-    const server = app.listen(port, "0.0.0.0", () => {
-      console.log(`Listening on port ${port}...`);
+    const app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     });
+    
+    const configService = app.get(ConfigService);
+    
+    // TypeORM 연결 상태 확인 (Nest.js 정석 방식)
+    // TypeORM 연결이 실패하면 앱이 시작되지 않아야 하므로,
+    // 여기까지 왔다면 연결이 성공한 것입니다.
+    logger.log('TypeORM connection established successfully');
 
-    server.on("error", console.error);
-  } catch (err) {
-    console.error("서버 시작 중 오류 발생:", err);
+  const isLocal = configService.get<string>('ENV')?.toUpperCase() === 'LOCAL';
+  const port = configService.get<number>('EXPRESS_PORT') || 3500;
+  const domain = configService.get<string>('DOMAIN');
+
+  // 전역 예외 필터 (Nest.js 정석 방식)
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  // 전역 인터셉터 (Nest.js 정석 방식)
+  app.useGlobalInterceptors(new LoggingInterceptor(configService));
+
+  // CORS 설정
+  const allowedOrigins = [
+    'http://localhost',
+    'http://localhost:3000',
+    'http://localhost:3500',
+    'https://fivesouth.duckdns.org',
+  ];
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  });
+
+  // 보안 미들웨어
+  app.use(helmet());
+  app.use(cookieParser());
+
+  // 전역 유효성 검사 파이프 (Nest.js 정석 방식)
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
+
+  // Swagger 설정
+  if (isLocal) {
+    const config = new DocumentBuilder()
+      .setTitle('FiveSouth Swagger API Documents')
+      .setDescription('FiveSouth Swagger API Documents')
+      .setVersion('1.0.0')
+      .addCookieAuth('access_token', {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'access_token',
+      })
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document);
+    logger.log('Swagger documentation available at /api-docs');
+  }
+
+  // 글로벌 프리픽스
+  app.setGlobalPrefix('api/v1');
+
+    await app.listen(port, '0.0.0.0');
+    logger.log(`Application is running on: http://0.0.0.0:${port}`);
+    logger.log(`Health check: http://localhost:${port}/api/v1/health-check`);
+  } catch (error) {
+    logger.error('Failed to start application:', error);
     process.exit(1);
   }
-};
-
-startServer();
-
-process.on("SIGINT", async () => {
-  if (AppDataSource.isInitialized) {
-    await AppDataSource.destroy();
-    console.log("TypeORM 데이터베이스 연결 종료");
-  }
-  await oracleAutonomousRepository.close();
-  process.exit(0);
-});
-
-function errorHandler(err: any, req: any, res: any, next: any) {
-  const user = req.headers.user;
-  const logs: string[] = [];
-  // if (user?.id) {
-  //   // kakao login
-  //   logs.push(`userId: [${user?.id}]`);
-  // } else if (user?.userId) {
-  //   // partners login
-  //   logs.push(`PARTNERS userId: [${user?.userId}]`);
-  // }
-  const time = new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" });
-  let reqIp = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-  if (reqIp == "::1" || reqIp == "localhost") {
-    // ::1 - IPv6에서 로컬호스트. 따라서 모든 로컬호스트를 의미하는 ip 는 127.0.0.1 로 수정
-    reqIp = "127.0.0.1";
-  } else if (reqIp.startsWith("::ffff:")) {
-    // ::ffff: - 로 시작하는 주소는 IPv4 주소를 IPv6 형식으로 표현함. ex) ::ffff:192.168.0.1
-    // 이경우 IPv4 주소만 추출하여 사용
-    reqIp = reqIp.split(":").pop();
-  }
-  logs.push(`[${reqIp}]:: ${time} [${req.method}]: ${req.originalUrl}\n`);
-  if (!err?.hideServerLog) {
-    console.log(logs.join(", "), err);
-  }
-  // console.log(`userId: [${user?.id}], ${time} [${req.method}]: ${req.path}\n`, err);
-  if (res.headersSent) {
-    return next(err);
-  }
-  // let errStatus;
-  // if (!err.status) {
-  // errStatus = 500;
-  // err.message = "Internal Server Error";
-  // } else {
-  //   errStatus = err.status;
-  // }
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
-  return res
-    .status(status)
-    .json({ status, message });
 }
-app.use(errorHandler);
+
+bootstrap();

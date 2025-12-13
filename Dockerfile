@@ -30,4 +30,5 @@ EXPOSE 3500
 
 # Command to run your application using tsx via pnpm exec
 # pnpm exec will find tsx in node_modules/.bin
-CMD ["pnpm", "exec", "tsx", "src/main.ts"]
+# CMD ["pnpm", "exec", "tsx", "src/main.ts"]
+CMD ["pnpm", "start:prod"]
