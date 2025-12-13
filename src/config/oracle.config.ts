@@ -5,3 +5,4 @@ export default registerAs('oracle', () => ({
   walletPath: process.env.ORACLE_WALLET_PATH,
 }));
 
+
