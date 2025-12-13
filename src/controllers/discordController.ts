@@ -13,8 +13,15 @@ class DiscordController {
   }) {
     try {
       await discordServiceInstance.sendMessage({ discordId, message });
-    } catch (err) {
-      utilServiceInstance.handleError(err);
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'message' in err && 'status' in err) {
+        utilServiceInstance.handleError(err as { message: string; status: number; hideServerLog?: number });
+      } else {
+        utilServiceInstance.handleError({
+          message: err instanceof Error ? err.message : 'Unknown error',
+          status: 500,
+        });
+      }
     }
   }
 }
