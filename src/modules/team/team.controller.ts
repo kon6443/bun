@@ -13,10 +13,8 @@ export class TeamController {
   @ApiHeader({ name: 'x-user-id', required: false })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 401, description: '인증 실패' })
-  async getMyTeams(
-    @Query('userId') queryUserId?: string,
-    @Headers('x-user-id') headerUserId?: string,
-  ) {
+  async getMyTeams(@Query('userId') queryUserId?: string, @Headers('x-user-id') headerUserId?: string) {
+    console.log('kkkk');
     const rawUserId = headerUserId || queryUserId;
     if (!rawUserId) {
       throw new UnauthorizedException('UNAUTHORIZED');
@@ -31,5 +29,3 @@ export class TeamController {
     return { data: teams };
   }
 }
-
-
