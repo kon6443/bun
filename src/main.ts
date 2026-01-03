@@ -57,6 +57,18 @@ async function bootstrap() {
     app.use(helmet());
     app.use(cookieParser());
 
+    // Swagger UI를 `/api-docs/`(트레일링 슬래시)로 열면,
+    // HTML 내부의 상대 경로(`./api-docs/*`)가 `/api-docs/api-docs/*`로 해석되어
+    // 정적 리소스(css/js)가 404가 나며 화면이 하얗게 보일 수 있습니다.
+    // `/api-docs/` -> `/api-docs`로 리다이렉트하여 항상 정상 경로로 로드되게 합니다.
+    app.use((req: any, res: any, next: any) => {
+      const originalUrl: string = req?.originalUrl ?? '';
+      if (originalUrl === '/api-docs/' || originalUrl.startsWith('/api-docs/?')) {
+        return res.redirect(originalUrl.replace('/api-docs/', '/api-docs'));
+      }
+      return next();
+    });
+
     // 전역 유효성 검사 파이프 (Nest.js 정석 방식)
     app.useGlobalPipes(
       new ValidationPipe({

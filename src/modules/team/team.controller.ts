@@ -1,31 +1,24 @@
-import { Controller, Get, Query, Headers, UnauthorizedException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader } from '@nestjs/swagger';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { TeamService } from './team.service';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Request } from 'express';
+import { User } from '../../entities/User';
 
 @ApiTags('teams')
 @Controller('teams')
 export class TeamController {
   constructor(private readonly teamService: TeamService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({ summary: '내 팀 목록 조회' })
-  @ApiQuery({ name: 'userId', required: false, type: Number })
-  @ApiHeader({ name: 'x-user-id', required: false })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 401, description: '인증 실패' })
-  async getMyTeams(@Query('userId') queryUserId?: string, @Headers('x-user-id') headerUserId?: string) {
-    console.log('kkkk');
-    const rawUserId = headerUserId || queryUserId;
-    if (!rawUserId) {
-      throw new UnauthorizedException('UNAUTHORIZED');
-    }
-
-    const userId = Number(rawUserId);
-    if (Number.isNaN(userId)) {
-      throw new UnauthorizedException('UNAUTHORIZED');
-    }
-
-    const teams = await this.teamService.getTeamsByUserId(userId);
+  async getMyTeams(@Req() req: Request & { user: User }) {
+    const user = req.user;
+    console.log('req.user', user);
+    const teams = await this.teamService.getTeamsByUserId(req.user.userId);
     return { data: teams };
   }
 }
