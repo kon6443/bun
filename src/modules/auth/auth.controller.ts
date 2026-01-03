@@ -19,10 +19,9 @@ export class AuthController {
   @ApiResponse({ status: 404, description: '해당 자원을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '내부 서버 오류' })
   async postKakaoSignInUp(@Body() kakaoUserSign: KakaoSignInUpDto) {
-      const { userId, loginType } = await this.authService.postKakaoSignInUp({
-        kakaoUserSign,
-      });
-      return { message: 'KAKAO LOGIN SUCCESS', userId, loginType };
+    const { userId, loginType, accessToken } = await this.authService.postKakaoSignInUp({
+      kakaoUserSign,
+    });
+    return { message: 'KAKAO LOGIN SUCCESS', userId, loginType, accessToken, tokenType: 'Bearer' };
   }
 }
-
