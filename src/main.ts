@@ -81,6 +81,9 @@ async function bootstrap() {
       }),
     );
 
+    // 글로벌 프리픽스
+    app.setGlobalPrefix('api/v1');
+
     // Swagger 설정
     if (isLocal) {
       const config = new DocumentBuilder()
@@ -97,9 +100,6 @@ async function bootstrap() {
       SwaggerModule.setup('api-docs', app, document);
       logger.log('Swagger documentation available at /api-docs');
     }
-
-    // 글로벌 프리픽스
-    app.setGlobalPrefix('api/v1');
 
     await app.listen(port, '0.0.0.0');
     logger.log(`Application is running on: http://0.0.0.0:${port}`);
