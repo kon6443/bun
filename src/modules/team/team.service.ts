@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TeamMember } from '../../entities/TeamMember';
 
-export type TeamSummary = {
+export type TeamMemberType = {
   teamId: number;
   teamName: string;
   // description?: string;
@@ -19,27 +19,40 @@ export class TeamService {
     private readonly teamMemberRepository: Repository<TeamMember>,
   ) {}
 
-  async getTeamsByUserId(userId: number): Promise<TeamSummary[]> {
-    if (!userId || Number.isNaN(userId)) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+  // async getTeamMembersBy({userIds, actStatus}: {userIds: number[], actStatus: number[]}): Promise<TeamMemberType[]> {
+  async getTeamMembersBy({userIds, actStatus}: {userIds: number[], actStatus: number[]}): Promise<TeamMember[]> {
+
+    const teamMembersQueryBuilder = this.teamMemberRepository
+      .createQueryBuilder('ut')
+      .select([
+        'ut.teamId',
+        'ut.joinedAt',
+        'ut.role',
+      ])
+      .innerJoinAndSelect('ut.team', 't')
+      .addSelect([
+        't.teamName',
+        't.crtdAt',
+        't.actStatus',
+        't.leaderId',
+      ]);
+
+    if(userIds?.length) {
+      teamMembersQueryBuilder.andWhere('ut.userId IN (:...userIds)', { userIds });
     }
 
-    const teamMembers = await this.teamMemberRepository
-      .createQueryBuilder('tm')
-      .innerJoinAndSelect('tm.team', 'team')
-      .where('tm.userId = :userId', { userId })
-      .orderBy('tm.teamId', 'DESC')
-      .getMany();
+    if(actStatus?.length) {
+      teamMembersQueryBuilder.andWhere('t.actStatus IN (:...actStatus)', { actStatus });
+    }
 
-    console.log('teamMembers', teamMembers);
-    return teamMembers.map((tm) => ({
-      teamId: tm.team.teamId,
-      teamName: tm.team.teamName,
-      // description: tm.team.description || undefined,
-      // ownerId: tm.team.ownerId,
-      crtdAt: tm.team.crtdAt,
-      // memberRole: tm.role,
-    }));
+    const teamMembers = await teamMembersQueryBuilder.orderBy('ut.joinedAt', 'DESC').getMany();
+    console.log(teamMembers);
+    return teamMembers;
+    // return teamMembers.map((tm) => ({
+    //   teamId: tm.team.teamId,
+    //   teamName: tm.team.teamName,
+    //   crtdAt: tm.team.crtdAt,
+    // }));
   }
 }
 

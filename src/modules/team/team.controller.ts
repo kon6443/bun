@@ -17,9 +17,9 @@ export class TeamController {
   @ApiResponse({ status: 401, description: '인증 실패' })
   async getMyTeams(@Req() req: Request & { user: User }) {
     const user = req.user;
-    console.log('req.user', user);
-    const teams = await this.teamService.getTeamsByUserId(req.user.userId);
-    return { data: teams };
+    console.log(user);
+    const teamMembers = await this.teamService.getTeamMembersBy({ userIds: [user.userId], actStatus: [1]});
+    return { data: teamMembers };
   }
 }
 

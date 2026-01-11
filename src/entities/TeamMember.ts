@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Entity, Column, ManyToOne, JoinColumn, PrimaryColumn } from "typeorm";
+import { Entity, Column, ManyToOne, JoinColumn, PrimaryColumn, OneToOne } from "typeorm";
 import { User } from "./User";
 import { Team } from "./Team";
 
@@ -11,18 +11,19 @@ export class TeamMember {
   @PrimaryColumn({ name: "USER_ID", type: "number" })
   userId: number;
 
-  // @Column({ name: "ROLE", type: "varchar2" })
-  // role: string;
+  @Column({ name: "JOINED_AT", type: "timestamp" })
+  joinedAt: Date;
 
-  @Column({ name: "CRTD_AT", type: "timestamp" })
-  crtdAt: Date;
+  @Column({ name: "ROLE", type: "varchar2" })
+  role: string;
 
   // 관계
-  @ManyToOne(() => Team, (team) => team.members)
+  // @ManyToOne(() => Team, (team) => team.teamId)
+  @OneToOne(() => Team, (team) => team.teamId)
   @JoinColumn({ name: "TEAM_ID" })
   team: Team;
 
-  @ManyToOne(() => User, (user) => user.teamMembers)
+  @ManyToOne(() => User, (user) => user.userId)
   @JoinColumn({ name: "USER_ID" })
   user: User;
 }
