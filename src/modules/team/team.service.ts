@@ -6,10 +6,10 @@ import { TeamMember } from '../../entities/TeamMember';
 export type TeamSummary = {
   teamId: number;
   teamName: string;
-  description?: string;
-  ownerId: number;
-  createdAt: Date;
-  memberRole?: string;
+  // description?: string;
+  // ownerId: number;
+  crtdAt: Date;
+  // memberRole?: string;
 };
 
 @Injectable()
@@ -28,19 +28,22 @@ export class TeamService {
       .createQueryBuilder('tm')
       .innerJoinAndSelect('tm.team', 'team')
       .where('tm.userId = :userId', { userId })
-      .orderBy('team.createdAt', 'DESC')
+      .orderBy('tm.teamId', 'DESC')
       .getMany();
 
+    console.log('teamMembers', teamMembers);
     return teamMembers.map((tm) => ({
       teamId: tm.team.teamId,
       teamName: tm.team.teamName,
-      description: tm.team.description || undefined,
-      ownerId: tm.team.ownerId,
-      createdAt: tm.team.createdAt,
-      memberRole: tm.role,
+      // description: tm.team.description || undefined,
+      // ownerId: tm.team.ownerId,
+      crtdAt: tm.team.crtdAt,
+      // memberRole: tm.role,
     }));
   }
 }
+
+
 
 
 

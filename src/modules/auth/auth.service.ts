@@ -27,9 +27,9 @@ export class AuthService {
       throw new UnauthorizedException('JWT_SECRET not configured');
     }
 
-    // 예: "2h", "3600s" 등 (jsonwebtoken 규격)
+    // 예: "30d", "2h", "3600s" 등 (jsonwebtoken expiresIn 규격)
     const expiresIn = (this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRES_IN') ??
-      '2h') as SignOptions['expiresIn'];
+      '30d') as SignOptions['expiresIn'];
 
     return sign({ sub: userId, loginType }, secret, { expiresIn });
   }
@@ -125,16 +125,16 @@ export class AuthService {
     const loginType = 'KAKAO';
     let userId: number;
 
-    // 내부 Users 테이블에 없을 경우 회원가입 처리
     if (!user) {
+    // 내부 Users 테이블에 없을 경우 회원가입 처리
       userId = await this.userSignUp({
         user: { kakaoId, kakaoNickname } as UserType,
       });
-      return { userId, loginType, accessToken: this.issueAccessToken({ userId, loginType }) };
-    }
-
+    } else {
     // 로그인한 userId 응답
     userId = user.userId;
+    }
+
     return { userId, loginType, accessToken: this.issueAccessToken({ userId, loginType }) };
   }
 }

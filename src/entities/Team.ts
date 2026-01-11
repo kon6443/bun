@@ -11,19 +11,19 @@ export class Team {
   @Column({ name: "TEAM_NAME", type: "varchar2" })
   teamName: string;
 
-  @Column({ name: "DESCRIPTION", nullable: true, type: "varchar2" })
-  description: string | null;
+  // @Column({ name: "DESCRIPTION", nullable: true, type: "varchar2" })
+  // description: string | null;
 
-  @Column({ name: "OWNER_ID", type: "number" })
-  ownerId: number;
+  // @Column({ name: "OWNER_ID", type: "number" })
+  // ownerId: number;
 
-  @Column({ name: "CREATED_AT", type: "timestamp" })
-  createdAt: Date;
+  @Column({ name: "CRTD_AT", type: "timestamp" })
+  crtdAt: Date;
 
   // 관계
-  @ManyToOne(() => User, (user) => user.teamMembers)
-  @JoinColumn({ name: "OWNER_ID" })
-  owner: User;
+  // @ManyToOne(() => User, (user) => user.teamMembers)
+  // @JoinColumn({ name: "OWNER_ID" })
+  // owner: User;
 
   @OneToMany(() => TeamMember, (teamMember) => teamMember.team)
   members: TeamMember[];

@@ -11,8 +11,11 @@ export class TeamMember {
   @PrimaryColumn({ name: "USER_ID", type: "number" })
   userId: number;
 
-  @Column({ name: "ROLE", type: "varchar2" })
-  role: string;
+  // @Column({ name: "ROLE", type: "varchar2" })
+  // role: string;
+
+  @Column({ name: "CRTD_AT", type: "timestamp" })
+  crtdAt: Date;
 
   // 관계
   @ManyToOne(() => Team, (team) => team.members)
