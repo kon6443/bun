@@ -6,6 +6,9 @@ import { Request } from 'express';
 import { User } from '../../entities/User';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
+import { TeamMemberListResponseDto } from './dto/response/team-member-response.dto';
+import { CreateTeamResponseDto } from './dto/response/create-team-response.dto';
+import { CreateTeamTaskResponseDto } from './dto/response/team-task-response.dto';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -15,7 +18,7 @@ export class TeamController {
   @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({ summary: '내 팀 목록 조회' })
-  @ApiResponse({ status: 200, description: 'SUCCESS' })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamMemberListResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getMyTeams(@Req() req: Request & { user: User }) {
@@ -29,7 +32,7 @@ export class TeamController {
   @Post()
   @ApiOperation({ summary: '팀 생성' })
   @ApiBody({ type: CreateTeamDto })
-  @ApiResponse({ status: 200, description: 'SUCCESS' })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: CreateTeamResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async postMyTeams(@Req() req: Request & { user: User }, @Body() createTeamDto: CreateTeamDto) {
@@ -45,7 +48,7 @@ export class TeamController {
   @ApiOperation({ summary: '팀 태스크 생성' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiBody({ type: CreateTeamTaskDto })
-  @ApiResponse({ status: 201, description: 'SUCCESS' })
+  @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamTaskResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })

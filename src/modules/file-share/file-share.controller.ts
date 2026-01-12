@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { FileShareService } from './file-share.service';
+import { FileListResponseDto } from './dto/response/file-list-response.dto';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -53,7 +54,7 @@ export class FileShareController {
   @ApiQuery({ name: 'apiKey', required: false })
   @ApiHeader({ name: 'x-share-id', required: false })
   @ApiHeader({ name: 'x-api-key', required: false })
-  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 200, description: '성공', type: FileListResponseDto })
   @ApiResponse({ status: 401, description: '인증 실패' })
   async getFiles(
     @Query('shareId') shareId?: string,
