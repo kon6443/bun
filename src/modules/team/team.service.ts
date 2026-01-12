@@ -10,9 +10,12 @@ import { Repository, DataSource, EntityManager } from 'typeorm';
 import { TeamMember } from '../../entities/TeamMember';
 import { Team } from '@/entities/Team';
 import { TeamTask } from '@/entities/TeamTask';
+import { TaskComment } from '@/entities/TaskComment';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
+import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
+import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -48,6 +51,8 @@ export class TeamService {
     private readonly teamMemberRepository: Repository<TeamMember>,
     @InjectRepository(TeamTask)
     private readonly teamTaskRepository: Repository<TeamTask>,
+    @InjectRepository(TaskComment)
+    private readonly taskCommentRepository: Repository<TaskComment>,
   ) {}
 
   async getTeamMembersBy({
@@ -223,5 +228,286 @@ export class TeamService {
 
     // 5. 업데이트된 엔티티 저장
     return await this.teamTaskRepository.save(task);
+  }
+
+  async createTaskComment({
+    teamId,
+    taskId,
+    createCommentDto,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    createCommentDto: CreateTaskCommentDto;
+    userId: number;
+  }): Promise<TaskComment> {
+    // 1. 팀 멤버 권한 확인
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [1],
+    });
+
+    if (!teamMembers?.length) {
+      throw new ForbiddenException('팀 멤버만 댓글을 작성할 수 있습니다.');
+    }
+
+    // 2. 태스크 존재 여부 확인
+    const task = await this.teamTaskRepository.findOne({
+      where: { taskId, teamId, taskStatus: 1 },
+    });
+
+    if (!task) {
+      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+    }
+
+    // 3. 댓글 생성
+    const newComment = this.taskCommentRepository.create({
+      teamId,
+      taskId,
+      userId,
+      commentContent: createCommentDto.commentContent,
+      status: 1,
+    });
+
+    return await this.taskCommentRepository.save(newComment);
+  }
+
+  async updateTaskComment({
+    teamId,
+    taskId,
+    commentId,
+    updateCommentDto,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    commentId: number;
+    updateCommentDto: UpdateTaskCommentDto;
+    userId: number;
+  }): Promise<TaskComment> {
+    // 1. 댓글 존재 여부 확인
+    const comment = await this.taskCommentRepository.findOne({
+      where: { commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    }
+
+    // 2. 댓글 작성자 권한 확인
+    if (comment.userId !== userId) {
+      throw new ForbiddenException('댓글 작성자만 수정할 수 있습니다.');
+    }
+
+    // 3. 댓글이 해당 태스크에 속하는지 확인
+    if (comment.taskId !== taskId) {
+      throw new BadRequestException('댓글이 해당 태스크에 속하지 않습니다.');
+    }
+
+    // 4. 댓글이 해당 팀에 속하는지 확인
+    if (comment.teamId !== teamId) {
+      throw new BadRequestException('댓글이 해당 팀에 속하지 않습니다.');
+    }
+
+    // 5. 댓글이 활성 상태인지 확인
+    if (comment.status !== 1) {
+      throw new BadRequestException('삭제된 댓글은 수정할 수 없습니다.');
+    }
+
+    // 6. 수정 가능한 필드만 업데이트
+    if (updateCommentDto.commentContent !== undefined) {
+      comment.commentContent = updateCommentDto.commentContent;
+    }
+    comment.mdfdAt = new Date();
+
+    // 7. 업데이트된 엔티티 저장
+    return await this.taskCommentRepository.save(comment);
+  }
+
+  async deleteTaskComment({
+    teamId,
+    taskId,
+    commentId,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    commentId: number;
+    userId: number;
+  }): Promise<void> {
+    // 1. 댓글 존재 여부 확인
+    const comment = await this.taskCommentRepository.findOne({
+      where: { commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    }
+
+    // 2. 댓글 작성자 권한 확인
+    if (comment.userId !== userId) {
+      throw new ForbiddenException('댓글 작성자만 삭제할 수 있습니다.');
+    }
+
+    // 3. 댓글이 해당 태스크에 속하는지 확인
+    if (comment.taskId !== taskId) {
+      throw new BadRequestException('댓글이 해당 태스크에 속하지 않습니다.');
+    }
+
+    // 4. 댓글이 해당 팀에 속하는지 확인
+    if (comment.teamId !== teamId) {
+      throw new BadRequestException('댓글이 해당 팀에 속하지 않습니다.');
+    }
+
+    // 5. 댓글이 이미 삭제된 상태인지 확인
+    if (comment.status === 0) {
+      throw new BadRequestException('이미 삭제된 댓글입니다.');
+    }
+
+    // 6. 소프트 삭제 (status를 0으로 변경)
+    comment.status = 0;
+    comment.mdfdAt = new Date();
+
+    await this.taskCommentRepository.save(comment);
+  }
+
+  /**
+   * 팀 멤버 권한 확인 (재사용 가능한 메서드)
+   * @param teamId 팀 ID
+   * @param userId 사용자 ID
+   * @throws ForbiddenException 팀 멤버가 아닐 경우
+   */
+  async verifyTeamMemberAccess(teamId: number, userId: number): Promise<void> {
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [1],
+    });
+
+    if (!teamMembers?.length) {
+      throw new ForbiddenException('팀 멤버만 접근할 수 있습니다.');
+    }
+  }
+
+  /**
+   * 팀의 태스크 목록 조회
+   * @param teamId 팀 ID
+   * @param userId 사용자 ID
+   * @returns 태스크 목록 (시작일시 내림차순)
+   */
+  async getTasksByTeamId(teamId: number, userId: number): Promise<TeamTask[]> {
+    // 1. 팀 멤버 권한 확인
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    // 2. 태스크 목록 조회 (시작일시 내림차순)
+    const tasks = await this.teamTaskRepository
+      .createQueryBuilder('task')
+      .where('task.teamId = :teamId', { teamId })
+      .orderBy('task.startAt', 'DESC')
+      .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
+      .getMany();
+
+    return tasks;
+  }
+
+  /**
+   * 태스크의 댓글 목록 조회 (재사용 가능한 메서드)
+   * @param taskId 태스크 ID
+   * @returns 댓글 목록 (작성자 정보 포함, 생성일시 오름차순)
+   */
+  async getCommentsByTaskId(taskId: number): Promise<
+    Array<{
+      commentId: number;
+      teamId: number;
+      taskId: number;
+      userId: number;
+      userName: string | null;
+      commentContent: string;
+      status: number;
+      mdfdAt: Date | null;
+      crtdAt: Date;
+    }>
+  > {
+    const comments = await this.taskCommentRepository
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.taskId = :taskId', { taskId })
+      .orderBy('comment.crtdAt', 'ASC')
+      .select([
+        'comment.commentId',
+        'comment.teamId',
+        'comment.taskId',
+        'comment.userId',
+        'comment.commentContent',
+        'comment.status',
+        'comment.mdfdAt',
+        'comment.crtdAt',
+        'user.userName',
+      ])
+      .getMany();
+
+    return comments.map(comment => ({
+      commentId: comment.commentId,
+      teamId: comment.teamId,
+      taskId: comment.taskId,
+      userId: comment.userId,
+      userName: comment.user?.userName || null,
+      commentContent: comment.commentContent,
+      status: comment.status,
+      mdfdAt: comment.mdfdAt,
+      crtdAt: comment.crtdAt,
+    }));
+  }
+
+  /**
+   * 태스크 상세 조회 (댓글 포함)
+   * @param teamId 팀 ID
+   * @param taskId 태스크 ID
+   * @param userId 사용자 ID
+   * @returns 태스크 정보와 댓글 목록
+   */
+  async getTaskWithComments(
+    teamId: number,
+    taskId: number,
+    userId: number,
+  ): Promise<{
+    task: TeamTask;
+    comments: Array<{
+      commentId: number;
+      teamId: number;
+      taskId: number;
+      userId: number;
+      userName: string | null;
+      commentContent: string;
+      status: number;
+      mdfdAt: Date | null;
+      crtdAt: Date;
+    }>;
+  }> {
+    // 1. 팀 멤버 권한 확인
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    // 2. 태스크 존재 여부 확인
+    const task = await this.teamTaskRepository.findOne({
+      where: { taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+    }
+
+    // 3. 태스크가 해당 팀에 속하는지 확인
+    if (task.teamId !== teamId) {
+      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+    }
+
+    // 4. 댓글 목록 조회
+    const comments = await this.getCommentsByTaskId(taskId);
+
+    return {
+      task,
+      comments,
+    };
   }
 }

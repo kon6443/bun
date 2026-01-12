@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TaskCommentWithUserResponseDto } from './task-comment-response.dto';
 
 export class TeamTaskResponseDto {
   @ApiProperty({ description: '태스크 ID', example: 1 })
@@ -43,4 +44,25 @@ export class UpdateTeamTaskResponseDto {
 
   @ApiProperty({ description: '수정된 태스크 정보', type: TeamTaskResponseDto })
   data: TeamTaskResponseDto;
+}
+
+export class TeamTaskListResponseDto {
+  @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
+  message: string;
+
+  @ApiProperty({ description: '태스크 목록', type: [TeamTaskResponseDto] })
+  data: TeamTaskResponseDto[];
+}
+
+export class TaskDetailResponseDto extends TeamTaskResponseDto {
+  @ApiProperty({ description: '댓글 목록', type: [TaskCommentWithUserResponseDto] })
+  comments: TaskCommentWithUserResponseDto[];
+}
+
+export class GetTaskDetailResponseDto {
+  @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
+  message: string;
+
+  @ApiProperty({ description: '태스크 상세 정보', type: TaskDetailResponseDto })
+  data: TaskDetailResponseDto;
 }
