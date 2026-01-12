@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Req, UseGuards, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Controller, Get, Post, Req, UseGuards, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Request } from 'express';
 import { User } from '../../entities/User';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -20,7 +21,7 @@ export class TeamController {
   async getMyTeams(@Req() req: Request & { user: User }) {
     const user = req.user;
     console.log(user);
-    const teamMembers = await this.teamService.getTeamMembersBy({ userIds: [user.userId], actStatus: [1]});
+    const teamMembers = await this.teamService.getTeamMembersBy({ userIds: [user.userId], actStatus: [1] });
     return { data: teamMembers };
   }
 
@@ -31,15 +32,34 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS' })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async postMyTeams(
-    @Req() req: Request & { user: User },
-    @Body() createTeamDto: CreateTeamDto,
-  ) {
+  async postMyTeams(@Req() req: Request & { user: User }, @Body() createTeamDto: CreateTeamDto) {
     const user = req.user;
     createTeamDto.actStatus = 1;
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
     return { message: 'SUCCESS', action: '' };
   }
-}
 
+  @UseGuards(JwtAuthGuard)
+  @Post(':teamId/tasks')
+  @ApiOperation({ summary: '팀 태스크 생성' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiBody({ type: CreateTeamTaskDto })
+  @ApiResponse({ status: 201, description: 'SUCCESS' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async createTask(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Body() createTaskDto: CreateTeamTaskDto,
+  ) {
+    const user = req.user;
+    const task = await this.teamService.createTask({
+      teamId,
+      createTaskDto,
+      userId: user.userId,
+    });
+    return { message: 'SUCCESS', data: task };
+  }
+}

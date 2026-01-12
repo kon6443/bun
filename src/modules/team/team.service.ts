@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { TeamMember } from '../../entities/TeamMember';
 import { Team } from '@/entities/Team';
+import { TeamTask } from '@/entities/TeamTask';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -37,6 +39,8 @@ export class TeamService {
     private readonly teamRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private readonly teamMemberRepository: Repository<TeamMember>,
+    @InjectRepository(TeamTask)
+    private readonly teamTaskRepository: Repository<TeamTask>,
   ) {}
 
   async getTeamMembersBy({
@@ -117,5 +121,37 @@ export class TeamService {
       });
       await manager.save(TeamMember, newTeamMember);
     });
+  }
+
+  async createTask({
+    teamId,
+    createTaskDto,
+    userId,
+  }: {
+    teamId: number;
+    createTaskDto: CreateTeamTaskDto;
+    userId: number;
+  }): Promise<TeamTask> {
+    // 팀 존재 여부 확인
+    const team = await this.teamRepository.findOne({
+      where: { teamId, actStatus: 1 },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    // 태스크 생성
+    const newTask = this.teamTaskRepository.create({
+      teamId,
+      taskName: createTaskDto.taskName,
+      taskDescription: createTaskDto.taskDescription || null,
+      taskStatus: createTaskDto.taskStatus ?? 0,
+      crtdBy: userId,
+      startAt: createTaskDto.startAt || null,
+      endAt: createTaskDto.endAt || null,
+    });
+
+    return await this.teamTaskRepository.save(newTask);
   }
 }
