@@ -17,14 +17,14 @@ export type TeamType = {
   crtdAt: Date;
   actStatus: number;
   leaderId: number;
-}
+};
 
 export type UserTeamType = {
   teamId: number;
   userId: number;
   joinedAt: Date;
   role: string;
-}
+};
 
 export type TeamMemberType = TeamType & UserTeamType;
 
@@ -39,8 +39,13 @@ export class TeamService {
     private readonly teamMemberRepository: Repository<TeamMember>,
   ) {}
 
-  async getTeamMembersBy({userIds, actStatus}: {userIds: number[], actStatus: number[]}): Promise<TeamMemberType[]> {
-
+  async getTeamMembersBy({
+    userIds,
+    actStatus,
+  }: {
+    userIds: number[];
+    actStatus: number[];
+  }): Promise<TeamMemberType[]> {
     const teamMembersQueryBuilder = this.teamMemberRepository
       .createQueryBuilder('ut')
       .innerJoinAndSelect('ut.team', 't')
@@ -55,16 +60,16 @@ export class TeamService {
         't.leaderId',
       ]);
 
-    if(userIds?.length) {
+    if (userIds?.length) {
       teamMembersQueryBuilder.andWhere('ut.userId IN (:...userIds)', { userIds });
     }
 
-    if(actStatus?.length) {
+    if (actStatus?.length) {
       teamMembersQueryBuilder.andWhere('t.actStatus IN (:...actStatus)', { actStatus });
     }
 
     const teamMembers = await teamMembersQueryBuilder.orderBy('ut.joinedAt', 'DESC').getMany();
-    return teamMembers.map((tm) => {
+    return teamMembers.map(tm => {
       return {
         teamId: tm.teamId,
         userId: tm.userId,
@@ -74,11 +79,19 @@ export class TeamService {
         crtdAt: tm.team.crtdAt,
         actStatus: tm.team.actStatus,
         leaderId: tm.team.leaderId,
-      }
+      };
     });
   }
 
-  async insertTeamMember({ userId, teamId, role }: { userId: number, teamId: number, role: string }): Promise<void> {
+  async insertTeamMember({
+    userId,
+    teamId,
+    role,
+  }: {
+    userId: number;
+    teamId: number;
+    role: string;
+  }): Promise<void> {
     const newTeamMember = this.teamMemberRepository.create({
       userId,
       teamId,
@@ -93,12 +106,12 @@ export class TeamService {
       // 1. Team 생성
       const newTeam = manager.create(Team, createTeamDto);
       const savedTeam = await manager.save(Team, newTeam);
-      
+
       // 2. TeamMember 삽입 (같은 트랜잭션 내)
       const newTeamMember = manager.create(TeamMember, {
         userId: createTeamDto.leaderId,
         teamId: savedTeam.teamId,
-        role: 'LEADER',
+        role: 'MASTER',
       });
       await manager.save(TeamMember, newTeamMember);
     });
