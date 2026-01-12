@@ -36,3 +36,11 @@ export class CreateTeamTaskResponseDto {
   @ApiProperty({ description: '생성된 태스크 정보', type: TeamTaskResponseDto })
   data: TeamTaskResponseDto;
 }
+
+export class UpdateTeamTaskResponseDto {
+  @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
+  message: string;
+
+  @ApiProperty({ description: '수정된 태스크 정보', type: TeamTaskResponseDto })
+  data: TeamTaskResponseDto;
+}

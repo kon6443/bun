@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { TeamMember } from '../../entities/TeamMember';
@@ -6,6 +12,7 @@ import { Team } from '@/entities/Team';
 import { TeamTask } from '@/entities/TeamTask';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
+import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -46,9 +53,11 @@ export class TeamService {
   async getTeamMembersBy({
     userIds,
     actStatus,
+    teamIds,
   }: {
-    userIds: number[];
-    actStatus: number[];
+    userIds?: number[];
+    actStatus?: number[];
+    teamIds?: number[];
   }): Promise<TeamMemberType[]> {
     const teamMembersQueryBuilder = this.teamMemberRepository
       .createQueryBuilder('ut')
@@ -67,6 +76,10 @@ export class TeamService {
 
     if (userIds?.length) {
       teamMembersQueryBuilder.andWhere('ut.userId IN (:...userIds)', { userIds });
+    }
+
+    if (teamIds?.length) {
+      teamMembersQueryBuilder.andWhere('t.teamId IN (:...teamIds)', { teamIds });
     }
 
     if (actStatus?.length) {
@@ -153,5 +166,62 @@ export class TeamService {
     });
 
     return await this.teamTaskRepository.save(newTask);
+  }
+
+  async updateTask({
+    teamId,
+    taskId,
+    updateTaskDto,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    updateTaskDto: UpdateTeamTaskDto;
+    userId: number;
+  }): Promise<TeamTask> {
+    // 1. 팀 멤버 권한 확인
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [1],
+    });
+
+    if (!teamMembers?.length) {
+      throw new ForbiddenException('팀 멤버만 태스크를 수정할 수 있습니다.');
+    }
+
+    // 2. 태스크 존재 여부 확인
+    const task = await this.teamTaskRepository.findOne({
+      where: { taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+    }
+
+    // 3. 태스크가 해당 팀에 속하는지 확인
+    if (task.teamId !== teamId) {
+      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+    }
+
+    // 4. 수정 가능한 필드만 업데이트
+    if (updateTaskDto.taskName !== undefined) {
+      task.taskName = updateTaskDto.taskName;
+    }
+    if (updateTaskDto.taskDescription !== undefined) {
+      task.taskDescription = updateTaskDto.taskDescription || null;
+    }
+    if (updateTaskDto.taskStatus !== undefined) {
+      task.taskStatus = updateTaskDto.taskStatus;
+    }
+    if (updateTaskDto.startAt !== undefined) {
+      task.startAt = updateTaskDto.startAt || null;
+    }
+    if (updateTaskDto.endAt !== undefined) {
+      task.endAt = updateTaskDto.endAt || null;
+    }
+
+    // 5. 업데이트된 엔티티 저장
+    return await this.teamTaskRepository.save(task);
   }
 }
