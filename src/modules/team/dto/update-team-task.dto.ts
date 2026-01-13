@@ -12,12 +12,6 @@ export class UpdateTeamTaskDto {
   @IsOptional()
   taskDescription?: string;
 
-  @ApiProperty({ description: '태스크 상태', example: 1, required: false })
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  taskStatus?: number;
-
   @ApiProperty({ description: '태스크 시작일', example: '2026-01-01', required: false })
   @IsDate()
   @IsOptional()

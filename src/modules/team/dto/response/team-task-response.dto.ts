@@ -14,8 +14,11 @@ export class TeamTaskResponseDto {
   @ApiProperty({ description: '태스크 설명', example: '팀 태스크 생성 API 개발', nullable: true })
   taskDescription: string | null;
 
-  @ApiProperty({ description: '태스크 상태', example: 0 })
+  @ApiProperty({ description: '태스크 작업 상태', example: 1 })
   taskStatus: number;
+
+  @ApiProperty({ description: '태스크 활성 상태', example: 1 })
+  actStatus: number;
 
   @ApiProperty({ description: '시작일시', example: '2026-01-01T00:00:00.000Z', nullable: true })
   startAt: Date | null;

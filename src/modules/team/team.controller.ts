@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Req, UseGuards, Body, Param, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Put,
+  Delete,
+  Req,
+  UseGuards,
+  Body,
+  Param,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -7,8 +19,11 @@ import { User } from '../../entities/User';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
+import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
+import { ActStatus } from '../../common/enums/task-status.enum';
 import { TeamMemberListResponseDto } from './dto/response/team-member-response.dto';
 import { CreateTeamResponseDto } from './dto/response/create-team-response.dto';
 import {
@@ -37,7 +52,10 @@ export class TeamController {
   async getMyTeams(@Req() req: Request & { user: User }) {
     const user = req.user;
     console.log(user);
-    const teamMembers = await this.teamService.getTeamMembersBy({ userIds: [user.userId], actStatus: [1] });
+    const teamMembers = await this.teamService.getTeamMembersBy({
+      userIds: [user.userId],
+      actStatus: [ActStatus.ACTIVE],
+    });
     return { data: teamMembers };
   }
 
@@ -50,7 +68,7 @@ export class TeamController {
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async postMyTeams(@Req() req: Request & { user: User }, @Body() createTeamDto: CreateTeamDto) {
     const user = req.user;
-    createTeamDto.actStatus = 1;
+    createTeamDto.actStatus = ActStatus.ACTIVE;
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
     return { message: 'SUCCESS', action: '' };
@@ -64,10 +82,7 @@ export class TeamController {
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async getTasks(
-    @Req() req: Request & { user: User },
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
+  async getTasks(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
     const user = req.user;
     const tasks = await this.teamService.getTasksByTeamId(teamId, user.userId);
     return { message: 'SUCCESS', data: tasks };
@@ -146,6 +161,62 @@ export class TeamController {
       teamId,
       taskId,
       updateTaskDto,
+      userId: user.userId,
+    });
+    return { message: 'SUCCESS', data: task };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':teamId/tasks/:taskId/status')
+  @ApiOperation({ summary: '팀 태스크 작업 상태 변경' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
+  @ApiBody({ type: UpdateTaskStatusDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 상태를 변경할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async updateTaskStatus(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Param('taskId', ParseIntPipe) taskId: number,
+    @Body() updateStatusDto: UpdateTaskStatusDto,
+  ) {
+    const user = req.user;
+    const task = await this.teamService.updateTaskStatus({
+      teamId,
+      taskId,
+      updateStatusDto,
+      userId: user.userId,
+    });
+    return { message: 'SUCCESS', data: task };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':teamId/tasks/:taskId/active-status')
+  @ApiOperation({ summary: '팀 태스크 활성 상태 변경' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
+  @ApiBody({ type: UpdateTaskActiveStatusDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async updateTaskActiveStatus(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Param('taskId', ParseIntPipe) taskId: number,
+    @Body() updateActiveStatusDto: UpdateTaskActiveStatusDto,
+  ) {
+    const user = req.user;
+    const task = await this.teamService.updateTaskActiveStatus({
+      teamId,
+      taskId,
+      updateActiveStatusDto,
       userId: user.userId,
     });
     return { message: 'SUCCESS', data: task };

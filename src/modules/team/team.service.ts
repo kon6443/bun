@@ -16,6 +16,9 @@ import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
+import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
+import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -152,7 +155,7 @@ export class TeamService {
   }): Promise<TeamTask> {
     // 팀 존재 여부 확인
     const team = await this.teamRepository.findOne({
-      where: { teamId, actStatus: 1 },
+      where: { teamId, actStatus: ActStatus.ACTIVE },
     });
 
     if (!team) {
@@ -164,7 +167,8 @@ export class TeamService {
       teamId,
       taskName: createTaskDto.taskName,
       taskDescription: createTaskDto.taskDescription || null,
-      taskStatus: createTaskDto.taskStatus ?? 0,
+      taskStatus: createTaskDto.taskStatus ?? TaskStatus.CREATED,
+      actStatus: ActStatus.ACTIVE, // 새로 생성된 태스크는 기본적으로 활성 상태
       crtdBy: userId,
       startAt: createTaskDto.startAt || null,
       endAt: createTaskDto.endAt || null,
@@ -188,7 +192,7 @@ export class TeamService {
     const teamMembers = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
-      actStatus: [1],
+      actStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers?.length) {
@@ -209,15 +213,12 @@ export class TeamService {
       throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
     }
 
-    // 4. 수정 가능한 필드만 업데이트
+    // 4. 수정 가능한 필드만 업데이트 (taskStatus, actStatus는 별도 API로 관리)
     if (updateTaskDto.taskName !== undefined) {
       task.taskName = updateTaskDto.taskName;
     }
     if (updateTaskDto.taskDescription !== undefined) {
       task.taskDescription = updateTaskDto.taskDescription || null;
-    }
-    if (updateTaskDto.taskStatus !== undefined) {
-      task.taskStatus = updateTaskDto.taskStatus;
     }
     if (updateTaskDto.startAt !== undefined) {
       task.startAt = updateTaskDto.startAt || null;
@@ -225,6 +226,108 @@ export class TeamService {
     if (updateTaskDto.endAt !== undefined) {
       task.endAt = updateTaskDto.endAt || null;
     }
+
+    // 5. 업데이트된 엔티티 저장
+    return await this.teamTaskRepository.save(task);
+  }
+
+  /**
+   * 태스크 작업 상태 변경
+   * @param teamId 팀 ID
+   * @param taskId 태스크 ID
+   * @param updateStatusDto 상태 변경 DTO
+   * @param userId 사용자 ID
+   * @returns 업데이트된 태스크
+   */
+  async updateTaskStatus({
+    teamId,
+    taskId,
+    updateStatusDto,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    updateStatusDto: UpdateTaskStatusDto;
+    userId: number;
+  }): Promise<TeamTask> {
+    // 1. 팀 멤버 권한 확인
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!teamMembers?.length) {
+      throw new ForbiddenException('팀 멤버만 태스크 상태를 변경할 수 있습니다.');
+    }
+
+    // 2. 태스크 존재 여부 확인
+    const task = await this.teamTaskRepository.findOne({
+      where: { taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+    }
+
+    // 3. 태스크가 해당 팀에 속하는지 확인
+    if (task.teamId !== teamId) {
+      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+    }
+
+    // 4. 작업 상태 업데이트
+    task.taskStatus = updateStatusDto.taskStatus;
+
+    // 5. 업데이트된 엔티티 저장
+    return await this.teamTaskRepository.save(task);
+  }
+
+  /**
+   * 태스크 활성 상태 변경
+   * @param teamId 팀 ID
+   * @param taskId 태스크 ID
+   * @param updateActiveStatusDto 활성 상태 변경 DTO
+   * @param userId 사용자 ID
+   * @returns 업데이트된 태스크
+   */
+  async updateTaskActiveStatus({
+    teamId,
+    taskId,
+    updateActiveStatusDto,
+    userId,
+  }: {
+    teamId: number;
+    taskId: number;
+    updateActiveStatusDto: UpdateTaskActiveStatusDto;
+    userId: number;
+  }): Promise<TeamTask> {
+    // 1. 팀 멤버 권한 확인
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!teamMembers?.length) {
+      throw new ForbiddenException('팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.');
+    }
+
+    // 2. 태스크 존재 여부 확인
+    const task = await this.teamTaskRepository.findOne({
+      where: { taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+    }
+
+    // 3. 태스크가 해당 팀에 속하는지 확인
+    if (task.teamId !== teamId) {
+      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+    }
+
+    // 4. 활성 상태 업데이트
+    task.actStatus = updateActiveStatusDto.actStatus;
 
     // 5. 업데이트된 엔티티 저장
     return await this.teamTaskRepository.save(task);
@@ -245,16 +348,16 @@ export class TeamService {
     const teamMembers = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
-      actStatus: [1],
+      actStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers?.length) {
       throw new ForbiddenException('팀 멤버만 댓글을 작성할 수 있습니다.');
     }
 
-    // 2. 태스크 존재 여부 확인
+    // 2. 태스크 존재 여부 확인 (활성 태스크만)
     const task = await this.teamTaskRepository.findOne({
-      where: { taskId, teamId, taskStatus: 1 },
+      where: { taskId, teamId, actStatus: ActStatus.ACTIVE },
     });
 
     if (!task) {
@@ -267,7 +370,7 @@ export class TeamService {
       taskId,
       userId,
       commentContent: createCommentDto.commentContent,
-      status: 1,
+      status: ActStatus.ACTIVE,
     });
 
     return await this.taskCommentRepository.save(newComment);
@@ -311,7 +414,7 @@ export class TeamService {
     }
 
     // 5. 댓글이 활성 상태인지 확인
-    if (comment.status !== 1) {
+    if (comment.status !== ActStatus.ACTIVE) {
       throw new BadRequestException('삭제된 댓글은 수정할 수 없습니다.');
     }
 
@@ -361,12 +464,12 @@ export class TeamService {
     }
 
     // 5. 댓글이 이미 삭제된 상태인지 확인
-    if (comment.status === 0) {
+    if (comment.status === ActStatus.INACTIVE) {
       throw new BadRequestException('이미 삭제된 댓글입니다.');
     }
 
-    // 6. 소프트 삭제 (status를 0으로 변경)
-    comment.status = 0;
+    // 6. 소프트 삭제 (status를 비활성으로 변경)
+    comment.status = ActStatus.INACTIVE;
     comment.mdfdAt = new Date();
 
     await this.taskCommentRepository.save(comment);
@@ -400,10 +503,11 @@ export class TeamService {
     // 1. 팀 멤버 권한 확인
     await this.verifyTeamMemberAccess(teamId, userId);
 
-    // 2. 태스크 목록 조회 (시작일시 내림차순)
+    // 2. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순)
     const tasks = await this.teamTaskRepository
       .createQueryBuilder('task')
       .where('task.teamId = :teamId', { teamId })
+      .andWhere('task.actStatus = :actStatus', { actStatus: ActStatus.ACTIVE })
       .orderBy('task.startAt', 'DESC')
       .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
       .getMany();

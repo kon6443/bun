@@ -1,3 +1,4 @@
+import { TaskStatus } from '@/common/enums/task-status.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, IsDate } from 'class-validator';
 
@@ -12,7 +13,7 @@ export class CreateTeamTaskDto {
   @IsOptional()
   taskDescription: string;
 
-  @ApiProperty({ description: '태스크 상태', example: 0, default: 0 })
+  @ApiProperty({ description: '태스크 상태', example: TaskStatus.CREATED, default: TaskStatus.CREATED })
   @IsNumber()
   @Min(0)
   @IsOptional()
