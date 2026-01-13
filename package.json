@@ -23,6 +23,7 @@
     "rxjs": "^7.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "tsconfig-paths": "^4.2.0",
     "typeorm": "^0.3.28"
   },
   "devDependencies": {
@@ -32,7 +33,6 @@
     "@types/node": "^22.10.2",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/oracledb": "^6.6.1",
-    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.20.3",
     "typescript": "^5.7.2"
   },
