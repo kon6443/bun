@@ -497,13 +497,22 @@ export class TeamService {
    * 팀의 태스크 목록 조회
    * @param teamId 팀 ID
    * @param userId 사용자 ID
-   * @returns 태스크 목록 (시작일시 내림차순)
+   * @returns 팀 정보와 태스크 목록 (시작일시 내림차순)
    */
-  async getTasksByTeamId(teamId: number, userId: number): Promise<TeamTask[]> {
+  async getTasksByTeamId(teamId: number, userId: number): Promise<{ team: Team; tasks: TeamTask[] }> {
     // 1. 팀 멤버 권한 확인
     await this.verifyTeamMemberAccess(teamId, userId);
 
-    // 2. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순)
+    // 2. 팀 정보 조회
+    const team = await this.teamRepository.findOne({
+      where: { teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    // 3. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순)
     const tasks = await this.teamTaskRepository
       .createQueryBuilder('task')
       .where('task.teamId = :teamId', { teamId })
@@ -512,7 +521,7 @@ export class TeamService {
       .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
       .getMany();
 
-    return tasks;
+    return { team, tasks };
   }
 
   /**

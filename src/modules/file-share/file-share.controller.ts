@@ -73,10 +73,7 @@ export class FileShareController {
       throw new UnauthorizedException('인증이 필요합니다. API key를 제공해주세요.');
     }
 
-    const isValid = await this.fileShareService.validateShareIdAndApiKey(
-      finalShareId,
-      finalApiKey,
-    );
+    const isValid = await this.fileShareService.validateShareIdAndApiKey(finalShareId, finalApiKey);
 
     if (!isValid) {
       throw new UnauthorizedException('인증 실패. shareId와 API key가 일치하지 않습니다.');
@@ -91,17 +88,19 @@ export class FileShareController {
       return {
         status: 200,
         message: 'SUCCESS',
-        files: [],
+        data: {
+          files: [],
+        },
       };
     }
 
     const files = fs
       .readdirSync(shareDir)
-      .filter((filename) => {
+      .filter(filename => {
         const filePath = path.join(shareDir, filename);
         return fs.statSync(filePath).isFile();
       })
-      .map((filename) => {
+      .map(filename => {
         const filePath = path.join(shareDir, filename);
         const stats = fs.statSync(filePath);
         return {
@@ -116,7 +115,9 @@ export class FileShareController {
     return {
       status: 200,
       message: 'SUCCESS',
-      files,
+      data: {
+        files,
+      },
     };
   }
 
@@ -150,10 +151,7 @@ export class FileShareController {
       throw new UnauthorizedException('인증이 필요합니다. API key를 제공해주세요.');
     }
 
-    const isValid = await this.fileShareService.validateShareIdAndApiKey(
-      finalShareId,
-      finalApiKey,
-    );
+    const isValid = await this.fileShareService.validateShareIdAndApiKey(finalShareId, finalApiKey);
 
     if (!isValid) {
       throw new UnauthorizedException('인증 실패. shareId와 API key가 일치하지 않습니다.');
@@ -197,7 +195,7 @@ export class FileShareController {
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
 
-    fileStream.on('error', (error) => {
+    fileStream.on('error', error => {
       console.error('파일 스트리밍 오류:', error);
       if (!res.headersSent) {
         res.status(500).json({
@@ -208,4 +206,3 @@ export class FileShareController {
     });
   }
 }
-
