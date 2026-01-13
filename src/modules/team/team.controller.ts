@@ -99,8 +99,21 @@ export class TeamController {
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTasks(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
     const user = req.user;
-    const tasks = await this.teamService.getTasksByTeamId(teamId, user.userId);
-    return { message: 'SUCCESS', data: tasks };
+    const { team, tasks } = await this.teamService.getTasksByTeamId(teamId, user.userId);
+    return {
+      message: 'SUCCESS',
+      data: {
+        team: {
+          teamId: team.teamId,
+          teamName: team.teamName,
+          teamDescription: team.teamDescription,
+          leaderId: team.leaderId,
+          crtdAt: team.crtdAt,
+          actStatus: team.actStatus,
+        },
+        tasks,
+      },
+    };
   }
 
   @UseGuards(JwtAuthGuard)

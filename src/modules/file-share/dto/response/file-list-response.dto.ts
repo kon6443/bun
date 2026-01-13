@@ -17,6 +17,11 @@ export class FileInfoDto {
   mdfdAt: Date;
 }
 
+export class FileListDataDto {
+  @ApiProperty({ description: '파일 목록', type: [FileInfoDto] })
+  files: FileInfoDto[];
+}
+
 export class FileListResponseDto {
   @ApiProperty({ description: '상태 코드', example: 200 })
   status: number;
@@ -24,6 +29,6 @@ export class FileListResponseDto {
   @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
   message: string;
 
-  @ApiProperty({ description: '파일 목록', type: [FileInfoDto] })
-  files: FileInfoDto[];
+  @ApiProperty({ description: '파일 목록 데이터', type: FileListDataDto })
+  data: FileListDataDto;
 }
