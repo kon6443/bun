@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from "typeorm";
 import { TeamMember } from "./TeamMember";
+import { Team } from "./Team";
 
 @Entity("USERS")
 export class User {
@@ -28,6 +29,9 @@ export class User {
   isActivated: 0 | 1;
 
   // 관계
+  @OneToMany(() => Team, (team) => team.leaderId)
+  teams: Team[];
+
   @OneToMany(() => TeamMember, (teamMember) => teamMember.user)
   teamMembers: TeamMember[];
 }

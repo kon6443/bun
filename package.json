@@ -7,6 +7,7 @@
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^11.2.3",
     "@nestjs/typeorm": "^11.0.0",
+    "jsonwebtoken": "^9.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "cookie-parser": "^1.4.7",
@@ -29,15 +30,18 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
+    "@types/jsonwebtoken": "^9.0.6",
     "@types/oracledb": "^6.6.1",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.20.3",
     "typescript": "^5.7.2"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "nest start --watch",
+    "dev:tsx": "tsx watch -r tsconfig-paths/register src/main.ts",
     "build": "tsc",
-    "start": "node dist/main.js",
-    "start:dev": "tsx watch src/main.ts",
-    "start:prod": "node dist/main.js"
+    "start": "node -r tsconfig-paths/register dist/main.js",
+    "start:dev": "nest start --watch",
+    "start:prod": "node -r tsconfig-paths/register dist/main.js"
   }
 }

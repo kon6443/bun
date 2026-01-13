@@ -4,6 +4,8 @@ import { User } from '../entities/User';
 import { Team } from '../entities/Team';
 import { TeamMember } from '../entities/TeamMember';
 import { FileShare } from '../entities/FileShare';
+import { TeamTask } from '../entities/TeamTask';
+import { TaskComment } from '../entities/TaskComment';
 
 export default registerAs(
   'database',
@@ -15,7 +17,7 @@ export default registerAs(
       connectString: process.env.ORACLE_DB_CONNECT_STR,
       synchronize: false,
       logging: process.env.NODE_ENV === 'development',
-      entities: [User, Team, TeamMember, FileShare],
+      entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment],
       extra: {
         poolMin: 1,
         poolMax: 3,

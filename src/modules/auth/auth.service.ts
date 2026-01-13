@@ -1,7 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User } from '../../entities/User';
+import { sign, type SignOptions } from 'jsonwebtoken';
 
 export type UserType = {
   kakaoId?: number;
@@ -14,9 +16,23 @@ export type UserType = {
 @Injectable()
 export class AuthService {
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
+
+  private issueAccessToken({ userId, loginType }: { userId: number; loginType: string }): string {
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new UnauthorizedException('JWT_SECRET not configured');
+    }
+
+    // 예: "30d", "2h", "3600s" 등 (jsonwebtoken expiresIn 규격)
+    const expiresIn = (this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRES_IN') ??
+      '30d') as SignOptions['expiresIn'];
+
+    return sign({ sub: userId, loginType }, secret, { expiresIn });
+  }
 
   async getKakaoId({ accessToken }: { accessToken?: string }): Promise<number> {
     if (!accessToken) {
@@ -94,7 +110,7 @@ export class AuthService {
     kakaoUserSign,
   }: {
     kakaoUserSign: { accessToken: string; kakaoNickname?: string };
-  }): Promise<{ userId: number; loginType: string }> {
+  }): Promise<{ userId: number; loginType: string; accessToken: string }> {
     const { accessToken, kakaoNickname } = kakaoUserSign;
 
     // 카카오 accessToken 검증 요청, 응답으로 kakaoId 수신
@@ -109,17 +125,16 @@ export class AuthService {
     const loginType = 'KAKAO';
     let userId: number;
 
-    // 내부 Users 테이블에 없을 경우 회원가입 처리
     if (!user) {
+    // 내부 Users 테이블에 없을 경우 회원가입 처리
       userId = await this.userSignUp({
         user: { kakaoId, kakaoNickname } as UserType,
       });
-      return { userId, loginType };
-    }
-
+    } else {
     // 로그인한 userId 응답
     userId = user.userId;
-    return { userId, loginType };
+    }
+
+    return { userId, loginType, accessToken: this.issueAccessToken({ userId, loginType }) };
   }
 }
-

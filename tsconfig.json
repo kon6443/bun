@@ -5,6 +5,14 @@
     "lib": ["ES2020"],
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@entities/*": ["src/entities/*"],
+      "@modules/*": ["src/modules/*"],
+      "@common/*": ["src/common/*"],
+      "@config/*": ["src/config/*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,9 +26,3 @@
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
-
-
-
-
-
-
