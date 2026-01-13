@@ -614,4 +614,54 @@ export class TeamService {
       comments,
     };
   }
+
+  /**
+   * 팀의 활성화된 사용자 목록 조회
+   * @param teamId 팀 ID
+   * @param userId 사용자 ID (권한 확인용)
+   * @returns 활성화된 사용자 목록
+   */
+  async getTeamUsers(
+    teamId: number,
+    userId: number,
+  ): Promise<
+    Array<{
+      userId: number;
+      userName: string | null;
+      birth: Date | null;
+      kakaoEmail: string | null;
+      createdDate: Date;
+      isActivated: 0 | 1;
+    }>
+  > {
+    // 1. 팀 멤버 권한 확인
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    // 2. 팀 멤버와 사용자 정보 조회 (활성화된 사용자만)
+    const rawResults = await this.teamMemberRepository
+      .createQueryBuilder('tm')
+      .innerJoin('tm.user', 'user')
+      .where('tm.teamId = :teamId', { teamId })
+      .andWhere('user.isActivated = :isActivated', { isActivated: 1 })
+      .select([
+        'user.userId',
+        'user.userName',
+        'user.birth',
+        'user.kakaoEmail',
+        'user.createdDate',
+        'user.isActivated',
+      ])
+      .orderBy('user.userId', 'ASC')
+      .getRawMany();
+
+    // 3. Raw 데이터를 원하는 형태로 매핑
+    return rawResults.map(raw => ({
+      userId: raw.user_USER_ID,
+      userName: raw.user_USER_NAME,
+      birth: raw.user_BIRTH,
+      kakaoEmail: raw.user_KAKAO_EMAIL,
+      createdDate: raw.user_CREATED_DATE,
+      isActivated: raw.user_IS_ACTIVATED,
+    }));
+  }
 }

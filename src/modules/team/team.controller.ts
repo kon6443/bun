@@ -37,6 +37,7 @@ import {
   UpdateTaskCommentResponseDto,
   DeleteTaskCommentResponseDto,
 } from './dto/response/task-comment-response.dto';
+import { TeamUsersListResponseDto } from './dto/response/team-users-response.dto';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -72,6 +73,20 @@ export class TeamController {
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
     return { message: 'SUCCESS', action: '' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':teamId/users')
+  @ApiOperation({ summary: '팀 사용자 목록 조회' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamUsersListResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async getTeamUsers(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
+    const user = req.user;
+    const users = await this.teamService.getTeamUsers(teamId, user.userId);
+    return { message: 'SUCCESS', data: users };
   }
 
   @UseGuards(JwtAuthGuard)
