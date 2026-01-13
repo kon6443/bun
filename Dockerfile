@@ -52,8 +52,9 @@ RUN pnpm install --frozen-lockfile --prod
 # dist 폴더에는 빌드된 JavaScript 파일과 config 파일이 모두 포함됩니다
 COPY --from=builder /app/dist ./dist
 
-# Copy tsconfig.json for tsconfig-paths to resolve path aliases at runtime
-# tsconfig-paths/register는 런타임에 path alias(@/*)를 해결하기 위해 tsconfig.json이 필요합니다
+# Copy tsconfig files for tsconfig-paths to resolve path aliases at runtime
+# tsconfig.runtime.json은 런타임 기준(baseUrl=dist) 경로 매핑을 위해 필요합니다
+COPY tsconfig.runtime.json ./tsconfig.runtime.json
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Expose the port your application runs on
@@ -68,5 +69,6 @@ EXPOSE 3500
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=60s \
   CMD sh -c "curl -f http://localhost:${EXPRESS_PORT:-3500}/api/v1/health-check || exit 1"
 
-# Run the built application
-CMD ["pnpm", "start:prod"]
+# Run the built application with runtime tsconfig for path resolution
+ENV TS_NODE_PROJECT=/app/tsconfig.runtime.json
+CMD ["node", "-r", "tsconfig-paths/register", "dist/main.js"]
