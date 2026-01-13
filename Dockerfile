@@ -55,14 +55,14 @@ COPY --from=builder /app/dist ./dist
 # Expose the port your application runs on
 EXPOSE 3500
 
-# # Health check 설정
-# # start-period: 90초 동안 실패 허용 (애플리케이션 초기화 시간)
-# # interval: 10초마다 체크
-# # timeout: 5초 내 응답 필요
-# # retries: 3회 실패 시 unhealthy로 판단
-# # EXPRESS_PORT 환경 변수가 없으면 기본값 3500 사용
-# HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=60s \
-#   CMD sh -c "curl -f http://localhost:${EXPRESS_PORT:-3500}/api/v1/health-check || exit 1"
+# Health check 설정
+# start-period: 90초 동안 실패 허용 (애플리케이션 초기화 시간)
+# interval: 10초마다 체크
+# timeout: 5초 내 응답 필요
+# retries: 3회 실패 시 unhealthy로 판단
+# EXPRESS_PORT 환경 변수가 없으면 기본값 3500 사용
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=60s \
+  CMD sh -c "curl -f http://localhost:${EXPRESS_PORT:-3500}/api/v1/health-check || exit 1"
 
 # Run the built application
 CMD ["pnpm", "start:prod"]
