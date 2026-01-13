@@ -52,6 +52,10 @@ RUN pnpm install --frozen-lockfile --prod
 # dist 폴더에는 빌드된 JavaScript 파일과 config 파일이 모두 포함됩니다
 COPY --from=builder /app/dist ./dist
 
+# Copy tsconfig.json for tsconfig-paths to resolve path aliases at runtime
+# tsconfig-paths/register는 런타임에 path alias(@/*)를 해결하기 위해 tsconfig.json이 필요합니다
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
 # Expose the port your application runs on
 EXPOSE 3500
 
