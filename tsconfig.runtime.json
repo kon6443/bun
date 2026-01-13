@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./dist",
+    "paths": {
+      "@/*": ["./*"],
+      "@entities/*": ["./entities/*"],
+      "@modules/*": ["./modules/*"],
+      "@common/*": ["./common/*"],
+      "@config/*": ["./config/*"]
+    }
+  }
+}
