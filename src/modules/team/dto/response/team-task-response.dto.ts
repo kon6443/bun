@@ -1,6 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { TaskCommentWithUserResponseDto } from './task-comment-response.dto';
 
+export class TeamInfoResponseDto {
+  @ApiProperty({ description: '팀 ID', example: 1 })
+  teamId: number;
+
+  @ApiProperty({ description: '팀 이름', example: '개발팀' })
+  teamName: string;
+
+  @ApiProperty({ description: '팀 설명', example: '팀 설명입니다.', nullable: true })
+  teamDescription: string | null;
+
+  @ApiProperty({ description: '리더 ID', example: 1 })
+  leaderId: number;
+
+  @ApiProperty({ description: '팀 생성일시', example: '2026-01-01T00:00:00.000Z' })
+  crtdAt: Date;
+
+  @ApiProperty({ description: '활성 상태', example: 1 })
+  actStatus: number;
+}
+
 export class TeamTaskResponseDto {
   @ApiProperty({ description: '태스크 ID', example: 1 })
   taskId: number;
@@ -49,12 +69,20 @@ export class UpdateTeamTaskResponseDto {
   data: TeamTaskResponseDto;
 }
 
+export class TeamTaskListDataDto {
+  @ApiProperty({ description: '팀 정보', type: TeamInfoResponseDto })
+  team: TeamInfoResponseDto;
+
+  @ApiProperty({ description: '태스크 목록', type: [TeamTaskResponseDto] })
+  tasks: TeamTaskResponseDto[];
+}
+
 export class TeamTaskListResponseDto {
   @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
   message: string;
 
-  @ApiProperty({ description: '태스크 목록', type: [TeamTaskResponseDto] })
-  data: TeamTaskResponseDto[];
+  @ApiProperty({ description: '팀 정보와 태스크 목록', type: TeamTaskListDataDto })
+  data: TeamTaskListDataDto;
 }
 
 export class TaskDetailResponseDto extends TeamTaskResponseDto {
