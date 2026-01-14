@@ -409,9 +409,8 @@ export class TeamController {
 
   @UseGuards(OptionalJwtAuthGuard)
   @Post('invites/accept')
-  @ApiOperation({ summary: '팀 초대 수락 (비회원도 가능, Query 파라미터로도 토큰 전달 가능)' })
-  @ApiQuery({ name: 'token', description: '초대 토큰', type: String, required: false })
-  @ApiBody({ type: AcceptTeamInviteDto, required: false })
+  @ApiOperation({ summary: '팀 초대 수락 (비회원도 가능)' })
+  @ApiBody({ type: AcceptTeamInviteDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: AcceptTeamInviteResponseDto })
   @ApiResponse({
     status: 400,
@@ -422,18 +421,11 @@ export class TeamController {
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async acceptTeamInvite(
     @Req() req: Request & { user?: User },
-    @Body() acceptInviteDto?: AcceptTeamInviteDto,
-    @Query('token') queryToken?: string,
+    @Body() acceptInviteDto: AcceptTeamInviteDto,
   ) {
-    // Body 또는 Query 파라미터에서 토큰 추출
-    const inviteToken = queryToken || acceptInviteDto?.token;
-    if (!inviteToken) {
-      throw new BadRequestException('초대 토큰이 필요합니다.');
-    }
-
     const userId = req.user?.userId || null;
     const result = await this.teamService.acceptTeamInvite({
-      token: inviteToken,
+      token: acceptInviteDto.token,
       userId,
     });
     return {
