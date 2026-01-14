@@ -12,6 +12,7 @@ import { Team } from '@/entities/Team';
 import { TeamTask } from '@/entities/TeamTask';
 import { TaskComment } from '@/entities/TaskComment';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { UpdateTeamDto } from './dto/update-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
@@ -142,6 +143,39 @@ export class TeamService {
       });
       await manager.save(TeamMember, newTeamMember);
     });
+  }
+
+  async updateTeam({
+    teamId,
+    updateTeamDto,
+    userId,
+  }: {
+    teamId: number;
+    updateTeamDto: UpdateTeamDto;
+    userId: number;
+  }): Promise<Team> {
+    // 1. 팀 멤버 권한 확인
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    // 2. 팀 존재 여부 확인
+    const team = await this.teamRepository.findOne({
+      where: { teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    // 3. 수정 가능한 필드만 업데이트
+    if (updateTeamDto.teamName !== undefined) {
+      team.teamName = updateTeamDto.teamName;
+    }
+    if (updateTeamDto.teamDescription !== undefined) {
+      team.teamDescription = updateTeamDto.teamDescription || null;
+    }
+
+    // 4. 업데이트된 엔티티 저장
+    return await this.teamRepository.save(team);
   }
 
   async createTask({
