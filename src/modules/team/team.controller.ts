@@ -10,10 +10,13 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { Request } from 'express';
 import { User } from '../../entities/User';
 import { CreateTeamDto } from './dto/create-team.dto';
@@ -40,6 +43,10 @@ import {
   DeleteTaskCommentResponseDto,
 } from './dto/response/task-comment-response.dto';
 import { TeamUsersListResponseDto } from './dto/response/team-users-response.dto';
+import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
+import { AcceptTeamInviteDto } from './dto/accept-team-invite.dto';
+import { CreateTeamInviteResponseDto } from './dto/response/create-team-invite-response.dto';
+import { AcceptTeamInviteResponseDto } from './dto/response/accept-team-invite-response.dto';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -371,5 +378,77 @@ export class TeamController {
       userId: user.userId,
     });
     return { message: 'SUCCESS' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':teamId/invites')
+  @ApiOperation({ summary: '팀 초대 링크 생성' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiBody({ type: CreateTeamInviteDto })
+  @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamInviteResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 리더만 초대 링크를 생성할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async createTeamInvite(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Body() createInviteDto: CreateTeamInviteDto,
+  ) {
+    const user = req.user;
+    const result = await this.teamService.createTeamInvite({
+      teamId,
+      createInviteDto,
+      userId: user.userId,
+    });
+    return {
+      message: 'SUCCESS',
+      data: result,
+    };
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('invites/accept')
+  @ApiOperation({ summary: '팀 초대 수락 (비회원도 가능)' })
+  @ApiBody({ type: AcceptTeamInviteDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: AcceptTeamInviteResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: '유효하지 않거나 만료된 초대 링크입니다. 또는 이미 팀 멤버입니다.',
+  })
+  @ApiResponse({ status: 401, description: '회원가입이 필요합니다. (비회원인 경우)' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async acceptTeamInvite(
+    @Req() req: Request & { user?: User },
+    @Body() acceptInviteDto: AcceptTeamInviteDto,
+  ) {
+    const userId = req.user?.userId || null;
+    const result = await this.teamService.acceptTeamInvite({
+      token: acceptInviteDto.token,
+      userId,
+    });
+    return {
+      message: 'SUCCESS',
+      data: result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':teamId/invites')
+  @ApiOperation({ summary: '팀 초대 링크 목록 조회' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 리더만 초대 링크를 조회할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async getTeamInvites(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
+    const user = req.user;
+    const invites = await this.teamService.getTeamInvites(teamId, user.userId);
+    return {
+      message: 'SUCCESS',
+      data: invites,
+    };
   }
 }
