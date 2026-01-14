@@ -790,14 +790,14 @@ export class TeamService {
 
     await this.teamInvitationRepository.save(newInvite);
 
-    // 6. 초대 링크 URL 생성
-    const domain = this.configService.get<string>('DOMAIN');
-    if (!domain) {
+    // 6. 초대 링크 URL 생성 (프론트엔드 페이지로 리다이렉트)
+    const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
+    if (!frontendDomain) {
       throw new BadRequestException(
-        'DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
+        'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
       );
     }
-    const inviteLink = `${domain}/api/v1/teams/invites/accept?token=${token}`;
+    const inviteLink = `${frontendDomain}/teams/invitation?token=${token}`;
 
     return {
       inviteLink,
