@@ -7,10 +7,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import { sign, verify, JwtPayload } from 'jsonwebtoken';
 import { TeamMember } from '../../entities/TeamMember';
 import { Team } from '@/entities/Team';
 import { TeamTask } from '@/entities/TeamTask';
 import { TaskComment } from '@/entities/TaskComment';
+import { TeamInvitation } from '@/entities/TeamInvitation';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
@@ -19,6 +22,8 @@ import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
+import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
+import { AcceptTeamInviteDto } from './dto/accept-team-invite.dto';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 
 // export type TeamMemberType = {
@@ -57,6 +62,9 @@ export class TeamService {
     private readonly teamTaskRepository: Repository<TeamTask>,
     @InjectRepository(TaskComment)
     private readonly taskCommentRepository: Repository<TaskComment>,
+    @InjectRepository(TeamInvitation)
+    private readonly teamInvitationRepository: Repository<TeamInvitation>,
+    private readonly configService: ConfigService,
   ) {}
 
   async getTeamMembersBy({
@@ -706,5 +714,261 @@ export class TeamService {
       createdDate: raw.user_CREATED_DATE,
       isActivated: raw.user_IS_ACTIVATED,
     }));
+  }
+
+  /**
+   * 초대 링크 생성
+   * @param teamId 팀 ID
+   * @param createInviteDto 초대 링크 생성 DTO
+   * @param userId 생성자 ID (팀 리더만 가능)
+   * @returns 초대 링크 URL, 만료시간, 최대 사용 횟수
+   */
+  async createTeamInvite({
+    teamId,
+    createInviteDto,
+    userId,
+  }: {
+    teamId: number;
+    createInviteDto: CreateTeamInviteDto;
+    userId: number;
+  }): Promise<{ inviteLink: string; endAt: Date; usageMaxCnt: number }> {
+    // 1. 팀 존재 여부 및 활성 상태 확인
+    const team = await this.teamRepository.findOne({
+      where: { teamId, actStatus: ActStatus.ACTIVE },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    // 2. 팀 리더 권한 확인
+    if (team.leaderId !== userId) {
+      throw new ForbiddenException('팀 리더만 초대 링크를 생성할 수 있습니다.');
+    }
+
+    // 3. 만료시간 계산
+    const endAt = createInviteDto.endAt;
+
+    // 4. JWT 토큰 생성
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new UnauthorizedException('JWT_SECRET not configured');
+    }
+
+    const tokenPayload = {
+      teamId,
+      userId,
+      endAt: endAt.toISOString(),
+    };
+
+    // JWT 만료시간 계산 (밀리초를 초로 변환)
+    const expiresInSeconds = Math.floor((endAt.getTime() - new Date().getTime()) / 1000);
+    const token = sign(tokenPayload, secret, {
+      expiresIn: expiresInSeconds > 0 ? expiresInSeconds : 1, // 최소 1초
+    });
+
+    // 5. TeamInvitation 엔티티 저장
+    const newInvite = this.teamInvitationRepository.create({
+      teamId,
+      token,
+      userId,
+      endAt,
+      usageMaxCnt: createInviteDto.usageMaxCnt,
+      usageCurCnt: 0,
+      actStatus: ActStatus.ACTIVE,
+      crtdAt: new Date(),
+    });
+
+    await this.teamInvitationRepository.save(newInvite);
+
+    // 6. 초대 링크 URL 생성
+    const domain = this.configService.get<string>('DOMAIN') || 'http://localhost:3000';
+    const inviteLink = `${domain}/api/v1/teams/invites/accept?token=${token}`;
+
+    return {
+      inviteLink,
+      endAt,
+      usageMaxCnt: createInviteDto.usageMaxCnt,
+    };
+  }
+
+  /**
+   * 초대 토큰 검증
+   * @param inviteToken 초대 토큰
+   * @returns 검증된 초대 정보
+   */
+  async verifyTeamInviteToken(token: string): Promise<{
+    teamId: number;
+    userId: number;
+    endAt: Date;
+    usageMaxCnt: number;
+    usageCurCnt: number;
+    actStatus: ActStatus;
+  }> {
+    // 1. JWT 토큰 검증
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new UnauthorizedException('JWT_SECRET not configured');
+    }
+
+    let payload: JwtPayload & {
+      teamId: number;
+      userId: number;
+      endAt: string;
+    };
+
+    try {
+      payload = verify(token, secret) as JwtPayload & {
+        teamId: number;
+        userId: number;
+        endAt: string;
+      };
+    } catch (error) {
+      throw new BadRequestException('유효하지 않거나 만료된 초대 링크입니다.');
+    }
+
+    // 2. 데이터베이스에서 초대 정보 조회
+    const invite = await this.teamInvitationRepository.findOne({
+      where: { token, actStatus: ActStatus.ACTIVE },
+    });
+
+    if (!invite) {
+      throw new NotFoundException('초대 링크를 찾을 수 없습니다.');
+    }
+
+    // 3. 만료시간 확인 (JWT payload와 DB 둘 다 확인)
+    const now = new Date();
+    if (now > new Date(payload.endAt)) {
+      throw new BadRequestException('만료된 초대 링크입니다.');
+    }
+    if (now > invite.endAt) {
+      throw new BadRequestException('만료된 초대 링크입니다.');
+    }
+
+    // 4. 팀 활성 상태 확인
+    const team = await this.teamRepository.findOne({
+      where: { teamId: invite.teamId, actStatus: ActStatus.ACTIVE },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없거나 비활성 상태입니다.');
+    }
+
+    // 5. 사용 횟수 확인
+    if (invite.usageCurCnt >= invite.usageMaxCnt) {
+      throw new BadRequestException('초대 링크의 사용 횟수가 초과되었습니다.');
+    }
+
+    return {
+      teamId: payload.teamId,
+      userId: payload.userId,
+      endAt: invite.endAt,
+      usageMaxCnt: invite.usageMaxCnt,
+      usageCurCnt: invite.usageCurCnt,
+      actStatus: invite.actStatus,
+    };
+  }
+
+  /**
+   * 초대 수락 및 팀 가입
+   * @param token 초대 토큰
+   * @param userId 사용자 ID (비회원인 경우 null)
+   * @returns 가입한 팀 정보
+   */
+  async acceptTeamInvite({
+    token,
+    userId,
+  }: {
+    token: string;
+    userId: number | null;
+  }): Promise<{ teamId: number; teamName: string; message: string }> {
+    // 1. 토큰 검증
+    const inviteInfo = await this.verifyTeamInviteToken(token);
+
+    // 2. 사용자 ID가 제공된 경우, 이미 팀 멤버인지 확인
+    if (userId !== null) {
+      const existingMember = await this.teamMemberRepository.findOne({
+        where: {
+          teamId: inviteInfo.teamId,
+          userId,
+        },
+      });
+
+      if (existingMember) {
+        throw new BadRequestException('이미 팀 멤버입니다.');
+      }
+    }
+
+    // 3. 트랜잭션으로 팀 가입 및 사용 횟수 증가
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      // 사용자 ID가 null인 경우는 비회원이므로, 이 경우는 컨트롤러에서 처리해야 함
+      if (userId === null) {
+        throw new BadRequestException('회원가입이 필요합니다.');
+      }
+
+      // TeamMember 추가
+      const newTeamMember = manager.create(TeamMember, {
+        userId,
+        teamId: inviteInfo.teamId,
+        joinedAt: new Date(),
+        role: 'MEMBER',
+      });
+      await manager.save(TeamMember, newTeamMember);
+
+      // 사용 횟수 증가
+      const invite = await manager.findOne(TeamInvitation, {
+        where: { token, actStatus: ActStatus.ACTIVE },
+      });
+
+      if (invite) {
+        invite.usageCurCnt += 1;
+        await manager.save(TeamInvitation, invite);
+      }
+    });
+
+    // 4. 팀 정보 조회
+    const team = await this.teamRepository.findOne({
+      where: { teamId: inviteInfo.teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    return {
+      teamId: team.teamId,
+      teamName: team.teamName,
+      message: '팀에 성공적으로 가입했습니다.',
+    };
+  }
+
+  /**
+   * 팀의 초대 링크 목록 조회
+   * @param teamId 팀 ID
+   * @param userId 사용자 ID (팀 리더만 조회 가능)
+   * @returns 초대 링크 목록
+   */
+  async getTeamInvites(teamId: number, userId: number): Promise<TeamInvitation[]> {
+    // 1. 팀 존재 여부 확인
+    const team = await this.teamRepository.findOne({
+      where: { teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('팀을 찾을 수 없습니다.');
+    }
+
+    // 2. 팀 리더 권한 확인
+    if (team.leaderId !== userId) {
+      throw new ForbiddenException('팀 리더만 초대 링크를 조회할 수 있습니다.');
+    }
+
+    // 3. 초대 링크 목록 조회
+    const invites = await this.teamInvitationRepository.find({
+      where: { teamId },
+      order: { invId: 'DESC' },
+    });
+
+    return invites;
   }
 }
