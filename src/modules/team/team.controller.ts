@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Request } from 'express';
 import { User } from '../../entities/User';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { UpdateTeamDto } from './dto/update-team.dto';
 import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
@@ -26,6 +27,7 @@ import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { TeamMemberListResponseDto } from './dto/response/team-member-response.dto';
 import { CreateTeamResponseDto } from './dto/response/create-team-response.dto';
+import { UpdateTeamResponseDto } from './dto/response/update-team-response.dto';
 import {
   CreateTeamTaskResponseDto,
   UpdateTeamTaskResponseDto,
@@ -73,6 +75,40 @@ export class TeamController {
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
     return { message: 'SUCCESS', action: '' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':teamId')
+  @ApiOperation({ summary: '팀 정보 수정' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiBody({ type: UpdateTeamDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 팀 정보를 수정할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async updateTeam(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Body() updateTeamDto: UpdateTeamDto,
+  ) {
+    const user = req.user;
+    const team = await this.teamService.updateTeam({
+      teamId,
+      updateTeamDto,
+      userId: user.userId,
+    });
+    return {
+      message: 'SUCCESS',
+      data: {
+        teamId: team.teamId,
+        teamName: team.teamName,
+        teamDescription: team.teamDescription,
+        leaderId: team.leaderId,
+        crtdAt: team.crtdAt,
+        actStatus: team.actStatus,
+      },
+    };
   }
 
   @UseGuards(JwtAuthGuard)
