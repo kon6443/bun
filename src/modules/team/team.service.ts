@@ -737,18 +737,34 @@ export class TeamService {
     createInviteDto: CreateTeamInviteDto;
     userId: number;
   }): Promise<{ inviteLink: string; endAt: Date; usageMaxCnt: number }> {
-    // 1. 팀 존재 여부 및 활성 상태 확인
-    const team = await this.teamRepository.findOne({
-      where: { teamId, actStatus: ActStatus.ACTIVE },
+    if (!userId) {
+      throw new UnauthorizedException('팀 초대를 조회하려면 회원가입이 필요합니다.');
+    }
+    if (!teamId) {
+      throw new BadRequestException('팀 ID가 필요합니다.');
+    }
+    // // 1. 팀 존재 여부 및 활성 상태 확인
+    // const team = await this.teamRepository.findOne({
+    //   where: { teamId, actStatus: ActStatus.ACTIVE },
+    // });
+
+    // if (!team) {
+    //   throw new NotFoundException('팀을 찾을 수 없습니다.');
+    // }
+
+    // 2. 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
+    // const teamMember = await this.teamMemberRepository.findOne({
+    //   where: { teamId, userId },
+    // });
+
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
     });
 
-    if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없습니다.');
-    }
-
-    // 2. 팀 리더 권한 확인
-    if (team.leaderId !== userId) {
-      throw new ForbiddenException('팀 리더만 초대 링크를 생성할 수 있습니다.');
+    if (!teamMembers?.length || ['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+      throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
     }
 
     // 3. 만료시간 검증
@@ -772,7 +788,6 @@ export class TeamService {
     const tokenPayload = {
       teamId,
       userId,
-      // endAt은 DB에서만 관리하므로 JWT payload에는 포함하지 않음
     };
 
     // JWT 만료시간은 고정 8일로 설정
@@ -969,18 +984,21 @@ export class TeamService {
    * @returns 초대 링크 목록
    */
   async getTeamInvites(teamId: number, userId: number): Promise<TeamInvitation[]> {
-    // 1. 팀 존재 여부 확인
-    const team = await this.teamRepository.findOne({
-      where: { teamId, actStatus: ActStatus.ACTIVE },
+    if (!userId) {
+      throw new UnauthorizedException('팀 초대를 조회하려면 회원가입이 필요합니다.');
+    }
+    if (!teamId) {
+      throw new BadRequestException('팀 ID가 필요합니다.');
+    }
+    // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
+    const teamMembers = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
     });
 
-    if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없거나 비활성 상태입니다.');
-    }
-
-    // 2. 팀 리더 권한 확인
-    if (team.leaderId !== userId) {
-      throw new ForbiddenException('팀 리더만 초대 링크를 조회할 수 있습니다.');
+    if (!teamMembers?.length || ['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+      throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
     }
 
     // 3. 초대 링크 목록 조회

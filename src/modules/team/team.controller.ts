@@ -387,7 +387,7 @@ export class TeamController {
   @ApiBody({ type: CreateTeamInviteDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamInviteResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더만 초대 링크를 생성할 수 있습니다.' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTeamInvite(
@@ -440,7 +440,7 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS' })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더만 초대 링크를 조회할 수 있습니다.' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTeamInvites(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
