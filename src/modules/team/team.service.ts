@@ -763,7 +763,7 @@ export class TeamService {
       actStatus: [ActStatus.ACTIVE],
     });
 
-    if (!teamMembers?.length || ['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+    if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
       throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
     }
 
@@ -997,7 +997,7 @@ export class TeamService {
       actStatus: [ActStatus.ACTIVE],
     });
 
-    if (!teamMembers?.length || ['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+    if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
       throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
     }
 
