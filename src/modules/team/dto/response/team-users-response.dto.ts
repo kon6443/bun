@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TeamMemberRoleType } from '../../team.service';
 
 export class TeamUserResponseDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
@@ -12,6 +13,9 @@ export class TeamUserResponseDto {
 
   @ApiProperty({ description: '카카오 이메일', example: 'user@example.com', nullable: true })
   kakaoEmail: string | null;
+
+  @ApiProperty({ description: '팀 멤버 권한', example: 'MASTER' })
+  role: TeamMemberRoleType;
 
   @ApiProperty({ description: '생성일시', example: '2026-01-01T00:00:00.000Z' })
   createdDate: Date;
