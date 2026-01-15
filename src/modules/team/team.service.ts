@@ -49,6 +49,8 @@ export type UserTeamType = {
 
 export type TeamMemberType = TeamType & UserTeamType;
 
+export type TeamMemberRoleType = 'MASTER' | 'MANAGER' | 'MEMBER';
+
 @Injectable()
 export class TeamService {
   constructor(
@@ -681,6 +683,7 @@ export class TeamService {
       userName: string | null;
       birth: Date | null;
       kakaoEmail: string | null;
+      role: TeamMemberRoleType;
       createdDate: Date;
       isActivated: 0 | 1;
     }>
@@ -699,6 +702,7 @@ export class TeamService {
         'user.userName',
         'user.birth',
         'user.kakaoEmail',
+        'tm.role',
         'user.createdDate',
         'user.isActivated',
       ])
@@ -711,6 +715,7 @@ export class TeamService {
       userName: raw.user_USER_NAME,
       birth: raw.user_BIRTH,
       kakaoEmail: raw.user_KAKAO_EMAIL,
+      role: raw.tm_ROLE,
       createdDate: raw.user_CREATED_DATE,
       isActivated: raw.user_IS_ACTIVATED,
     }));
@@ -899,7 +904,7 @@ export class TeamService {
     userId: number | null;
   }): Promise<{ teamId: number; teamName: string; message: string }> {
     // 사용자 ID가 null인 경우는 비회원이므로, 회원가입이 필요함
-    if(!userId) {
+    if (!userId) {
       throw new UnauthorizedException('팀 초대를 수락하려면 회원가입이 필요합니다.');
     }
     // 1. 토큰 검증
