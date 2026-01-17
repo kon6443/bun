@@ -61,7 +61,6 @@ export class TeamController {
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getMyTeams(@Req() req: Request & { user: User }) {
     const user = req.user;
-    console.log(user);
     const teamMembers = await this.teamService.getTeamMembersBy({
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
