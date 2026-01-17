@@ -39,15 +39,6 @@ jobs:
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
             ENV_PATH="/home/ubuntu/desktop/deploy/sys/config/env/.env"
-            DEBUG_SECRETS_PATH="/home/ubuntu/desktop/deploy/sys/config/env/.secrets-debug"
-            cat <<'EOF' > "$DEBUG_SECRETS_PATH"
-            REGISTRY_PASSWORD=${{ secrets.REGISTRY_PASSWORD }}
-            REGISTRY_URL=${{ secrets.REGISTRY_URL }}
-            REGISTRY_USERNAME=${{ secrets.REGISTRY_USERNAME }}
-            DEPLOY_SERVER=${{ secrets.DEPLOY_SERVER }}
-            DEPLOY_USER=${{ secrets.DEPLOY_USER }}
-            SWARM_MANAGER_SSH_KEY=${{ secrets.SWARM_MANAGER_SSH_KEY }}
-            EOF
             docker service update \
             --with-registry-auth \
             $(grep -vE '^#|^$' $ENV_PATH | awk '{print "--env-add", $0}') \
