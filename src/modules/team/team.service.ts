@@ -121,6 +121,85 @@ export class TeamService {
     });
   }
 
+  /**
+   * 태스크 목록 조회 (재사용 가능한 공통 메서드)
+   * @param teamIds 팀 ID 목록 (선택)
+   * @param taskIds 태스크 ID 목록 (선택)
+   * @param actStatus 활성 상태 목록 (선택)
+   * @returns 태스크 목록 (생성자 이름 포함, 시작일시 내림차순)
+   */
+  async getTeamTasksBy({
+    teamIds,
+    taskIds,
+    actStatus,
+  }: {
+    teamIds?: number[];
+    taskIds?: number[];
+    actStatus?: number[];
+  }): Promise<
+    Array<{
+      taskId: number;
+      teamId: number;
+      taskName: string;
+      taskDescription: string | null;
+      taskStatus: number;
+      actStatus: number;
+      startAt: Date | null;
+      endAt: Date | null;
+      crtdAt: Date;
+      crtdBy: number;
+      userName: string | null;
+    }>
+  > {
+    const tasksQueryBuilder = this.teamTaskRepository
+      .createQueryBuilder('task')
+      .leftJoinAndSelect('task.user', 'user')
+      .select([
+        'task.taskId',
+        'task.teamId',
+        'task.taskName',
+        'task.taskDescription',
+        'task.taskStatus',
+        'task.actStatus',
+        'task.startAt',
+        'task.endAt',
+        'task.crtdAt',
+        'task.crtdBy',
+        'user.userName',
+      ]);
+
+    if (teamIds?.length) {
+      tasksQueryBuilder.andWhere('task.teamId IN (:...teamIds)', { teamIds });
+    }
+
+    if (taskIds?.length) {
+      tasksQueryBuilder.andWhere('task.taskId IN (:...taskIds)', { taskIds });
+    }
+
+    if (actStatus?.length) {
+      tasksQueryBuilder.andWhere('task.actStatus IN (:...actStatus)', { actStatus });
+    }
+
+    const tasks = await tasksQueryBuilder
+      .orderBy('task.startAt', 'DESC')
+      .addOrderBy('task.crtdAt', 'DESC')
+      .getMany();
+
+    return tasks.map(task => ({
+      taskId: task.taskId,
+      teamId: task.teamId,
+      taskName: task.taskName,
+      taskDescription: task.taskDescription,
+      taskStatus: task.taskStatus,
+      actStatus: task.actStatus,
+      startAt: task.startAt,
+      endAt: task.endAt,
+      crtdAt: task.crtdAt,
+      crtdBy: task.crtdBy,
+      userName: task.user?.userName || null,
+    }));
+  }
+
   async insertTeamMember({
     userId,
     teamId,
@@ -541,9 +620,27 @@ export class TeamService {
    * 팀의 태스크 목록 조회
    * @param teamId 팀 ID
    * @param userId 사용자 ID
-   * @returns 팀 정보와 태스크 목록 (시작일시 내림차순)
+   * @returns 팀 정보와 태스크 목록 (시작일시 내림차순, 생성자 이름 포함)
    */
-  async getTasksByTeamId(teamId: number, userId: number): Promise<{ team: Team; tasks: TeamTask[] }> {
+  async getTasksByTeamId(
+    teamId: number,
+    userId: number,
+  ): Promise<{
+    team: Team;
+    tasks: Array<{
+      taskId: number;
+      teamId: number;
+      taskName: string;
+      taskDescription: string | null;
+      taskStatus: number;
+      actStatus: number;
+      startAt: Date | null;
+      endAt: Date | null;
+      crtdAt: Date;
+      crtdBy: number;
+      userName: string | null;
+    }>;
+  }> {
     // 1. 팀 멤버 권한 확인
     await this.verifyTeamMemberAccess(teamId, userId);
 
@@ -556,14 +653,19 @@ export class TeamService {
       throw new NotFoundException('팀을 찾을 수 없습니다.');
     }
 
-    // 3. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순)
-    const tasks = await this.teamTaskRepository
-      .createQueryBuilder('task')
-      .where('task.teamId = :teamId', { teamId })
-      .andWhere('task.actStatus = :actStatus', { actStatus: ActStatus.ACTIVE })
-      .orderBy('task.startAt', 'DESC')
-      .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
-      .getMany();
+    // 3. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순, 생성자 이름 포함)
+    // [기존 코드 - 주석처리]
+    // const tasks = await this.teamTaskRepository
+    //   .createQueryBuilder('task')
+    //   .where('task.teamId = :teamId', { teamId })
+    //   .andWhere('task.actStatus = :actStatus', { actStatus: ActStatus.ACTIVE })
+    //   .orderBy('task.startAt', 'DESC')
+    //   .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
+    //   .getMany();
+    const tasks = await this.getTeamTasksBy({
+      teamIds: [teamId],
+      actStatus: [ActStatus.ACTIVE],
+    });
 
     return { team, tasks };
   }
@@ -622,14 +724,26 @@ export class TeamService {
    * @param teamId 팀 ID
    * @param taskId 태스크 ID
    * @param userId 사용자 ID
-   * @returns 태스크 정보와 댓글 목록
+   * @returns 태스크 정보 (생성자 이름 포함)와 댓글 목록
    */
   async getTaskWithComments(
     teamId: number,
     taskId: number,
     userId: number,
   ): Promise<{
-    task: TeamTask;
+    task: {
+      taskId: number;
+      teamId: number;
+      taskName: string;
+      taskDescription: string | null;
+      taskStatus: number;
+      actStatus: number;
+      startAt: Date | null;
+      endAt: Date | null;
+      crtdAt: Date;
+      crtdBy: number;
+      userName: string | null;
+    };
     comments: Array<{
       commentId: number;
       teamId: number;
@@ -645,10 +759,15 @@ export class TeamService {
     // 1. 팀 멤버 권한 확인
     await this.verifyTeamMemberAccess(teamId, userId);
 
-    // 2. 태스크 존재 여부 확인
-    const task = await this.teamTaskRepository.findOne({
-      where: { taskId },
+    // 2. 태스크 존재 여부 확인 (생성자 이름 포함)
+    // [기존 코드 - 주석처리]
+    // const task = await this.teamTaskRepository.findOne({
+    //   where: { taskId },
+    // });
+    const tasks = await this.getTeamTasksBy({
+      taskIds: [taskId],
     });
+    const task = tasks[0];
 
     if (!task) {
       throw new NotFoundException('태스크를 찾을 수 없습니다.');
