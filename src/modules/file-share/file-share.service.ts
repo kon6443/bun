@@ -8,12 +8,7 @@ export class FileShareService {
   constructor(
     @InjectRepository(FileShare)
     private readonly fileShareRepository: Repository<FileShare>,
-  ) {
-    console.log('FileShareService constructor called');
-    if (!this.fileShareRepository) {
-      console.error('FileShareService: fileShareRepository is undefined');
-    }
-  }
+  ) {}
 
   /**
    * shareId와 API Key를 함께 검증
