@@ -38,15 +38,7 @@ function ensureSharedDirectory() {
 @ApiTags('files')
 @Controller('files')
 export class FileShareController {
-  constructor(@Inject(FileShareService) private readonly fileShareService: FileShareService) {
-    console.log('FileShareController constructor called');
-    console.log('FileShareController: fileShareService type', typeof this.fileShareService);
-    if (!this.fileShareService) {
-      console.error('FileShareController: fileShareService is undefined');
-    } else {
-      console.log('FileShareController: fileShareService injected successfully');
-    }
-  }
+  constructor(@Inject(FileShareService) private readonly fileShareService: FileShareService) {}
 
   @Get()
   @ApiOperation({ summary: '공유 가능한 파일 목록 조회' })

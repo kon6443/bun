@@ -25,8 +25,6 @@ export class MainController {
   @ApiResponse({ status: 200, description: '연결 정상', type: HealthCheckResponseDto })
   async healthCheck() {
     try {
-      const users = await this.userRepository.find();
-      console.log('users:', users);
       return { message: 'CONNECTION HEALTHY', database: 'connected' };
     } catch (error) {
       console.error('Database connection error:', error);
