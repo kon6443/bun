@@ -3,8 +3,6 @@ import {
   Entity,
   Column,
   PrimaryGeneratedColumn,
-  ManyToOne,
-  OneToMany,
   JoinColumn,
   ManyToMany,
 } from 'typeorm';
@@ -30,6 +28,9 @@ export class Team {
 
   @Column({ name: 'ACT_STATUS', type: 'number' })
   actStatus: number;
+
+  @Column({ name: 'TELEGRAM_CHAT_ID', type: 'number', nullable: true })
+  telegramChatId: number | null;
 
   // 관계
   @ManyToMany(() => User, user => user.userId)
