@@ -21,7 +21,3 @@ export class DiscordService {
     console.log('DISCORD_BOT_TOKEN:', process.env.DISCORD_BOT_TOKEN);
   }
 }
-
-
-
-
