@@ -16,3 +16,11 @@ export enum ActStatus {
   INACTIVE = 0, // 비활성
   ACTIVE = 1, // 활성(노출)
 }
+
+export const TaskStatusMsg: Record<TaskStatus, string> = {
+  [TaskStatus.CREATED]: '생성됨',
+  [TaskStatus.IN_PROGRESS]: '진행중',
+  [TaskStatus.COMPLETED]: '완료',
+  [TaskStatus.ON_HOLD]: '보류',
+  [TaskStatus.CANCELLED]: '취소',
+};

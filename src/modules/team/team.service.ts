@@ -23,8 +23,8 @@ import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
 import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
-import { AcceptTeamInviteDto } from './dto/accept-team-invite.dto';
-import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
+import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
+import { TelegramService } from '../notification/telegram.service';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -38,6 +38,8 @@ export type TeamType = {
   crtdAt: Date;
   actStatus: number;
   leaderId: number;
+  telegramChatId: number | null;
+  teamDescription: string | null;
 };
 
 export type UserTeamType = {
@@ -67,7 +69,12 @@ export class TeamService {
     @InjectRepository(TeamInvitation)
     private readonly teamInvitationRepository: Repository<TeamInvitation>,
     private readonly configService: ConfigService,
+    private readonly telegramService: TelegramService,
   ) {}
+
+  getTeamTaskUrl({teamId, taskId}:{teamId: number, taskId: number}): string {
+    return `${this.configService.get<string>('NEXT_PUBLIC_DOMAIN')}/teams/${teamId}/tasks/${taskId}`;
+  }
 
   async getTeamMembersBy({
     userIds,
@@ -91,6 +98,7 @@ export class TeamService {
         't.crtdAt',
         't.actStatus',
         't.leaderId',
+        't.telegramChatId',
       ]);
 
     if (userIds?.length) {
@@ -117,6 +125,7 @@ export class TeamService {
         crtdAt: tm.team.crtdAt,
         actStatus: tm.team.actStatus,
         leaderId: tm.team.leaderId,
+        telegramChatId: tm.team.telegramChatId,
       };
     });
   }
@@ -286,7 +295,7 @@ export class TeamService {
     }
 
     // 태스크 생성
-    const newTask = this.teamTaskRepository.create({
+    const taskEntity = this.teamTaskRepository.create({
       teamId,
       taskName: createTaskDto.taskName,
       taskDescription: createTaskDto.taskDescription || null,
@@ -297,7 +306,20 @@ export class TeamService {
       endAt: createTaskDto.endAt || null,
     });
 
-    return await this.teamTaskRepository.save(newTask);
+    const task = await this.teamTaskRepository.save(taskEntity);
+
+    const url = this.getTeamTaskUrl({ teamId, taskId: task.taskId });
+    const message = [
+      `[${team.teamName}]`,
+      `✅ 태스크 생성 ✅`,
+      task.startAt || task.endAt
+        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        : null,
+      `🔗 ${url}`
+    ].filter(Boolean).join('\n');
+    this.telegramService.sendTeamNotification({ team, message });
+
+    return task;
   }
 
   async updateTask({
@@ -311,7 +333,7 @@ export class TeamService {
     updateTaskDto: UpdateTeamTaskDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 1. 팀 멤버 권한 확인
+    // 팀 멤버 권한 확인
     const teamMembers = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
@@ -322,7 +344,7 @@ export class TeamService {
       throw new ForbiddenException('팀 멤버만 태스크를 수정할 수 있습니다.');
     }
 
-    // 2. 태스크 존재 여부 확인
+    // 태스크 존재 여부 확인
     const task = await this.teamTaskRepository.findOne({
       where: { taskId },
     });
@@ -331,12 +353,12 @@ export class TeamService {
       throw new NotFoundException('태스크를 찾을 수 없습니다.');
     }
 
-    // 3. 태스크가 해당 팀에 속하는지 확인
+    // 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
       throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
     }
 
-    // 4. 수정 가능한 필드만 업데이트 (taskStatus, actStatus는 별도 API로 관리)
+    // 수정 가능한 필드만 업데이트 (taskStatus, actStatus는 별도 API로 관리)
     if (updateTaskDto.taskName !== undefined) {
       task.taskName = updateTaskDto.taskName;
     }
@@ -350,8 +372,20 @@ export class TeamService {
       task.endAt = updateTaskDto.endAt || null;
     }
 
-    // 5. 업데이트된 엔티티 저장
-    return await this.teamTaskRepository.save(task);
+    // 업데이트된 엔티티 저장
+    await this.teamTaskRepository.save(task);
+
+    const url = this.getTeamTaskUrl({ teamId, taskId });
+    const message = [
+      `[${teamMembers[0].teamName}]`,
+      `🔄 태스크 수정 🔄`,
+      task.startAt || task.endAt
+        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        : null,
+      `🔗 ${url}`
+    ].filter(Boolean).join('\n');
+    this.telegramService.sendTeamNotification({ team: teamMembers[0], message });
+    return task;
   }
 
   /**
@@ -373,7 +407,7 @@ export class TeamService {
     updateStatusDto: UpdateTaskStatusDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 1. 팀 멤버 권한 확인
+    // 팀 멤버 권한 확인
     const teamMembers = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
@@ -384,7 +418,7 @@ export class TeamService {
       throw new ForbiddenException('팀 멤버만 태스크 상태를 변경할 수 있습니다.');
     }
 
-    // 2. 태스크 존재 여부 확인
+    // 태스크 존재 여부 확인
     const task = await this.teamTaskRepository.findOne({
       where: { taskId },
     });
@@ -393,16 +427,30 @@ export class TeamService {
       throw new NotFoundException('태스크를 찾을 수 없습니다.');
     }
 
-    // 3. 태스크가 해당 팀에 속하는지 확인
+    // 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
       throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
     }
 
-    // 4. 작업 상태 업데이트
+    // 작업 상태 업데이트
+    const oldTaskStatus = task.taskStatus;
     task.taskStatus = updateStatusDto.taskStatus;
 
-    // 5. 업데이트된 엔티티 저장
-    return await this.teamTaskRepository.save(task);
+    // 업데이트된 엔티티 저장
+    await this.teamTaskRepository.save(task);
+    const url = this.getTeamTaskUrl({ teamId, taskId });
+    const message = [
+      `[${teamMembers[0].teamName}]`,
+      `🔄 태스크 작업 상태 변경 🔄`,
+      `[${TaskStatusMsg[oldTaskStatus]}] → [${TaskStatusMsg[task.taskStatus]}]`,
+      task.startAt || task.endAt
+        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        : null,
+      `🔗 ${url}`
+    ].filter(Boolean).join('\n');
+
+    this.telegramService.sendTeamNotification({ team: teamMembers[0], message });
+    return task;
   }
 
   /**
