@@ -28,11 +28,7 @@ export class SchedulerService {
     }
 
     try {
-      console.log(
-        `SCHEDULER START::[doTrash] - [${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}]`,
-      );
       const count = await this.userRepository.count();
-      console.log('total:', count);
     } catch (err: any) {
       console.error(
         `SCHEDULER ERROR::[doTrash] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]\n`,
@@ -61,9 +57,9 @@ export class SchedulerService {
         accumulator += value;
       }
 
-      console.log(
-        `[schedulerService][runCpuIntensiveLoop] iterations=${iterations}, result=${accumulator.toFixed(2)}`,
-      );
+      // console.log(
+      //   `[schedulerService][runCpuIntensiveLoop] iterations=${iterations}, result=${accumulator.toFixed(2)}`,
+      // );
     } catch (err: any) {
       console.error(
         `SCHEDULER ERROR::[runCpuIntensiveLoop] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]\n`,
