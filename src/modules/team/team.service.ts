@@ -315,9 +315,8 @@ export class TeamService {
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
         : null,
-      `🔗 ${url}`
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team, message });
+    this.telegramService.sendTeamNotification({ team, message, buttons: [{ text: '바로가기', url }] });
 
     return task;
   }
@@ -382,9 +381,9 @@ export class TeamService {
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
         : null,
-      `🔗 ${url}`
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMembers[0], message });
+    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
+
     return task;
   }
 
@@ -446,10 +445,9 @@ export class TeamService {
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
         : null,
-      `🔗 ${url}`
     ].filter(Boolean).join('\n');
+    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
 
-    this.telegramService.sendTeamNotification({ team: teamMembers[0], message });
     return task;
   }
 

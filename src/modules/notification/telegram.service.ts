@@ -6,6 +6,14 @@ import { ActStatus } from '@/common/enums/task-status.enum';
 import { TeamMember } from '@/entities/TeamMember';
 import { TeamMemberType } from '../team/team.service';
 
+/**
+ * 텔레그램 인라인 키보드 버튼 타입
+ */
+export interface TelegramInlineButton {
+  text: string;  // 버튼에 표시될 텍스트
+  url: string;   // 클릭 시 이동할 URL
+}
+
 @Injectable()
 export class TelegramService {
   private readonly baseUrl = 'https://api.telegram.org';
@@ -21,8 +29,15 @@ export class TelegramService {
   /**
    * 비동기 메시지 전송 (fire-and-forget)
    * 에러 발생 시 로깅만 하고 예외를 전파하지 않음
+   * @param chatId 텔레그램 채팅 ID
+   * @param message 전송할 메시지
+   * @param buttons 선택적 인라인 키보드 버튼 배열
    */
-  async sendMessageAsync(chatId: number | string, message: string): Promise<void> {
+  async sendMessageAsync(
+    chatId: number | string,
+    message: string,
+    buttons?: TelegramInlineButton[],
+  ): Promise<void> {
     if (!this.botToken) {
       console.warn('[TELEGRAM] sendMessageAsync(): REQUIRES: BOT_TOKEN_TELEGRAM');
       return;
@@ -42,7 +57,13 @@ export class TelegramService {
       body: JSON.stringify({
         chat_id: chatId,
         text: message,
-        parse_mode: 'HTML', // HTML 포맷 지원 (선택적)
+        parse_mode: 'HTML',
+        ...(buttons?.length && {
+          reply_markup: {
+            inline_keyboard: [buttons.map(btn => ({ text: btn.text, url: btn.url }))],
+            // inline_keyboard: [buttons.map(btn => ({ text: btn.text, url: btn.url.replace('http://localhost:3000', 'https://fivesouth.duckdns.org') }))],
+          },
+        }),
       }),
     });
 
@@ -56,9 +77,19 @@ export class TelegramService {
   /**
    * 팀 단위 메시지 전송
    * teamId로 chatId를 조회한 후 메시지 전송
+   * @param team 팀 정보 (telegramChatId 포함)
+   * @param message 전송할 메시지
+   * @param buttons 선택적 인라인 키보드 버튼 배열
    */
-  // async sendTeamNotification(teamId: number, message: string): Promise<void> {
-  async sendTeamNotification({team, message}: {team: Team|TeamMemberType, message: string;}): Promise<void> {
+  async sendTeamNotification({
+    team,
+    message,
+    buttons,
+  }: {
+    team: Team | TeamMemberType;
+    message: string;
+    buttons?: TelegramInlineButton[];
+  }): Promise<void> {
     const { teamId, telegramChatId } = team as Team;
 
     try {
@@ -67,7 +98,7 @@ export class TelegramService {
         return;
       }
 
-      await this.sendMessageAsync(telegramChatId, message);
+      await this.sendMessageAsync(telegramChatId, message, buttons);
     } catch (error) {
       console.error(`[TELEGRAM] sendTeamNotification() 오류:`, error);
     }
