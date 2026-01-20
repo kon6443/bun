@@ -46,9 +46,9 @@ export class SchedulerService {
     }
 
     try {
-      console.log(
-        `SCHEDULER START::[runCpuIntensiveLoop] - [${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}]`,
-      );
+      // console.log(
+      //   `SCHEDULER START::[runCpuIntensiveLoop] - [${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}]`,
+      // );
       const iterations = 5_000_000;
       let accumulator = 0;
 
