@@ -774,7 +774,7 @@ export class TeamService {
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
       .where('comment.taskId = :taskId', { taskId })
-      .orderBy('comment.crtdAt', 'ASC')
+      .orderBy('comment.commentId', 'ASC')
       .select([
         'comment.commentId',
         'comment.teamId',
