@@ -147,6 +147,10 @@ export class TeamService {
     actStatus?: number[];
   }): Promise<
     Array<{
+      teamName: string;
+      teamDescription: string | null;
+      leaderId: number;
+      telegramChatId: number | null;
       taskId: number;
       teamId: number;
       taskName: string;
@@ -162,8 +166,13 @@ export class TeamService {
   > {
     const tasksQueryBuilder = this.teamTaskRepository
       .createQueryBuilder('task')
+      .innerJoinAndSelect('task.team', 'team')
       .leftJoinAndSelect('task.user', 'user')
       .select([
+        'team.teamName',
+        'team.teamDescription',
+        'team.leaderId',
+        'team.telegramChatId',
         'task.taskId',
         'task.teamId',
         'task.taskName',
@@ -195,6 +204,10 @@ export class TeamService {
       .getMany();
 
     return tasks.map(task => ({
+      teamName: task.team.teamName,
+      teamDescription: task.team.teamDescription,
+      leaderId: task.team.leaderId,
+      telegramChatId: task.team.telegramChatId,
       taskId: task.taskId,
       teamId: task.teamId,
       taskName: task.taskName,
@@ -542,7 +555,16 @@ export class TeamService {
       status: ActStatus.ACTIVE,
     });
 
-    return await this.taskCommentRepository.save(newComment);
+    const comment = await this.taskCommentRepository.save(newComment);
+    const url = this.getTeamTaskUrl({ teamId, taskId });
+    const message = [
+      `[${teamMembers[0].teamName}] - ${task.taskName}`,
+      `💬 새로운 댓글이 등록되었습니다 💬`,
+      // `${comment.user.userName}: ${comment.commentContent}`,
+      comment.commentContent,
+    ].filter(Boolean).join('\n');
+    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
+    return comment;
   }
 
   async updateTaskComment({
@@ -558,7 +580,7 @@ export class TeamService {
     updateCommentDto: UpdateTaskCommentDto;
     userId: number;
   }): Promise<TaskComment> {
-    // 1. 댓글 존재 여부 확인
+    // 댓글 존재 여부 확인
     const comment = await this.taskCommentRepository.findOne({
       where: { commentId },
     });
@@ -567,34 +589,48 @@ export class TeamService {
       throw new NotFoundException('댓글을 찾을 수 없습니다.');
     }
 
-    // 2. 댓글 작성자 권한 확인
+    // 댓글 작성자 권한 확인
     if (comment.userId !== userId) {
       throw new ForbiddenException('댓글 작성자만 수정할 수 있습니다.');
     }
 
-    // 3. 댓글이 해당 태스크에 속하는지 확인
+    // 댓글이 해당 태스크에 속하는지 확인
     if (comment.taskId !== taskId) {
       throw new BadRequestException('댓글이 해당 태스크에 속하지 않습니다.');
     }
 
-    // 4. 댓글이 해당 팀에 속하는지 확인
+    // 댓글이 해당 팀에 속하는지 확인
     if (comment.teamId !== teamId) {
       throw new BadRequestException('댓글이 해당 팀에 속하지 않습니다.');
     }
 
-    // 5. 댓글이 활성 상태인지 확인
+    // 댓글이 활성 상태인지 확인
     if (comment.status !== ActStatus.ACTIVE) {
       throw new BadRequestException('삭제된 댓글은 수정할 수 없습니다.');
     }
 
-    // 6. 수정 가능한 필드만 업데이트
+    const [teamTask] = await this.getTeamTasksBy({taskIds: [taskId], teamIds: [teamId], actStatus: [ActStatus.ACTIVE]});
+
+    if (!teamTask) {
+      throw new NotFoundException('활성 태스크를 찾을 수 없습니다.');
+    }
+
+    // 수정 가능한 필드만 업데이트
     if (updateCommentDto.commentContent !== undefined) {
       comment.commentContent = updateCommentDto.commentContent;
     }
     comment.mdfdAt = new Date();
 
-    // 7. 업데이트된 엔티티 저장
-    return await this.taskCommentRepository.save(comment);
+    // 업데이트된 엔티티 저장
+    const updatedComment = await this.taskCommentRepository.save(comment);
+    const url = this.getTeamTaskUrl({ teamId, taskId });
+    const message = [
+      `[${teamTask.teamName}]`,
+      `💬 ${teamTask.taskName} 태스크에 댓글이 수정되었습니다 💬`,
+      updatedComment.commentContent,
+    ].filter(Boolean).join('\n');
+    this.telegramService.sendTeamNotification({ team: {teamId: teamTask.teamId, telegramChatId: teamTask.telegramChatId} as Team, message, buttons: [{ text: '바로가기', url }] });
+    return updatedComment;
   }
 
   async deleteTaskComment({
