@@ -199,8 +199,9 @@ export class TeamService {
     }
 
     const tasks = await tasksQueryBuilder
-      .orderBy('task.startAt', 'DESC')
-      .addOrderBy('task.crtdAt', 'DESC')
+      .addOrderBy('task.startAt', 'ASC')
+      .addOrderBy('task.taskId', 'DESC')
+      .addOrderBy('task.endAt', 'ASC')
       .getMany();
 
     return tasks.map(task => ({
