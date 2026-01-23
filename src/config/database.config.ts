@@ -20,6 +20,9 @@ export default registerAs('database', (): TypeOrmModuleOptions => {
       poolMin: 1,
       poolMax: 3,
       poolIncrement: 1,
+      poolPingInterval: 60,    // 60초 이상 유휴 연결 사용 전 ping 검사
+      poolTimeout: 300,        // 5분간 사용 안된 연결 풀에서 제거
+      expireTime: 5,           // 5분마다 연결 상태 체크
     },
     namingStrategy: undefined,
   };
