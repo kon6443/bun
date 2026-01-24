@@ -45,11 +45,20 @@ import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
 import { AcceptTeamInviteDto } from './dto/accept-team-invite.dto';
 import { CreateTeamInviteResponseDto } from './dto/response/create-team-invite-response.dto';
 import { AcceptTeamInviteResponseDto } from './dto/response/accept-team-invite-response.dto';
+import {
+  CreateTelegramLinkResponseDto,
+  TelegramStatusResponseDto,
+  DeleteTelegramLinkResponseDto,
+} from './dto/response/telegram-link-response.dto';
+import { TelegramService } from '../notification/telegram.service';
 
 @ApiTags('teams')
 @Controller('teams')
 export class TeamController {
-  constructor(private readonly teamService: TeamService) {}
+  constructor(
+    private readonly teamService: TeamService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -447,5 +456,76 @@ export class TeamController {
       message: 'SUCCESS',
       data: invites,
     };
+  }
+
+  // ==================== 텔레그램 연동 API ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':teamId/telegram/link')
+  @ApiOperation({ summary: '텔레그램 연동 링크 생성' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTelegramLinkResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 텔레그램 연동을 할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async createTelegramLink(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+  ) {
+    const user = req.user;
+    // 팀 멤버 확인
+    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+
+    const result = await this.telegramService.generateLinkToken(teamId);
+    return {
+      message: 'SUCCESS',
+      data: result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':teamId/telegram/status')
+  @ApiOperation({ summary: '텔레그램 연동 상태 조회' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: TelegramStatusResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async getTelegramStatus(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+  ) {
+    const user = req.user;
+    // 팀 멤버 확인
+    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+
+    const status = await this.telegramService.getLinkStatus(teamId);
+    return {
+      message: 'SUCCESS',
+      data: status,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':teamId/telegram/link')
+  @ApiOperation({ summary: '텔레그램 연동 해제' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTelegramLinkResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 텔레그램 연동을 해제할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async deleteTelegramLink(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+  ) {
+    const user = req.user;
+    // 팀 멤버 확인
+    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+
+    await this.telegramService.unlinkTeam(teamId);
+    return { message: 'SUCCESS' };
   }
 }
