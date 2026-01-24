@@ -324,7 +324,7 @@ export class TeamService {
 
     const url = this.getTeamTaskUrl({ teamId, taskId: task.taskId });
     const message = [
-      `[${team.teamName}]`,
+      `[${team.teamName}] - ${task.taskName}`,
       `✅ 태스크 생성 ✅`,
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
@@ -453,7 +453,7 @@ export class TeamService {
     await this.teamTaskRepository.save(task);
     const url = this.getTeamTaskUrl({ teamId, taskId });
     const message = [
-      `[${teamMembers[0].teamName}]`,
+      `[${teamMembers[0].teamName}] - ${task.taskName}`,
       `🔄 태스크 작업 상태 변경 🔄`,
       `[${TaskStatusMsg[oldTaskStatus]}] → [${TaskStatusMsg[task.taskStatus]}]`,
       task.startAt || task.endAt
