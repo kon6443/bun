@@ -10,6 +10,7 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { TeamService } from './team.service';
@@ -466,7 +467,7 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTelegramLinkResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 텔레그램 연동을 할 수 있습니다.' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTelegramLink(
@@ -474,8 +475,16 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // 팀 멤버 확인
-    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+    // MASTER/MANAGER 권한 체크
+    const [teamMembers] = await this.teamService.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [user.userId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
+      throw new ForbiddenException('팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.');
+    }
 
     const result = await this.telegramService.generateLinkToken(teamId);
     return {
@@ -514,7 +523,7 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTelegramLinkResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 텔레그램 연동을 해제할 수 있습니다.' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async deleteTelegramLink(
@@ -522,8 +531,16 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // 팀 멤버 확인
-    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+    // MASTER/MANAGER 권한 체크
+    const [teamMembers] = await this.teamService.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [user.userId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
+      throw new ForbiddenException('팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.');
+    }
 
     await this.telegramService.unlinkTeam(teamId);
     return { message: 'SUCCESS' };
