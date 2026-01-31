@@ -1,8 +1,7 @@
 import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiCookieAuth } from '@nestjs/swagger';
 import { DiscordService } from './discord.service';
-import { SendMessageDto } from './dto/send-message.dto';
-import { DiscordResponseDto, SendMessageResponseDto } from './dto/response/discord-response.dto';
+import { SendMessageDto, DiscordResponseDto, SendMessageResponseDto } from './notification.dto';
 
 @ApiTags('discord')
 @ApiCookieAuth('cookieAuth')
@@ -14,7 +13,7 @@ export class DiscordController {
   @ApiOperation({ summary: '디스코드 기본 api' })
   @ApiResponse({ status: 200, description: '성공', type: DiscordResponseDto })
   getDiscord() {
-    return { message: 'DISCORD ROUTER' };
+    return { code: 'SUCCESS', data: null, message: '' };
   }
 
   @Post(':discordId/message')
@@ -33,6 +32,6 @@ export class DiscordController {
       discordId,
       message: sendMessageDto.message,
     });
-    return { message: 'SUCCESS' };
+    return { code: 'SUCCESS', data: null, message: '' };
   }
 }

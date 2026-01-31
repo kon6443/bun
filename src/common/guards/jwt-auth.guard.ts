@@ -1,10 +1,14 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { verify, JwtPayload } from 'jsonwebtoken';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
+import {
+  AuthUnauthorizedErrorResponseDto,
+  AuthInvalidTokenErrorResponseDto,
+} from '../../modules/auth/auth-error.dto';
 
 type RequestWithUser = Request & { user?: User };
 
@@ -25,7 +29,7 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractToken(request);
     if (!token) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+      throw new AuthUnauthorizedErrorResponseDto('인증 토큰이 필요합니다.');
     }
 
     const payload = this.verifyToken(token);
@@ -35,7 +39,7 @@ export class JwtAuthGuard implements CanActivate {
     });
 
     if (!user) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+      throw new AuthUnauthorizedErrorResponseDto('사용자를 찾을 수 없습니다.');
     }
 
     request.user = user;
@@ -62,17 +66,20 @@ export class JwtAuthGuard implements CanActivate {
   protected verifyToken(token: string): AccessTokenPayload {
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new UnauthorizedException('JWT_SECRET not configured');
+      throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
 
     try {
       const payload = verify(token, secret) as AccessTokenPayload;
       if (!payload?.sub) {
-        throw new UnauthorizedException('UNAUTHORIZED');
+        throw new AuthInvalidTokenErrorResponseDto('유효하지 않은 토큰입니다.');
       }
       return payload;
     } catch (error) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+      if (error instanceof AuthInvalidTokenErrorResponseDto) {
+        throw error;
+      }
+      throw new AuthInvalidTokenErrorResponseDto('토큰 검증에 실패했습니다.');
     }
   }
 }

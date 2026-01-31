@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  NotFoundException,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -14,17 +8,33 @@ import { Team } from '../../entities/Team';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { CreateTeamDto } from './dto/create-team.dto';
-import { UpdateTeamDto } from './dto/update-team.dto';
-import { CreateTeamTaskDto } from './dto/create-team-task.dto';
-import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
-import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
-import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
-import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
-import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
-import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
+import {
+  CreateTeamDto,
+  UpdateTeamDto,
+  CreateTeamTaskDto,
+  UpdateTeamTaskDto,
+  CreateTaskCommentDto,
+  UpdateTaskCommentDto,
+  UpdateTaskStatusDto,
+  UpdateTaskActiveStatusDto,
+  CreateTeamInviteDto,
+  TeamMemberRoleType,
+} from './team.dto';
+import {
+  TeamNotFoundErrorResponseDto,
+  TeamForbiddenErrorResponseDto,
+  TeamTaskNotFoundErrorResponseDto,
+  TeamTaskBadRequestErrorResponseDto,
+  TeamCommentNotFoundErrorResponseDto,
+  TeamCommentForbiddenErrorResponseDto,
+  TeamInviteNotFoundErrorResponseDto,
+  TeamInviteExpiredErrorResponseDto,
+  TeamInviteForbiddenErrorResponseDto,
+  TeamMemberAlreadyExistsErrorResponseDto,
+} from './team-error.dto';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
 import { TelegramService } from '../notification/telegram.service';
+import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -51,7 +61,7 @@ export type UserTeamType = {
 
 export type TeamMemberType = TeamType & UserTeamType;
 
-export type TeamMemberRoleType = 'MASTER' | 'MANAGER' | 'MEMBER';
+// TeamMemberRoleType is now exported from team.dto.ts
 
 @Injectable()
 export class TeamService {
@@ -275,7 +285,7 @@ export class TeamService {
     });
 
     if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     // 3. 수정 가능한 필드만 업데이트
@@ -305,7 +315,7 @@ export class TeamService {
     });
 
     if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     // 태스크 생성
@@ -354,7 +364,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length) {
-      throw new ForbiddenException('팀 멤버만 태스크를 수정할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크를 수정할 수 있습니다.');
     }
 
     // 태스크 존재 여부 확인
@@ -363,12 +373,12 @@ export class TeamService {
     });
 
     if (!task) {
-      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
-      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('태스크가 해당 팀에 속하지 않습니다.');
     }
 
     // 수정 가능한 필드만 업데이트 (taskStatus, actStatus는 별도 API로 관리)
@@ -428,7 +438,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length) {
-      throw new ForbiddenException('팀 멤버만 태스크 상태를 변경할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크 상태를 변경할 수 있습니다.');
     }
 
     // 태스크 존재 여부 확인
@@ -437,12 +447,12 @@ export class TeamService {
     });
 
     if (!task) {
-      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
-      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('태스크가 해당 팀에 속하지 않습니다.');
     }
 
     // 작업 상태 업데이트
@@ -492,7 +502,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length) {
-      throw new ForbiddenException('팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.');
     }
 
     // 2. 태스크 존재 여부 확인
@@ -501,12 +511,12 @@ export class TeamService {
     });
 
     if (!task) {
-      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 3. 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
-      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('태스크가 해당 팀에 속하지 않습니다.');
     }
 
     // 4. 활성 상태 업데이트
@@ -535,7 +545,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length) {
-      throw new ForbiddenException('팀 멤버만 댓글을 작성할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 댓글을 작성할 수 있습니다.');
     }
 
     // 2. 태스크 존재 여부 확인 (활성 태스크만)
@@ -544,7 +554,7 @@ export class TeamService {
     });
 
     if (!task) {
-      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 3. 댓글 생성
@@ -587,33 +597,33 @@ export class TeamService {
     });
 
     if (!comment) {
-      throw new NotFoundException('댓글을 찾을 수 없습니다.');
+      throw new TeamCommentNotFoundErrorResponseDto();
     }
 
     // 댓글 작성자 권한 확인
     if (comment.userId !== userId) {
-      throw new ForbiddenException('댓글 작성자만 수정할 수 있습니다.');
+      throw new TeamCommentForbiddenErrorResponseDto('댓글 작성자만 수정할 수 있습니다.');
     }
 
     // 댓글이 해당 태스크에 속하는지 확인
     if (comment.taskId !== taskId) {
-      throw new BadRequestException('댓글이 해당 태스크에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 태스크에 속하지 않습니다.');
     }
 
     // 댓글이 해당 팀에 속하는지 확인
     if (comment.teamId !== teamId) {
-      throw new BadRequestException('댓글이 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 팀에 속하지 않습니다.');
     }
 
     // 댓글이 활성 상태인지 확인
     if (comment.status !== ActStatus.ACTIVE) {
-      throw new BadRequestException('삭제된 댓글은 수정할 수 없습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('삭제된 댓글은 수정할 수 없습니다.');
     }
 
     const [teamTask] = await this.getTeamTasksBy({taskIds: [taskId], teamIds: [teamId], actStatus: [ActStatus.ACTIVE]});
 
     if (!teamTask) {
-      throw new NotFoundException('활성 태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto('활성 태스크를 찾을 수 없습니다.');
     }
 
     // 수정 가능한 필드만 업데이트
@@ -651,27 +661,27 @@ export class TeamService {
     });
 
     if (!comment) {
-      throw new NotFoundException('댓글을 찾을 수 없습니다.');
+      throw new TeamCommentNotFoundErrorResponseDto();
     }
 
     // 2. 댓글 작성자 권한 확인
     if (comment.userId !== userId) {
-      throw new ForbiddenException('댓글 작성자만 삭제할 수 있습니다.');
+      throw new TeamCommentForbiddenErrorResponseDto('댓글 작성자만 삭제할 수 있습니다.');
     }
 
     // 3. 댓글이 해당 태스크에 속하는지 확인
     if (comment.taskId !== taskId) {
-      throw new BadRequestException('댓글이 해당 태스크에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 태스크에 속하지 않습니다.');
     }
 
     // 4. 댓글이 해당 팀에 속하는지 확인
     if (comment.teamId !== teamId) {
-      throw new BadRequestException('댓글이 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 팀에 속하지 않습니다.');
     }
 
     // 5. 댓글이 이미 삭제된 상태인지 확인
     if (comment.status === ActStatus.INACTIVE) {
-      throw new BadRequestException('이미 삭제된 댓글입니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('이미 삭제된 댓글입니다.');
     }
 
     // 6. 소프트 삭제 (status를 비활성으로 변경)
@@ -695,7 +705,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length) {
-      throw new ForbiddenException('팀 멤버만 접근할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 접근할 수 있습니다.');
     }
   }
 
@@ -733,7 +743,7 @@ export class TeamService {
     });
 
     if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     // 3. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순, 생성자 이름 포함)
@@ -853,12 +863,12 @@ export class TeamService {
     const task = tasks[0];
 
     if (!task) {
-      throw new NotFoundException('태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 3. 태스크가 해당 팀에 속하는지 확인
     if (task.teamId !== teamId) {
-      throw new BadRequestException('태스크가 해당 팀에 속하지 않습니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('태스크가 해당 팀에 속하지 않습니다.');
     }
 
     // 4. 댓글 목록 조회
@@ -940,10 +950,10 @@ export class TeamService {
     userId: number;
   }): Promise<{ inviteLink: string; endAt: Date; usageMaxCnt: number }> {
     if (!userId) {
-      throw new UnauthorizedException('팀 초대를 조회하려면 회원가입이 필요합니다.');
+      throw new AuthUnauthorizedErrorResponseDto('팀 초대를 생성하려면 회원가입이 필요합니다.');
     }
     if (!teamId) {
-      throw new BadRequestException('팀 ID가 필요합니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('팀 ID가 필요합니다.');
     }
     // // 1. 팀 존재 여부 및 활성 상태 확인
     // const team = await this.teamRepository.findOne({
@@ -951,7 +961,7 @@ export class TeamService {
     // });
 
     // if (!team) {
-    //   throw new NotFoundException('팀을 찾을 수 없습니다.');
+    //   throw new TeamNotFoundErrorResponseDto();
     // }
 
     // 2. 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
@@ -966,25 +976,25 @@ export class TeamService {
     });
 
     if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
-      throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
+      throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
     }
 
     // 3. 만료시간 검증
     const endAt = createInviteDto.endAt;
     const now = new Date();
     if (endAt <= now) {
-      throw new BadRequestException('만료 시간은 현재 시간보다 이후여야 합니다.');
+      throw new TeamInviteExpiredErrorResponseDto('만료 시간은 현재 시간보다 이후여야 합니다.');
     }
     // 최대 7일 제한
     const maxEndAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7일 후
     if (endAt > maxEndAt) {
-      throw new BadRequestException('만료 시간은 현재 시간부터 최대 7일까지만 설정 가능합니다.');
+      throw new TeamInviteExpiredErrorResponseDto('만료 시간은 현재 시간부터 최대 7일까지만 설정 가능합니다.');
     }
 
     // 4. JWT 토큰 생성
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new UnauthorizedException('JWT_SECRET not configured');
+      throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
 
     const tokenPayload = {
@@ -1015,7 +1025,7 @@ export class TeamService {
     // 6. 초대 링크 URL 생성 (프론트엔드 페이지로 리다이렉트)
     const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
     if (!frontendDomain) {
-      throw new BadRequestException(
+      throw new TeamTaskBadRequestErrorResponseDto(
         'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
       );
     }
@@ -1045,7 +1055,7 @@ export class TeamService {
     // 1. JWT 토큰 검증
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new UnauthorizedException('JWT_SECRET not configured');
+      throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
 
     let payload: JwtPayload & {
@@ -1059,7 +1069,7 @@ export class TeamService {
         userId: number;
       };
     } catch (error) {
-      throw new BadRequestException('유효하지 않거나 만료된 초대 링크입니다.');
+      throw new TeamInviteExpiredErrorResponseDto('유효하지 않거나 만료된 초대 링크입니다.');
     }
 
     // 2. 데이터베이스에서 초대 정보 조회
@@ -1068,13 +1078,13 @@ export class TeamService {
     });
 
     if (!invite) {
-      throw new NotFoundException('초대 링크를 찾을 수 없습니다.');
+      throw new TeamInviteNotFoundErrorResponseDto();
     }
 
     // 3. 만료시간 확인 (DB의 endAt만 확인 - DB에서 관리)
     const now = new Date();
     if (now > invite.endAt) {
-      throw new BadRequestException('만료된 초대 링크입니다.');
+      throw new TeamInviteExpiredErrorResponseDto();
     }
 
     // 4. 팀 활성 상태 확인
@@ -1083,17 +1093,17 @@ export class TeamService {
     });
 
     if (!team) {
-      throw new NotFoundException('팀을 찾을 수 없거나 비활성 상태입니다.');
+      throw new TeamNotFoundErrorResponseDto('팀을 찾을 수 없거나 비활성 상태입니다.');
     }
 
     // 5. JWT payload의 teamId와 DB의 teamId 일치 확인 (보안 강화)
     if (payload.teamId !== invite.teamId) {
-      throw new BadRequestException('유효하지 않은 초대 링크입니다.');
+      throw new TeamInviteExpiredErrorResponseDto('유효하지 않은 초대 링크입니다.');
     }
 
     // 6. 사용 횟수 확인
     if (invite.usageCurCnt >= invite.usageMaxCnt) {
-      throw new BadRequestException('초대 링크의 사용 횟수가 초과되었습니다.');
+      throw new TeamInviteExpiredErrorResponseDto('초대 링크의 사용 횟수가 초과되었습니다.');
     }
 
     return {
@@ -1122,7 +1132,7 @@ export class TeamService {
   }): Promise<{ teamId: number; teamName: string; message: string }> {
     // 사용자 ID가 null인 경우는 비회원이므로, 회원가입이 필요함
     if (!userId) {
-      throw new UnauthorizedException('팀 초대를 수락하려면 회원가입이 필요합니다.');
+      throw new AuthUnauthorizedErrorResponseDto('팀 초대를 수락하려면 회원가입이 필요합니다.');
     }
     // 1. 토큰 검증
     const inviteInfo = await this.verifyTeamInviteToken(token);
@@ -1136,7 +1146,7 @@ export class TeamService {
     });
 
     if (existingMember) {
-      throw new BadRequestException('이미 팀 멤버입니다.');
+      throw new TeamMemberAlreadyExistsErrorResponseDto();
     }
 
     // 3. 트랜잭션으로 팀 가입 및 사용 횟수 증가
@@ -1151,12 +1161,12 @@ export class TeamService {
         .getOne();
 
       if (!invite) {
-        throw new NotFoundException('초대 링크를 찾을 수 없습니다.');
+        throw new TeamInviteNotFoundErrorResponseDto();
       }
 
       // 사용 횟수 재확인 (락을 건 상태에서)
       if (invite.usageCurCnt >= invite.usageMaxCnt) {
-        throw new BadRequestException('초대 링크의 사용 횟수가 초과되었습니다.');
+        throw new TeamInviteExpiredErrorResponseDto('초대 링크의 사용 횟수가 초과되었습니다.');
       }
 
       // TeamMember 추가
@@ -1187,10 +1197,10 @@ export class TeamService {
    */
   async getTeamInvites(teamId: number, userId: number): Promise<TeamInvitation[]> {
     if (!userId) {
-      throw new UnauthorizedException('팀 초대를 조회하려면 회원가입이 필요합니다.');
+      throw new AuthUnauthorizedErrorResponseDto('팀 초대를 조회하려면 회원가입이 필요합니다.');
     }
     if (!teamId) {
-      throw new BadRequestException('팀 ID가 필요합니다.');
+      throw new TeamTaskBadRequestErrorResponseDto('팀 ID가 필요합니다.');
     }
     // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
     const teamMembers = await this.getTeamMembersBy({
@@ -1200,7 +1210,7 @@ export class TeamService {
     });
 
     if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
-      throw new ForbiddenException('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
+      throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
     }
 
     // 3. 초대 링크 목록 조회

@@ -1,4 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
+
+// ==================== Response DTOs ====================
 
 export class FileInfoDto {
   @ApiProperty({ description: '파일명', example: 'example.pdf' })
@@ -22,13 +25,7 @@ export class FileListDataDto {
   files: FileInfoDto[];
 }
 
-export class FileListResponseDto {
-  @ApiProperty({ description: '상태 코드', example: 200 })
-  status: number;
-
-  @ApiProperty({ description: '응답 메시지', example: 'SUCCESS' })
-  message: string;
-
+export class FileListResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ description: '파일 목록 데이터', type: FileListDataDto })
   data: FileListDataDto;
 }
