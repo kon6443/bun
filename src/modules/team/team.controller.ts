@@ -10,47 +10,43 @@ import {
   Body,
   Param,
   ParseIntPipe,
-  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
-import { TeamService } from './team.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { Request } from 'express';
-import { User } from '../../entities/User';
-import { CreateTeamDto } from './dto/create-team.dto';
-import { UpdateTeamDto } from './dto/update-team.dto';
-import { CreateTeamTaskDto } from './dto/create-team-task.dto';
-import { UpdateTeamTaskDto } from './dto/update-team-task.dto';
-import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
-import { UpdateTaskActiveStatusDto } from './dto/update-task-active-status.dto';
-import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
-import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
-import { ActStatus } from '../../common/enums/task-status.enum';
-import { TeamMemberListResponseDto } from './dto/response/team-member-response.dto';
-import { CreateTeamResponseDto } from './dto/response/create-team-response.dto';
-import { UpdateTeamResponseDto } from './dto/response/update-team-response.dto';
+import { TeamService } from './team.service';
 import {
+  CreateTeamDto,
+  UpdateTeamDto,
+  CreateTeamTaskDto,
+  UpdateTeamTaskDto,
+  UpdateTaskStatusDto,
+  UpdateTaskActiveStatusDto,
+  CreateTaskCommentDto,
+  UpdateTaskCommentDto,
+  CreateTeamInviteDto,
+  AcceptTeamInviteDto,
+  TeamMemberListResponseDto,
+  CreateTeamResponseDto,
+  UpdateTeamResponseDto,
   CreateTeamTaskResponseDto,
   UpdateTeamTaskResponseDto,
   TeamTaskListResponseDto,
   GetTaskDetailResponseDto,
-} from './dto/response/team-task-response.dto';
-import {
   CreateTaskCommentResponseDto,
   UpdateTaskCommentResponseDto,
   DeleteTaskCommentResponseDto,
-} from './dto/response/task-comment-response.dto';
-import { TeamUsersListResponseDto } from './dto/response/team-users-response.dto';
-import { CreateTeamInviteDto } from './dto/create-team-invite.dto';
-import { AcceptTeamInviteDto } from './dto/accept-team-invite.dto';
-import { CreateTeamInviteResponseDto } from './dto/response/create-team-invite-response.dto';
-import { AcceptTeamInviteResponseDto } from './dto/response/accept-team-invite-response.dto';
-import {
+  TeamUsersListResponseDto,
+  CreateTeamInviteResponseDto,
+  AcceptTeamInviteResponseDto,
   CreateTelegramLinkResponseDto,
   TelegramStatusResponseDto,
   DeleteTelegramLinkResponseDto,
-} from './dto/response/telegram-link-response.dto';
+} from './team.dto';
+import { TeamForbiddenErrorResponseDto } from './team-error.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
+import { User } from '../../entities/User';
+import { ActStatus } from '../../common/enums/task-status.enum';
 import { TelegramService } from '../notification/telegram.service';
 
 @ApiTags('teams')
@@ -73,7 +69,7 @@ export class TeamController {
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
     });
-    return { data: teamMembers };
+    return { code: 'SUCCESS', data: teamMembers, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -88,7 +84,7 @@ export class TeamController {
     createTeamDto.actStatus = ActStatus.ACTIVE;
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
-    return { message: 'SUCCESS', action: '' };
+    return { code: 'SUCCESS', data: null, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -113,7 +109,7 @@ export class TeamController {
       userId: user.userId,
     });
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: {
         teamId: team.teamId,
         teamName: team.teamName,
@@ -122,6 +118,7 @@ export class TeamController {
         crtdAt: team.crtdAt,
         actStatus: team.actStatus,
       },
+      message: '',
     };
   }
 
@@ -136,7 +133,7 @@ export class TeamController {
   async getTeamUsers(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
     const user = req.user;
     const users = await this.teamService.getTeamUsers(teamId, user.userId);
-    return { message: 'SUCCESS', data: users };
+    return { code: 'SUCCESS', data: users, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -151,7 +148,7 @@ export class TeamController {
     const user = req.user;
     const { team, tasks } = await this.teamService.getTasksByTeamId(teamId, user.userId);
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: {
         team: {
           teamId: team.teamId,
@@ -163,6 +160,7 @@ export class TeamController {
         },
         tasks,
       },
+      message: '',
     };
   }
 
@@ -185,11 +183,12 @@ export class TeamController {
     const user = req.user;
     const { task, comments } = await this.teamService.getTaskWithComments(teamId, taskId, user.userId);
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: {
         ...task,
         comments,
       },
+      message: '',
     };
   }
 
@@ -213,7 +212,7 @@ export class TeamController {
       createTaskDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: task };
+    return { code: 'SUCCESS', data: task, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -241,7 +240,7 @@ export class TeamController {
       updateTaskDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: task };
+    return { code: 'SUCCESS', data: task, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -269,7 +268,7 @@ export class TeamController {
       updateStatusDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: task };
+    return { code: 'SUCCESS', data: task, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -297,7 +296,7 @@ export class TeamController {
       updateActiveStatusDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: task };
+    return { code: 'SUCCESS', data: task, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -325,7 +324,7 @@ export class TeamController {
       createCommentDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: comment };
+    return { code: 'SUCCESS', data: comment, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -356,7 +355,7 @@ export class TeamController {
       updateCommentDto,
       userId: user.userId,
     });
-    return { message: 'SUCCESS', data: comment };
+    return { code: 'SUCCESS', data: comment, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -384,7 +383,7 @@ export class TeamController {
       commentId,
       userId: user.userId,
     });
-    return { message: 'SUCCESS' };
+    return { code: 'SUCCESS', data: null, message: '' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -409,8 +408,9 @@ export class TeamController {
       userId: user.userId,
     });
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: result,
+      message: '',
     };
   }
 
@@ -436,8 +436,9 @@ export class TeamController {
       userId,
     });
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: result,
+      message: '',
     };
   }
 
@@ -454,8 +455,9 @@ export class TeamController {
     const user = req.user;
     const invites = await this.teamService.getTeamInvites(teamId, user.userId);
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: invites,
+      message: '',
     };
   }
 
@@ -483,13 +485,14 @@ export class TeamController {
     });
 
     if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
-      throw new ForbiddenException('팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.');
     }
 
     const result = await this.telegramService.generateLinkToken(teamId);
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: result,
+      message: '',
     };
   }
 
@@ -539,10 +542,10 @@ export class TeamController {
     });
 
     if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
-      throw new ForbiddenException('팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.');
+      throw new TeamForbiddenErrorResponseDto('팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.');
     }
 
     await this.telegramService.unlinkTeam(teamId);
-    return { message: 'SUCCESS' };
+    return { code: 'SUCCESS', data: null, message: '' };
   }
 }

@@ -1,9 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User } from '../../entities/User';
 import { sign, type SignOptions } from 'jsonwebtoken';
+import {
+  AuthUnauthorizedErrorResponseDto,
+  AuthInvalidTokenErrorResponseDto,
+  AuthKakaoApiErrorResponseDto,
+} from './auth-error.dto';
 
 export type UserType = {
   kakaoId?: number;
@@ -24,7 +29,7 @@ export class AuthService {
   private issueAccessToken({ userId, loginType }: { userId: number; loginType: string }): string {
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new UnauthorizedException('JWT_SECRET not configured');
+      throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
 
     // 예: "30d", "2h", "3600s" 등 (jsonwebtoken expiresIn 규격)
@@ -36,7 +41,7 @@ export class AuthService {
 
   async getKakaoId({ accessToken }: { accessToken?: string }): Promise<number> {
     if (!accessToken) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+      throw new AuthUnauthorizedErrorResponseDto('카카오 액세스 토큰이 필요합니다.');
     }
 
     const kakaoAPI = `https://kapi.kakao.com/v1/user/access_token_info`;
@@ -50,7 +55,7 @@ export class AuthService {
 
     const status = kakaoRes.status;
     if (status !== 200) {
-      throw new UnauthorizedException('UNAUTHORIZED');
+      throw new AuthKakaoApiErrorResponseDto('카카오 인증에 실패했습니다.');
     }
 
     const user = (await kakaoRes.json()) as { id: number };

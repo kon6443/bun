@@ -1,7 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { TelegramService, TelegramUpdate } from './telegram.service';
-import { TelegramWebhookDto, TelegramWebhookResponseDto } from './dto/telegram-webhook.dto';
+import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.dto';
 
 @ApiTags('telegram')
 @Controller('telegram')

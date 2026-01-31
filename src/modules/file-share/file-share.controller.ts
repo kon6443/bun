@@ -14,7 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { FileShareService } from './file-share.service';
-import { FileListResponseDto } from './dto/response/file-list-response.dto';
+import { FileListResponseDto } from './file-share.dto';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -78,11 +78,11 @@ export class FileShareController {
 
     if (!fs.existsSync(shareDir)) {
       return {
-        status: 200,
-        message: 'SUCCESS',
+        code: 'SUCCESS',
         data: {
           files: [],
         },
+        message: '',
       };
     }
 
@@ -105,11 +105,11 @@ export class FileShareController {
       });
 
     return {
-      status: 200,
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: {
         files,
       },
+      message: '',
     };
   }
 
@@ -191,8 +191,9 @@ export class FileShareController {
       console.error('파일 스트리밍 오류:', error);
       if (!res.headersSent) {
         res.status(500).json({
-          status: 500,
+          code: 'INTERNAL_SERVER_ERROR',
           message: '파일 전송 중 오류가 발생했습니다.',
+          timestamp: new Date().toISOString(),
         });
       }
     });

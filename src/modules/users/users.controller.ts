@@ -2,9 +2,7 @@ import { Controller, Get, Put, Body, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { UsersService } from './users.service';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { UserProfileResponseDto } from './dto/response/user-profile-response.dto';
-import { UpdateUserResponseDto } from './dto/response/update-user-response.dto';
+import { UpdateUserDto, UserProfileResponseDto, UpdateUserResponseDto } from './users.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../entities/User';
 
