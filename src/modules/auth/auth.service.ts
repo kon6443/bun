@@ -106,11 +106,18 @@ export class AuthService {
     return savedUser.userId;
   }
 
+  /**
+   * 기본 닉네임 생성: userName이 null인 경우 "사용자{userId}" 형식으로 반환
+   */
+  private getDisplayName(userName: string | null, userId: number): string {
+    return userName ?? `사용자${userId}`;
+  }
+
   async postKakaoSignInUp({
     kakaoUserSign,
   }: {
     kakaoUserSign: { accessToken: string; kakaoNickname?: string };
-  }): Promise<{ userId: number; loginType: string; accessToken: string }> {
+  }): Promise<{ userId: number; userName: string; loginType: string; accessToken: string }> {
     const { accessToken, kakaoNickname } = kakaoUserSign;
 
     // 카카오 accessToken 검증 요청, 응답으로 kakaoId 수신
@@ -124,17 +131,27 @@ export class AuthService {
 
     const loginType = 'KAKAO';
     let userId: number;
+    let userName: string;
 
     if (!user) {
-    // 내부 Users 테이블에 없을 경우 회원가입 처리
+      // 내부 Users 테이블에 없을 경우 회원가입 처리
       userId = await this.userSignUp({
         user: { kakaoId, kakaoNickname } as UserType,
       });
+      // 신규 사용자: 카카오 닉네임 또는 기본 닉네임
+      userName = this.getDisplayName(kakaoNickname || null, userId);
     } else {
-    // 로그인한 userId 응답
-    userId = user.userId;
+      // 로그인한 userId 응답
+      userId = user.userId;
+      // 기존 사용자: DB의 userName 또는 기본 닉네임
+      userName = this.getDisplayName(user.userName, userId);
     }
 
-    return { userId, loginType, accessToken: this.issueAccessToken({ userId, loginType }) };
+    return {
+      userId,
+      userName,
+      loginType,
+      accessToken: this.issueAccessToken({ userId, loginType }),
+    };
   }
 }
