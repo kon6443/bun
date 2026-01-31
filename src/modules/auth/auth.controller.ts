@@ -1,8 +1,7 @@
 import { Controller, Post, Body, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { KakaoSignInUpDto } from './dto/kakao-sign-in-up.dto';
-import { KakaoSignInUpResponseDto } from './dto/response/kakao-sign-in-up-response.dto';
+import { KakaoSignInUpDto, KakaoSignInUpResponseDto } from './auth.dto';
 
 @ApiTags('auth')
 @ApiCookieAuth('cookieAuth')
