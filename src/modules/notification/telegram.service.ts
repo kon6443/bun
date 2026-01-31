@@ -3,7 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, EntityManager, DataSource } from 'typeorm';
 import { Team } from '../../entities/Team';
 import { TelegramLink } from '../../entities/TelegramLink';
-import { ActStatus } from '@/common/enums/task-status.enum';
+import { ActStatus } from '../../common/enums/task-status.enum';
 import { TeamMemberType } from '../team/team.service';
 import { randomBytes } from 'crypto';
 

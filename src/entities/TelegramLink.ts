@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Team } from './Team';
-import { ActStatus } from '@/common/enums/task-status.enum';
+import { ActStatus } from '../common/enums/task-status.enum';
 
 @Entity('TEAM_TELEGRAM_LINKS')
 export class TelegramLink {
