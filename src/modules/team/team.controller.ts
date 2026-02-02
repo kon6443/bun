@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { Request } from 'express';
 import { TeamService } from './team.service';
+import { TeamGateway } from './team.gateway';
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -55,6 +56,7 @@ export class TeamController {
   constructor(
     private readonly teamService: TeamService,
     private readonly telegramService: TelegramService,
+    private readonly teamGateway: TeamGateway, // WebSocket Gateway DI
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -212,6 +214,20 @@ export class TeamController {
       createTaskDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 태스크 생성 알림
+    this.teamGateway.emitTaskCreated(teamId, {
+      taskId: task.taskId,
+      teamId,
+      taskName: task.taskName,
+      taskDescription: task.taskDescription,
+      taskStatus: task.taskStatus,
+      actStatus: task.actStatus,
+      startAt: task.startAt?.toISOString() ?? null,
+      endAt: task.endAt?.toISOString() ?? null,
+      createdBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: task, message: '' };
   }
 
@@ -240,6 +256,19 @@ export class TeamController {
       updateTaskDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 태스크 수정 알림
+    this.teamGateway.emitTaskUpdated(teamId, {
+      taskId,
+      teamId,
+      taskName: task.taskName,
+      taskDescription: task.taskDescription,
+      taskStatus: task.taskStatus,
+      startAt: task.startAt?.toISOString() ?? null,
+      endAt: task.endAt?.toISOString() ?? null,
+      updatedBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: task, message: '' };
   }
 
@@ -262,12 +291,25 @@ export class TeamController {
     @Body() updateStatusDto: UpdateTaskStatusDto,
   ) {
     const user = req.user;
+    const newStatus = updateStatusDto.taskStatus;
+
     const task = await this.teamService.updateTaskStatus({
       teamId,
       taskId,
       updateStatusDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 태스크 상태 변경 알림
+    // Note: oldStatus는 service에서 반환하지 않으므로, 프론트에서는 newStatus 기준으로 처리
+    this.teamGateway.emitTaskStatusChanged(teamId, {
+      taskId,
+      teamId,
+      oldStatus: task.taskStatus, // 업데이트 후 값이지만, 호환성을 위해 포함
+      newStatus,
+      updatedBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: task, message: '' };
   }
 
@@ -290,12 +332,24 @@ export class TeamController {
     @Body() updateActiveStatusDto: UpdateTaskActiveStatusDto,
   ) {
     const user = req.user;
+    const newActStatus = updateActiveStatusDto.actStatus;
+
     const task = await this.teamService.updateTaskActiveStatus({
       teamId,
       taskId,
       updateActiveStatusDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 태스크 활성 상태 변경 알림
+    this.teamGateway.emitTaskActiveStatusChanged(teamId, {
+      taskId,
+      teamId,
+      oldActStatus: task.actStatus, // 업데이트 후 값
+      newActStatus,
+      updatedBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: task, message: '' };
   }
 
@@ -324,6 +378,18 @@ export class TeamController {
       createCommentDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 댓글 생성 알림
+    this.teamGateway.emitCommentCreated(teamId, {
+      commentId: comment.commentId,
+      taskId,
+      teamId,
+      userId: user.userId,
+      userName: user.userName,
+      commentContent: comment.commentContent,
+      crtdAt: comment.crtdAt?.toISOString() ?? new Date().toISOString(),
+    });
+
     return { code: 'SUCCESS', data: comment, message: '' };
   }
 
@@ -355,6 +421,17 @@ export class TeamController {
       updateCommentDto,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 댓글 수정 알림
+    this.teamGateway.emitCommentUpdated(teamId, {
+      commentId,
+      taskId,
+      teamId,
+      commentContent: comment.commentContent,
+      mdfdAt: comment.mdfdAt?.toISOString() ?? new Date().toISOString(),
+      updatedBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: comment, message: '' };
   }
 
@@ -383,6 +460,15 @@ export class TeamController {
       commentId,
       userId: user.userId,
     });
+
+    // WebSocket: 팀 전체에 댓글 삭제 알림
+    this.teamGateway.emitCommentDeleted(teamId, {
+      commentId,
+      taskId,
+      teamId,
+      deletedBy: user.userId,
+    });
+
     return { code: 'SUCCESS', data: null, message: '' };
   }
 
