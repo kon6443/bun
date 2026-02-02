@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -52,6 +53,11 @@ async function bootstrap() {
       },
       credentials: true,
     });
+
+    // WebSocket Adapter 설정 (NestJS 정석)
+    // Socket.io와 NestJS를 통합하여 동일한 HTTP 서버에서 WebSocket 지원
+    app.useWebSocketAdapter(new IoAdapter(app));
+    logger.log('WebSocket IoAdapter 설정 완료');
 
     // 보안 미들웨어
     app.use(helmet());
