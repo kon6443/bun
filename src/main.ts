@@ -9,6 +9,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { ALLOWED_ORIGINS } from './common/constants/cors.constants';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -35,17 +36,10 @@ async function bootstrap() {
     // 전역 인터셉터 (Nest.js 정석 방식)
     app.useGlobalInterceptors(new LoggingInterceptor(configService));
 
-    // CORS 설정
-    const allowedOrigins = [
-      'http://localhost',
-      'http://localhost:3000',
-      'http://localhost:3500',
-      'https://fivesouth.duckdns.org',
-    ];
-
+    // CORS 설정 (전역 상수 사용)
     app.enableCors({
       origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        if (!origin || ALLOWED_ORIGINS.indexOf(origin) !== -1) {
           callback(null, true);
         } else {
           callback(new Error('Not allowed by CORS'));

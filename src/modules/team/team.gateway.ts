@@ -29,17 +29,7 @@ import {
   JoinedTeamPayload,
   LeftTeamPayload,
 } from './team.events';
-
-/**
- * CORS 허용 Origin 목록
- */
-const ALLOWED_ORIGINS = [
-  'http://localhost',
-  'http://localhost:3000',
-  'http://localhost:3500',
-  'http://127.0.0.1:3000',
-  'https://fivesouth.duckdns.org',
-];
+import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
 /**
  * Team WebSocket Gateway
