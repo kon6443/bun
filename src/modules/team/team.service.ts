@@ -8,6 +8,7 @@ import { Team } from '../../entities/Team';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
+import { User } from '../../entities/User';
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -31,7 +32,17 @@ import {
   TeamInviteExpiredErrorResponseDto,
   TeamInviteForbiddenErrorResponseDto,
   TeamMemberAlreadyExistsErrorResponseDto,
+  TeamMemberNotFoundErrorResponseDto,
+  TeamRoleChangeForbiddenErrorResponseDto,
+  TeamInvalidRoleErrorResponseDto,
+  TeamSelfRoleChangeErrorResponseDto,
 } from './team-error.dto';
+import {
+  RoleKey,
+  canChangeRole,
+  ROLE_LABELS,
+  hasManagementPermission,
+} from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
 import { TelegramService } from '../notification/telegram.service';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
@@ -78,6 +89,8 @@ export class TeamService {
     private readonly taskCommentRepository: Repository<TaskComment>,
     @InjectRepository(TeamInvitation)
     private readonly teamInvitationRepository: Repository<TeamInvitation>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly configService: ConfigService,
     private readonly telegramService: TelegramService,
   ) {}
@@ -1220,5 +1233,120 @@ export class TeamService {
     });
 
     return invites;
+  }
+
+  /**
+   * 팀 멤버 역할 변경
+   * @param teamId 팀 ID
+   * @param targetUserId 대상 사용자 ID
+   * @param newRole 새 역할
+   * @param actorUserId 요청자 사용자 ID
+   * @returns 변경된 멤버 정보
+   */
+  async updateMemberRole({
+    teamId,
+    targetUserId,
+    newRole,
+    actorUserId,
+  }: {
+    teamId: number;
+    targetUserId: number;
+    newRole: 'MANAGER' | 'MEMBER';
+    actorUserId: number;
+  }): Promise<{
+    teamId: number;
+    userId: number;
+    userName: string | null;
+    previousRole: string;
+    newRole: string;
+    teamName: string;
+  }> {
+    // 1. 본인 역할 변경 차단
+    if (actorUserId === targetUserId) {
+      throw new TeamSelfRoleChangeErrorResponseDto();
+    }
+
+    // 2. newRole 유효성 검사 (DTO에서 'MANAGER' | 'MEMBER'로 제한됨)
+    // MASTER로 변경은 타입 레벨에서 차단됨 (팀당 1명 유지 정책)
+
+    // 3. 요청자 팀 멤버 정보 조회
+    const [actorMember] = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [actorUserId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!actorMember) {
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 역할을 변경할 수 있습니다.');
+    }
+
+    const actorRole = actorMember.role.toUpperCase() as RoleKey;
+
+    // 4. 요청자 관리 권한 확인
+    if (!hasManagementPermission(actorRole)) {
+      throw new TeamRoleChangeForbiddenErrorResponseDto('역할을 변경할 권한이 없습니다.');
+    }
+
+    // 5. 대상 사용자 팀 멤버 정보 조회
+    const [targetMember] = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [targetUserId],
+      actStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!targetMember) {
+      throw new TeamMemberNotFoundErrorResponseDto('대상 사용자가 팀 멤버가 아닙니다.');
+    }
+
+    const targetCurrentRole = targetMember.role.toUpperCase() as RoleKey;
+
+    // 6. 역할 변경 가능 여부 검증
+    if (!canChangeRole(actorRole, targetCurrentRole, newRole)) {
+      throw new TeamRoleChangeForbiddenErrorResponseDto(
+        `${ROLE_LABELS[actorRole]}는 ${ROLE_LABELS[targetCurrentRole]}를 ${ROLE_LABELS[newRole]}로 변경할 수 없습니다.`,
+      );
+    }
+
+    // 7. 역할이 동일하면 변경하지 않음
+    if (targetCurrentRole === newRole) {
+      throw new TeamInvalidRoleErrorResponseDto('현재 역할과 동일한 역할로는 변경할 수 없습니다.');
+    }
+
+    // 8. 역할 변경
+    const previousRole = targetMember.role;
+    await this.teamMemberRepository.update(
+      { teamId, userId: targetUserId },
+      { role: newRole },
+    );
+
+    // 9. 대상 사용자 이름 조회
+    const targetUser = await this.userRepository.findOne({
+      where: { userId: targetUserId },
+      select: ['userName'],
+    });
+
+    const userName = targetUser?.userName || null;
+
+    // 10. 텔레그램 알림 전송
+    const message = [
+      `[${actorMember.teamName}]`,
+      `🔄 역할 변경 알림 🔄`,
+      `${userName || `사용자 ${targetUserId}`}님의 역할이 변경되었습니다.`,
+      `${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`,
+    ].join('\n');
+
+    this.telegramService.sendTeamNotification({
+      team: { teamId, telegramChatId: actorMember.telegramChatId } as Team,
+      message,
+    });
+
+    return {
+      teamId,
+      userId: targetUserId,
+      userName,
+      previousRole,
+      newRole,
+      teamName: actorMember.teamName,
+    };
   }
 }

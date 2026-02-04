@@ -26,6 +26,7 @@ import {
   UpdateTaskCommentDto,
   CreateTeamInviteDto,
   AcceptTeamInviteDto,
+  UpdateMemberRoleDto,
   TeamMemberListResponseDto,
   CreateTeamResponseDto,
   UpdateTeamResponseDto,
@@ -42,6 +43,7 @@ import {
   CreateTelegramLinkResponseDto,
   TelegramStatusResponseDto,
   DeleteTelegramLinkResponseDto,
+  UpdateMemberRoleResponseDto,
 } from './team.dto';
 import { TeamForbiddenErrorResponseDto } from './team-error.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -633,5 +635,56 @@ export class TeamController {
 
     await this.telegramService.unlinkTeam(teamId);
     return { code: 'SUCCESS', data: null, message: '' };
+  }
+
+  // ==================== 멤버 역할 관리 API ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':teamId/users/:userId/role')
+  @ApiOperation({ summary: '팀 멤버 역할 변경' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiParam({ name: 'userId', description: '대상 사용자 ID', type: Number })
+  @ApiBody({ type: UpdateMemberRoleDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateMemberRoleResponseDto })
+  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 역할 변경, 동일 역할 변경 등)' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '역할을 변경할 권한이 없습니다.' })
+  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async updateMemberRole(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Param('userId', ParseIntPipe) targetUserId: number,
+    @Body() updateRoleDto: UpdateMemberRoleDto,
+  ) {
+    const user = req.user;
+    const result = await this.teamService.updateMemberRole({
+      teamId,
+      targetUserId,
+      newRole: updateRoleDto.newRole,
+      actorUserId: user.userId,
+    });
+
+    // WebSocket: 팀 전체에 역할 변경 알림
+    this.teamGateway.emitMemberRoleChanged(teamId, {
+      teamId: result.teamId,
+      userId: result.userId,
+      userName: result.userName,
+      previousRole: result.previousRole,
+      newRole: result.newRole,
+      changedBy: user.userId,
+    });
+
+    return {
+      code: 'SUCCESS',
+      data: {
+        teamId: result.teamId,
+        userId: result.userId,
+        userName: result.userName,
+        previousRole: result.previousRole,
+        newRole: result.newRole,
+      },
+      message: '',
+    };
   }
 }

@@ -30,6 +30,18 @@ export const TeamSocketEvents = {
   /** 댓글 삭제 알림 */
   COMMENT_DELETED: 'commentDeleted',
 
+  // ===== 온라인 유저 이벤트 =====
+  /** 유저 접속 알림 */
+  USER_JOINED: 'userJoined',
+  /** 유저 퇴장 알림 */
+  USER_LEFT: 'userLeft',
+  /** 온라인 유저 목록 */
+  ONLINE_USERS: 'onlineUsers',
+
+  // ===== 멤버 역할 이벤트 =====
+  /** 멤버 역할 변경 알림 */
+  MEMBER_ROLE_CHANGED: 'memberRoleChanged',
+
   // ===== 공통 이벤트 =====
   /** room 참가 성공 응답 */
   JOINED_TEAM: 'joinedTeam',
@@ -155,4 +167,60 @@ export interface JoinedTeamPayload {
 export interface LeftTeamPayload {
   teamId: number;
   room: string;
+}
+
+// ===== 온라인 유저 관련 타입 =====
+
+/**
+ * 온라인 유저 정보
+ */
+export interface OnlineUserInfo {
+  userId: number;
+  userName: string;
+  connectionCount: number; // 같은 유저의 접속 수 (다중 탭)
+}
+
+/**
+ * 유저 접속 이벤트 페이로드
+ */
+export interface UserJoinedPayload {
+  teamId: number;
+  userId: number;
+  userName: string;
+  connectionCount: number;
+  totalOnlineCount: number;
+}
+
+/**
+ * 유저 퇴장 이벤트 페이로드
+ */
+export interface UserLeftPayload {
+  teamId: number;
+  userId: number;
+  userName: string;
+  connectionCount: number; // 남은 접속 수 (0이면 완전히 오프라인)
+  totalOnlineCount: number;
+}
+
+/**
+ * 온라인 유저 목록 페이로드
+ */
+export interface OnlineUsersPayload {
+  teamId: number;
+  users: OnlineUserInfo[];
+  totalCount: number;
+}
+
+// ===== 멤버 역할 관련 타입 =====
+
+/**
+ * 멤버 역할 변경 이벤트 페이로드
+ */
+export interface MemberRoleChangedPayload {
+  teamId: number;
+  userId: number;
+  userName: string | null;
+  previousRole: string;
+  newRole: string;
+  changedBy: number;
 }

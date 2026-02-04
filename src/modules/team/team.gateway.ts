@@ -28,6 +28,11 @@ import {
   CommentDeletedPayload,
   JoinedTeamPayload,
   LeftTeamPayload,
+  OnlineUserInfo,
+  UserJoinedPayload,
+  UserLeftPayload,
+  OnlineUsersPayload,
+  MemberRoleChangedPayload,
 } from './team.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
@@ -56,6 +61,17 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @WebSocketServer()
   server: Server;
 
+  /**
+   * 온라인 유저 저장소
+   * Map<teamId, Map<userId, { userName, socketIds }>>
+   */
+  private onlineUsers = new Map<number, Map<number, { userName: string; socketIds: Set<string> }>>();
+
+  /**
+   * 소켓 ID → 유저/팀 매핑 (disconnect 시 빠른 조회용)
+   */
+  private socketToUser = new Map<string, { teamId: number; userId: number; userName: string }>();
+
   constructor(
     private readonly teamService: TeamService,
     private readonly configService: ConfigService,
@@ -82,6 +98,9 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    */
   handleDisconnect(client: Socket): void {
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
+
+    // 온라인 유저에서 제거
+    this.removeUserFromOnline(client.id);
   }
 
   // ===== 팀 Room 관리 (Client → Server) =====
@@ -124,6 +143,35 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const roomName = this.getRoomName(teamId);
     await client.join(roomName);
 
+    // 온라인 유저에 추가
+    if (userId && client.data.user?.userName) {
+      const userName = client.data.user.userName;
+      this.addUserToOnline(teamId, userId, userName, client.id);
+
+      // 다른 유저들에게 접속 알림 브로드캐스트
+      const userInfo = this.getUserOnlineInfo(teamId, userId);
+      if (userInfo) {
+        const onlineUsers = this.getOnlineUsersForTeam(teamId);
+        const payload: UserJoinedPayload = {
+          teamId,
+          userId,
+          userName,
+          connectionCount: userInfo.connectionCount,
+          totalOnlineCount: onlineUsers.length,
+        };
+        // 본인 제외하고 브로드캐스트
+        client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
+
+        // 본인에게는 현재 온라인 유저 목록 전송
+        const onlineUsersPayload: OnlineUsersPayload = {
+          teamId,
+          users: onlineUsers,
+          totalCount: onlineUsers.length,
+        };
+        client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
+      }
+    }
+
     this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);
 
     return { teamId, room: roomName };
@@ -141,6 +189,24 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ): Promise<LeftTeamPayload> {
     const { teamId } = dto;
     const roomName = this.getRoomName(teamId);
+
+    // 온라인 유저에서 제거 (퇴장 전에 브로드캐스트)
+    const userId = client.data.user?.userId;
+    const userName = client.data.user?.userName;
+    if (userId && userName) {
+      this.removeUserSocketFromTeam(teamId, userId, client.id);
+      const userInfo = this.getUserOnlineInfo(teamId, userId);
+      const onlineUsers = this.getOnlineUsersForTeam(teamId);
+
+      const payload: UserLeftPayload = {
+        teamId,
+        userId,
+        userName,
+        connectionCount: userInfo?.connectionCount ?? 0,
+        totalOnlineCount: onlineUsers.length,
+      };
+      client.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+    }
 
     await client.leave(roomName);
 
@@ -237,6 +303,20 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     );
   }
 
+  // ===== 멤버 역할 이벤트 브로드캐스트 =====
+
+  /**
+   * 멤버 역할 변경 이벤트 브로드캐스트
+   */
+  emitMemberRoleChanged(teamId: number, payload: MemberRoleChangedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.MEMBER_ROLE_CHANGED, payload);
+    this.logger.debug(
+      `멤버 역할 변경 브로드캐스트: teamId=${teamId}, userId=${payload.userId}, ` +
+        `${payload.previousRole} → ${payload.newRole}`,
+    );
+  }
+
   // ===== 유틸리티 =====
 
   /**
@@ -253,5 +333,138 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const roomName = this.getRoomName(teamId);
     const sockets = await this.server.in(roomName).fetchSockets();
     return sockets.length;
+  }
+
+  // ===== 온라인 유저 관리 메서드 =====
+
+  /**
+   * 유저를 온라인 목록에 추가
+   */
+  private addUserToOnline(teamId: number, userId: number, userName: string, socketId: string): void {
+    // 팀별 Map 초기화
+    if (!this.onlineUsers.has(teamId)) {
+      this.onlineUsers.set(teamId, new Map());
+    }
+
+    const teamUsers = this.onlineUsers.get(teamId)!;
+
+    // 유저별 소켓 Set 초기화 또는 추가
+    if (!teamUsers.has(userId)) {
+      teamUsers.set(userId, { userName, socketIds: new Set([socketId]) });
+    } else {
+      teamUsers.get(userId)!.socketIds.add(socketId);
+    }
+
+    // 역방향 매핑 저장
+    this.socketToUser.set(socketId, { teamId, userId, userName });
+
+    this.logger.debug(
+      `온라인 유저 추가: teamId=${teamId}, userId=${userId}, socketId=${socketId}, ` +
+        `총 접속 수=${teamUsers.get(userId)!.socketIds.size}`,
+    );
+  }
+
+  /**
+   * 특정 소켓을 팀의 온라인 목록에서 제거
+   */
+  private removeUserSocketFromTeam(teamId: number, userId: number, socketId: string): void {
+    const teamUsers = this.onlineUsers.get(teamId);
+    if (!teamUsers) return;
+
+    const userInfo = teamUsers.get(userId);
+    if (!userInfo) return;
+
+    userInfo.socketIds.delete(socketId);
+
+    // 모든 소켓이 제거되면 유저도 제거
+    if (userInfo.socketIds.size === 0) {
+      teamUsers.delete(userId);
+    }
+
+    // 팀에 유저가 없으면 팀 Map도 제거
+    if (teamUsers.size === 0) {
+      this.onlineUsers.delete(teamId);
+    }
+
+    // 역방향 매핑 제거
+    this.socketToUser.delete(socketId);
+
+    this.logger.debug(
+      `온라인 유저 소켓 제거: teamId=${teamId}, userId=${userId}, socketId=${socketId}`,
+    );
+  }
+
+  /**
+   * 소켓 연결 해제 시 온라인 목록에서 제거
+   */
+  private removeUserFromOnline(socketId: string): void {
+    const userMapping = this.socketToUser.get(socketId);
+    if (!userMapping) return;
+
+    const { teamId, userId, userName } = userMapping;
+    this.removeUserSocketFromTeam(teamId, userId, socketId);
+
+    // 남은 접속 수 확인
+    const userInfo = this.getUserOnlineInfo(teamId, userId);
+    const onlineUsers = this.getOnlineUsersForTeam(teamId);
+
+    // 퇴장 이벤트 브로드캐스트
+    const roomName = this.getRoomName(teamId);
+    const payload: UserLeftPayload = {
+      teamId,
+      userId,
+      userName,
+      connectionCount: userInfo?.connectionCount ?? 0,
+      totalOnlineCount: onlineUsers.length,
+    };
+    this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+
+    this.logger.debug(`온라인 유저 제거 (disconnect): socketId=${socketId}`);
+  }
+
+  /**
+   * 특정 유저의 온라인 정보 조회
+   */
+  private getUserOnlineInfo(teamId: number, userId: number): OnlineUserInfo | null {
+    const teamUsers = this.onlineUsers.get(teamId);
+    if (!teamUsers) return null;
+
+    const userInfo = teamUsers.get(userId);
+    if (!userInfo) return null;
+
+    return {
+      userId,
+      userName: userInfo.userName,
+      connectionCount: userInfo.socketIds.size,
+    };
+  }
+
+  /**
+   * 팀의 온라인 유저 목록 조회 (최대 100명)
+   */
+  private getOnlineUsersForTeam(teamId: number): OnlineUserInfo[] {
+    const teamUsers = this.onlineUsers.get(teamId);
+    if (!teamUsers) return [];
+
+    const users: OnlineUserInfo[] = [];
+    for (const [userId, userInfo] of teamUsers.entries()) {
+      users.push({
+        userId,
+        userName: userInfo.userName,
+        connectionCount: userInfo.socketIds.size,
+      });
+      // 최대 100명까지만
+      if (users.length >= 100) break;
+    }
+
+    return users;
+  }
+
+  /**
+   * 팀의 온라인 유저 수 조회
+   */
+  getOnlineUsersCount(teamId: number): number {
+    const teamUsers = this.onlineUsers.get(teamId);
+    return teamUsers?.size ?? 0;
   }
 }

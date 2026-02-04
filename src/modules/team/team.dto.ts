@@ -503,3 +503,38 @@ export class TelegramStatusResponseDto extends ApiSuccessResponseDto {
 }
 
 export class DeleteTelegramLinkResponseDto extends ApiSuccessResponseDto {}
+
+// ==================== Role Management DTOs ====================
+
+export class UpdateMemberRoleDto {
+  @ApiProperty({ 
+    description: '변경할 역할', 
+    example: 'MANAGER',
+    enum: ['MANAGER', 'MEMBER'],
+  })
+  @IsString()
+  @IsNotEmpty()
+  newRole: 'MANAGER' | 'MEMBER';
+}
+
+export class MemberRoleDataDto {
+  @ApiProperty({ description: '팀 ID', example: 1 })
+  teamId: number;
+
+  @ApiProperty({ description: '사용자 ID', example: 1 })
+  userId: number;
+
+  @ApiProperty({ description: '사용자 이름', example: '홍길동', nullable: true })
+  userName: string | null;
+
+  @ApiProperty({ description: '이전 역할', example: 'MEMBER' })
+  previousRole: string;
+
+  @ApiProperty({ description: '새 역할', example: 'MANAGER' })
+  newRole: string;
+}
+
+export class UpdateMemberRoleResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ description: '역할 변경 결과', type: MemberRoleDataDto })
+  data: MemberRoleDataDto;
+}
