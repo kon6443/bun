@@ -124,3 +124,51 @@ export class TeamMemberAlreadyExistsErrorResponseDto extends ApiErrorResponseDto
     super(400, message, 'TEAM_MEMBER_ALREADY_EXISTS');
   }
 }
+
+/**
+ * 팀 멤버를 찾을 수 없음 (404)
+ */
+export class TeamMemberNotFoundErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_MEMBER_NOT_FOUND', enum: ['TEAM_MEMBER_NOT_FOUND'] })
+  readonly code: string = 'TEAM_MEMBER_NOT_FOUND';
+
+  constructor(message: string = '팀 멤버를 찾을 수 없습니다.') {
+    super(404, message, 'TEAM_MEMBER_NOT_FOUND');
+  }
+}
+
+/**
+ * 역할 변경 권한 없음 (403)
+ */
+export class TeamRoleChangeForbiddenErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_ROLE_CHANGE_FORBIDDEN', enum: ['TEAM_ROLE_CHANGE_FORBIDDEN'] })
+  readonly code: string = 'TEAM_ROLE_CHANGE_FORBIDDEN';
+
+  constructor(message: string = '역할을 변경할 권한이 없습니다.') {
+    super(403, message, 'TEAM_ROLE_CHANGE_FORBIDDEN');
+  }
+}
+
+/**
+ * 잘못된 역할 요청 (400)
+ */
+export class TeamInvalidRoleErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_INVALID_ROLE', enum: ['TEAM_INVALID_ROLE'] })
+  readonly code: string = 'TEAM_INVALID_ROLE';
+
+  constructor(message: string = '유효하지 않은 역할입니다.') {
+    super(400, message, 'TEAM_INVALID_ROLE');
+  }
+}
+
+/**
+ * 본인 역할 변경 불가 (400)
+ */
+export class TeamSelfRoleChangeErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_SELF_ROLE_CHANGE', enum: ['TEAM_SELF_ROLE_CHANGE'] })
+  readonly code: string = 'TEAM_SELF_ROLE_CHANGE';
+
+  constructor(message: string = '본인의 역할은 변경할 수 없습니다.') {
+    super(400, message, 'TEAM_SELF_ROLE_CHANGE');
+  }
+}
