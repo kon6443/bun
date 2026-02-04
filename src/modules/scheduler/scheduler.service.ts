@@ -35,7 +35,6 @@ export class SchedulerService {
   })
   async handleDoTrash() {
     if (this.shouldSkipScheduler()) return;
-    console.log(`SCHEDULER START::[doTrash] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]`);
 
     try {
       const count = await this.userRepository.count();
