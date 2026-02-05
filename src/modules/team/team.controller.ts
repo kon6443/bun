@@ -9,9 +9,10 @@ import {
   UseGuards,
   Body,
   Param,
+  Query,
   ParseIntPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { Request } from 'express';
 import { TeamService } from './team.service';
 import { TeamGateway } from './team.gateway';
@@ -27,6 +28,7 @@ import {
   CreateTeamInviteDto,
   AcceptTeamInviteDto,
   UpdateMemberRoleDto,
+  UpdateMemberStatusDto,
   TeamMemberListResponseDto,
   CreateTeamResponseDto,
   UpdateTeamResponseDto,
@@ -44,6 +46,7 @@ import {
   TelegramStatusResponseDto,
   DeleteTelegramLinkResponseDto,
   UpdateMemberRoleResponseDto,
+  UpdateMemberStatusResponseDto,
 } from './team.dto';
 import { TeamForbiddenErrorResponseDto } from './team-error.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -72,6 +75,7 @@ export class TeamController {
     const teamMembers = await this.teamService.getTeamMembersBy({
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
     return { code: 'SUCCESS', data: teamMembers, message: '' };
   }
@@ -130,13 +134,23 @@ export class TeamController {
   @Get(':teamId/users')
   @ApiOperation({ summary: '팀 사용자 목록 조회' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiQuery({
+    name: 'status',
+    description: '멤버 상태 필터 (0: 비활성, 1: 활성, 미지정: 전체)',
+    required: false,
+    enum: [ActStatus.INACTIVE, ActStatus.ACTIVE],
+  })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamUsersListResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async getTeamUsers(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
+  async getTeamUsers(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Query('status', new ParseIntPipe({ optional: true })) status?: number,
+  ) {
     const user = req.user;
-    const users = await this.teamService.getTeamUsers(teamId, user.userId);
+    const users = await this.teamService.getTeamUsers(teamId, user.userId, status as 0 | 1 | undefined);
     return { code: 'SUCCESS', data: users, message: '' };
   }
 
@@ -565,11 +579,12 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // MASTER/MANAGER 권한 체크
+    // MASTER/MANAGER 권한 체크 (활성화된 멤버만)
     const [teamMembers] = await this.teamService.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
@@ -622,11 +637,12 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // MASTER/MANAGER 권한 체크
+    // MASTER/MANAGER 권한 체크 (활성화된 멤버만)
     const [teamMembers] = await this.teamService.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
@@ -683,6 +699,55 @@ export class TeamController {
         userName: result.userName,
         previousRole: result.previousRole,
         newRole: result.newRole,
+      },
+      message: '',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':teamId/users/:userId/status')
+  @ApiOperation({ summary: '팀 멤버 활성 상태 변경' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiParam({ name: 'userId', description: '대상 사용자 ID', type: Number })
+  @ApiBody({ type: UpdateMemberStatusDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateMemberStatusResponseDto })
+  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 상태 변경, 마스터 상태 변경, 동일 상태 변경 등)' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '멤버 상태를 변경할 권한이 없습니다.' })
+  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async updateMemberStatus(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Param('userId', ParseIntPipe) targetUserId: number,
+    @Body() updateStatusDto: UpdateMemberStatusDto,
+  ) {
+    const user = req.user;
+    const result = await this.teamService.updateMemberStatus({
+      teamId,
+      targetUserId,
+      newStatus: updateStatusDto.actStatus,
+      actorUserId: user.userId,
+    });
+
+    // WebSocket: 팀 전체에 상태 변경 알림
+    this.teamGateway.emitMemberStatusChanged(teamId, {
+      teamId: result.teamId,
+      userId: result.userId,
+      userName: result.userName,
+      previousStatus: result.previousStatus,
+      newStatus: result.newStatus,
+      changedBy: user.userId,
+    });
+
+    return {
+      code: 'SUCCESS',
+      data: {
+        teamId: result.teamId,
+        userId: result.userId,
+        userName: result.userName,
+        previousStatus: result.previousStatus,
+        newStatus: result.newStatus,
       },
       message: '',
     };
