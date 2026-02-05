@@ -41,6 +41,8 @@ export const TeamSocketEvents = {
   // ===== 멤버 역할 이벤트 =====
   /** 멤버 역할 변경 알림 */
   MEMBER_ROLE_CHANGED: 'memberRoleChanged',
+  /** 멤버 상태 변경 알림 */
+  MEMBER_STATUS_CHANGED: 'memberStatusChanged',
 
   // ===== 공통 이벤트 =====
   /** room 참가 성공 응답 */
@@ -222,5 +224,17 @@ export interface MemberRoleChangedPayload {
   userName: string | null;
   previousRole: string;
   newRole: string;
+  changedBy: number;
+}
+
+/**
+ * 멤버 상태 변경 이벤트 페이로드
+ */
+export interface MemberStatusChangedPayload {
+  teamId: number;
+  userId: number;
+  userName: string | null;
+  previousStatus: number;
+  newStatus: number;
   changedBy: number;
 }

@@ -34,6 +34,7 @@ import {
   UserLeftPayload,
   OnlineUsersPayload,
   MemberRoleChangedPayload,
+  MemberStatusChangedPayload,
 } from './team.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
@@ -315,6 +316,18 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.logger.debug(
       `멤버 역할 변경 브로드캐스트: teamId=${teamId}, userId=${payload.userId}, ` +
         `${payload.previousRole} → ${payload.newRole}`,
+    );
+  }
+
+  /**
+   * 멤버 상태 변경 이벤트 브로드캐스트
+   */
+  emitMemberStatusChanged(teamId: number, payload: MemberStatusChangedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.MEMBER_STATUS_CHANGED, payload);
+    this.logger.debug(
+      `멤버 상태 변경 브로드캐스트: teamId=${teamId}, userId=${payload.userId}, ` +
+        `${payload.previousStatus} → ${payload.newStatus}`,
     );
   }
 
