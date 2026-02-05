@@ -197,25 +197,12 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const { teamId } = dto;
     const roomName = this.getRoomName(teamId);
 
-    // 온라인 유저에서 제거 (퇴장 전에 브로드캐스트)
+    // 온라인 유저에서 제거 및 퇴장 알림
     const userId = client.data.user?.userId;
     const userName = client.data.user?.userName;
     if (userId && userName) {
       this.removeUserSocketFromTeam(teamId, userId, client.id);
-      const userInfo = this.getUserOnlineInfo(teamId, userId);
-      const onlineUsers = this.getOnlineUsersForTeam(teamId);
-
-      // 완전히 오프라인이 될 때만 (남은 연결이 없을 때만) 퇴장 알림
-      if (!userInfo) {
-        const payload: UserLeftPayload = {
-          teamId,
-          userId,
-          userName,
-          connectionCount: 0,
-          totalOnlineCount: onlineUsers.length,
-        };
-        client.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
-      }
+      this.broadcastUserLeftIfOffline(teamId, userId, userName, client.id);
     }
 
     await client.leave(roomName);
@@ -348,6 +335,45 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   // ===== 온라인 유저 관리 메서드 =====
 
   /**
+   * 유저 퇴장 알림 브로드캐스트 (완전히 오프라인일 때만)
+   *
+   * @param teamId - 팀 ID
+   * @param userId - 유저 ID
+   * @param userName - 유저 이름
+   * @param excludeSocketId - 브로드캐스트에서 제외할 소켓 ID (본인 제외용, optional)
+   */
+  private broadcastUserLeftIfOffline(
+    teamId: number,
+    userId: number,
+    userName: string,
+    excludeSocketId?: string,
+  ): void {
+    const userInfo = this.getUserOnlineInfo(teamId, userId);
+
+    // 아직 접속 중이면 알림 안 보냄
+    if (userInfo) return;
+
+    const onlineUsers = this.getOnlineUsersForTeam(teamId);
+    const roomName = this.getRoomName(teamId);
+    const payload: UserLeftPayload = {
+      teamId,
+      userId,
+      userName,
+      connectionCount: 0,
+      totalOnlineCount: onlineUsers.length,
+    };
+
+    if (excludeSocketId) {
+      // 특정 소켓 제외하고 브로드캐스트 (handleLeaveTeam에서 사용)
+      // excludeSocketId는 이미 room을 떠났거나 떠날 예정이므로 server.to로 전송
+      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+    } else {
+      // 전체 브로드캐스트 (removeUserFromOnline에서 사용)
+      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+    }
+  }
+
+  /**
    * 유저를 온라인 목록에 추가
    */
   private addUserToOnline(teamId: number, userId: number, userName: string, socketId: string): void {
@@ -413,23 +439,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     const { teamId, userId, userName } = userMapping;
     this.removeUserSocketFromTeam(teamId, userId, socketId);
-
-    // 남은 접속 수 확인
-    const userInfo = this.getUserOnlineInfo(teamId, userId);
-    const onlineUsers = this.getOnlineUsersForTeam(teamId);
-
-    // 완전히 오프라인이 될 때만 (남은 연결이 없을 때만) 퇴장 알림
-    if (!userInfo) {
-      const roomName = this.getRoomName(teamId);
-      const payload: UserLeftPayload = {
-        teamId,
-        userId,
-        userName,
-        connectionCount: 0,
-        totalOnlineCount: onlineUsers.length,
-      };
-      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
-    }
+    this.broadcastUserLeftIfOffline(teamId, userId, userName);
 
     this.logger.debug(`온라인 유저 제거 (disconnect): socketId=${socketId}`);
   }
