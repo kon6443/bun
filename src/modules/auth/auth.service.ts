@@ -9,6 +9,7 @@ import {
   AuthInvalidTokenErrorResponseDto,
   AuthKakaoApiErrorResponseDto,
 } from './auth-error.dto';
+import { getDisplayName } from '../../common/utils/user.utils';
 
 export type UserType = {
   kakaoId?: number;
@@ -111,13 +112,6 @@ export class AuthService {
     return savedUser.userId;
   }
 
-  /**
-   * 기본 닉네임 생성: userName이 null인 경우 "사용자{userId}" 형식으로 반환
-   */
-  private getDisplayName(userName: string | null, userId: number): string {
-    return userName ?? `사용자${userId}`;
-  }
-
   async postKakaoSignInUp({
     kakaoUserSign,
   }: {
@@ -144,12 +138,12 @@ export class AuthService {
         user: { kakaoId, kakaoNickname } as UserType,
       });
       // 신규 사용자: 카카오 닉네임 또는 기본 닉네임
-      userName = this.getDisplayName(kakaoNickname || null, userId);
+      userName = getDisplayName(kakaoNickname || null, userId);
     } else {
       // 로그인한 userId 응답
       userId = user.userId;
       // 기존 사용자: DB의 userName 또는 기본 닉네임
-      userName = this.getDisplayName(user.userName, userId);
+      userName = getDisplayName(user.userName, userId);
     }
 
     return {
