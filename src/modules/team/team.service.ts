@@ -20,6 +20,7 @@ import {
   UpdateTaskActiveStatusDto,
   CreateTeamInviteDto,
   TeamMemberRoleType,
+  MemberStatusFilterType,
 } from './team.dto';
 import {
   TeamNotFoundErrorResponseDto,
@@ -36,10 +37,14 @@ import {
   TeamRoleChangeForbiddenErrorResponseDto,
   TeamInvalidRoleErrorResponseDto,
   TeamSelfRoleChangeErrorResponseDto,
+  TeamMemberStatusChangeForbiddenErrorResponseDto,
+  TeamSelfStatusChangeErrorResponseDto,
+  TeamMasterStatusChangeErrorResponseDto,
 } from './team-error.dto';
 import {
   RoleKey,
   canChangeRole,
+  canManageRole,
   ROLE_LABELS,
   hasManagementPermission,
 } from '../../common/constants/role.constants';
@@ -68,6 +73,7 @@ export type UserTeamType = {
   userId: number;
   joinedAt: Date;
   role: string;
+  userActStatus: number;
 };
 
 export type TeamMemberType = TeamType & UserTeamType;
@@ -99,14 +105,24 @@ export class TeamService {
     return `${this.configService.get<string>('NEXT_PUBLIC_DOMAIN')}/teams/${teamId}/tasks/${taskId}`;
   }
 
+  /**
+   * 팀 멤버 조회 (재사용 가능한 공통 메서드)
+   * @param userIds 사용자 ID 목록 (선택)
+   * @param actStatus 팀 활성 상태 목록 (선택)
+   * @param teamIds 팀 ID 목록 (선택)
+   * @param userActStatus 팀 멤버 활성 상태 목록 (선택, 기본값: 활성만)
+   * @returns 팀 멤버 목록
+   */
   async getTeamMembersBy({
     userIds,
     actStatus,
     teamIds,
+    userActStatus,
   }: {
     userIds?: number[];
     actStatus?: number[];
     teamIds?: number[];
+    userActStatus?: number[];
   }): Promise<TeamMemberType[]> {
     const teamMembersQueryBuilder = this.teamMemberRepository
       .createQueryBuilder('ut')
@@ -116,6 +132,7 @@ export class TeamService {
         'ut.userId',
         'ut.joinedAt',
         'ut.role',
+        'ut.actStatus',
         't.teamName',
         't.teamDescription',
         't.crtdAt',
@@ -136,6 +153,11 @@ export class TeamService {
       teamMembersQueryBuilder.andWhere('t.actStatus IN (:...actStatus)', { actStatus });
     }
 
+    // 멤버 활성 상태 필터 (기본값: 활성만)
+    if (userActStatus?.length) {
+      teamMembersQueryBuilder.andWhere('ut.actStatus IN (:...userActStatus)', { userActStatus });
+    }
+
     const teamMembers = await teamMembersQueryBuilder.orderBy('ut.joinedAt', 'DESC').getMany();
     return teamMembers.map(tm => {
       return {
@@ -143,6 +165,7 @@ export class TeamService {
         userId: tm.userId,
         joinedAt: tm.joinedAt,
         role: tm.role,
+        userActStatus: tm.actStatus,
         teamName: tm.team.teamName,
         teamDescription: tm.team.teamDescription,
         crtdAt: tm.team.crtdAt,
@@ -369,16 +392,8 @@ export class TeamService {
     updateTaskDto: UpdateTeamTaskDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 팀 멤버 권한 확인
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length) {
-      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크를 수정할 수 있습니다.');
-    }
+    // 팀 멤버 권한 확인 (활성화된 멤버만)
+    const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
     // 태스크 존재 여부 확인
     const task = await this.teamTaskRepository.findOne({
@@ -413,13 +428,13 @@ export class TeamService {
 
     const url = this.getTeamTaskUrl({ teamId, taskId });
     const message = [
-      `[${teamMembers[0].teamName}]`,
+      `[${teamMember.teamName}]`,
       `🔄 태스크 수정 🔄`,
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
         : null,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
+    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
 
     return task;
   }
@@ -443,16 +458,8 @@ export class TeamService {
     updateStatusDto: UpdateTaskStatusDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 팀 멤버 권한 확인
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length) {
-      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크 상태를 변경할 수 있습니다.');
-    }
+    // 팀 멤버 권한 확인 (활성화된 멤버만)
+    const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
     // 태스크 존재 여부 확인
     const task = await this.teamTaskRepository.findOne({
@@ -476,14 +483,14 @@ export class TeamService {
     await this.teamTaskRepository.save(task);
     const url = this.getTeamTaskUrl({ teamId, taskId });
     const message = [
-      `[${teamMembers[0].teamName}] - ${task.taskName}`,
+      `[${teamMember.teamName}] - ${task.taskName}`,
       `🔄 태스크 작업 상태 변경 🔄`,
       `[${TaskStatusMsg[oldTaskStatus]}] → [${TaskStatusMsg[task.taskStatus]}]`,
       task.startAt || task.endAt
         ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
         : null,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
+    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
 
     return task;
   }
@@ -507,16 +514,8 @@ export class TeamService {
     updateActiveStatusDto: UpdateTaskActiveStatusDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 1. 팀 멤버 권한 확인
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length) {
-      throw new TeamForbiddenErrorResponseDto('팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.');
-    }
+    // 1. 팀 멤버 권한 확인 (활성화된 멤버만)
+    await this.verifyTeamMemberAccess(teamId, userId);
 
     // 2. 태스크 존재 여부 확인
     const task = await this.teamTaskRepository.findOne({
@@ -550,16 +549,8 @@ export class TeamService {
     createCommentDto: CreateTaskCommentDto;
     userId: number;
   }): Promise<TaskComment> {
-    // 1. 팀 멤버 권한 확인
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length) {
-      throw new TeamForbiddenErrorResponseDto('팀 멤버만 댓글을 작성할 수 있습니다.');
-    }
+    // 1. 팀 멤버 권한 확인 (활성화된 멤버만)
+    const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
     // 2. 태스크 존재 여부 확인 (활성 태스크만)
     const task = await this.teamTaskRepository.findOne({
@@ -582,12 +573,12 @@ export class TeamService {
     const comment = await this.taskCommentRepository.save(newComment);
     const url = this.getTeamTaskUrl({ teamId, taskId });
     const message = [
-      `[${teamMembers[0].teamName}] - ${task.taskName}`,
+      `[${teamMember.teamName}] - ${task.taskName}`,
       `💬 새로운 댓글이 등록되었습니다 💬`,
       // `${comment.user.userName}: ${comment.commentContent}`,
       comment.commentContent,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMembers[0], message, buttons: [{ text: '바로가기', url }] });
+    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
     return comment;
   }
 
@@ -708,18 +699,21 @@ export class TeamService {
    * 팀 멤버 권한 확인 (재사용 가능한 메서드)
    * @param teamId 팀 ID
    * @param userId 사용자 ID
-   * @throws ForbiddenException 팀 멤버가 아닐 경우
+   * @throws ForbiddenException 팀 멤버가 아니거나 비활성화된 경우
    */
-  async verifyTeamMemberAccess(teamId: number, userId: number): Promise<void> {
-    const teamMembers = await this.getTeamMembersBy({
+  async verifyTeamMemberAccess(teamId: number, userId: number): Promise<TeamMemberType> {
+    const [teamMember] = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
-      actStatus: [1],
+      actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
-    if (!teamMembers?.length) {
+    if (!teamMember) {
       throw new TeamForbiddenErrorResponseDto('팀 멤버만 접근할 수 있습니다.');
     }
+
+    return teamMember;
   }
 
   /**
@@ -894,14 +888,16 @@ export class TeamService {
   }
 
   /**
-   * 팀의 활성화된 사용자 목록 조회
+   * 팀의 사용자 목록 조회
    * @param teamId 팀 ID
    * @param userId 사용자 ID (권한 확인용)
-   * @returns 활성화된 사용자 목록
+   * @param statusFilter 멤버 상태 필터 ('all' | 'active' | 'inactive', 기본값: 'active')
+   * @returns 사용자 목록
    */
   async getTeamUsers(
     teamId: number,
     userId: number,
+    statusFilter?: MemberStatusFilterType,
   ): Promise<
     Array<{
       userId: number;
@@ -911,13 +907,14 @@ export class TeamService {
       role: TeamMemberRoleType;
       createdDate: Date;
       isActivated: 0 | 1;
+      userActStatus: 0 | 1;
     }>
   > {
-    // 1. 팀 멤버 권한 확인
+    // 1. 팀 멤버 권한 확인 (활성화된 멤버만)
     await this.verifyTeamMemberAccess(teamId, userId);
 
-    // 2. 팀 멤버와 사용자 정보 조회 (활성화된 사용자만)
-    const rawResults = await this.teamMemberRepository
+    // 2. 팀 멤버와 사용자 정보 조회
+    const queryBuilder = this.teamMemberRepository
       .createQueryBuilder('tm')
       .innerJoin('tm.user', 'user')
       .where('tm.teamId = :teamId', { teamId })
@@ -928,11 +925,21 @@ export class TeamService {
         'user.birth',
         'user.kakaoEmail',
         'tm.role',
+        'tm.actStatus',
         'user.createdDate',
         'user.isActivated',
       ])
-      .orderBy('user.userId', 'ASC')
-      .getRawMany();
+      .orderBy('user.userId', 'ASC');
+
+    // 멤버 상태 필터 적용 (0: 비활성, 1: 활성, undefined: 전체)
+    if (statusFilter === 1) {
+      queryBuilder.andWhere('tm.actStatus = :userActStatus', { userActStatus: ActStatus.ACTIVE });
+    } else if (statusFilter === 0) {
+      queryBuilder.andWhere('tm.actStatus = :userActStatus', { userActStatus: ActStatus.INACTIVE });
+    }
+    // undefined인 경우 필터 없음 (전체 조회)
+
+    const rawResults = await queryBuilder.getRawMany();
 
     // 3. Raw 데이터를 원하는 형태로 매핑
     return rawResults.map(raw => ({
@@ -943,6 +950,7 @@ export class TeamService {
       role: raw.tm_ROLE,
       createdDate: raw.user_CREATED_DATE,
       isActivated: raw.user_IS_ACTIVATED,
+      userActStatus: raw.tm_ACT_STATUS,
     }));
   }
 
@@ -986,6 +994,7 @@ export class TeamService {
       teamIds: [teamId],
       userIds: [userId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
@@ -1150,7 +1159,7 @@ export class TeamService {
     // 1. 토큰 검증
     const inviteInfo = await this.verifyTeamInviteToken(token);
 
-    // 2. 사용자 ID가 제공된 경우, 이미 팀 멤버인지 확인
+    // 2. 사용자 ID가 제공된 경우, 이미 팀 멤버인지 확인 (비활성화 포함)
     const existingMember = await this.teamMemberRepository.findOne({
       where: {
         teamId: inviteInfo.teamId,
@@ -1158,11 +1167,9 @@ export class TeamService {
       },
     });
 
-    if (existingMember) {
-      throw new TeamMemberAlreadyExistsErrorResponseDto();
-    }
+    // 3. 트랜잭션으로 팀 가입/재활성화 및 사용 횟수 증가
+    let message = '팀에 성공적으로 가입했습니다.';
 
-    // 3. 트랜잭션으로 팀 가입 및 사용 횟수 증가
     await this.dataSource.transaction(async (manager: EntityManager) => {
       // 동시성 제어: SELECT FOR UPDATE로 락을 걸어 사용 횟수 확인 및 증가
       const invite = await manager
@@ -1182,13 +1189,34 @@ export class TeamService {
         throw new TeamInviteExpiredErrorResponseDto('초대 링크의 사용 횟수가 초과되었습니다.');
       }
 
-      // TeamMember 추가
-      const newTeamMember = manager.create(TeamMember, {
-        userId,
-        teamId: inviteInfo.teamId,
-        role: 'MEMBER',
-      });
-      await manager.save(TeamMember, newTeamMember);
+      if (existingMember) {
+        // 이미 멤버인 경우
+        if (existingMember.actStatus === ActStatus.ACTIVE) {
+          // 활성화된 멤버면 이미 가입됨
+          throw new TeamMemberAlreadyExistsErrorResponseDto();
+        }
+
+        // 비활성화된 멤버인 경우: 재활성화 (MEMBER 역할로 초기화)
+        await manager.update(
+          TeamMember,
+          { teamId: inviteInfo.teamId, userId },
+          {
+            actStatus: ActStatus.ACTIVE,
+            role: 'MEMBER',
+            joinedAt: new Date(),
+          },
+        );
+        message = '팀에 다시 가입했습니다.';
+      } else {
+        // 새 멤버인 경우: TeamMember 추가
+        const newTeamMember = manager.create(TeamMember, {
+          userId,
+          teamId: inviteInfo.teamId,
+          role: 'MEMBER',
+          actStatus: ActStatus.ACTIVE,
+        });
+        await manager.save(TeamMember, newTeamMember);
+      }
 
       // 사용 횟수 증가
       invite.usageCurCnt += 1;
@@ -1198,7 +1226,7 @@ export class TeamService {
     return {
       teamId: inviteInfo.teamId,
       teamName: inviteInfo.teamName,
-      message: '팀에 성공적으로 가입했습니다.',
+      message,
     };
   }
 
@@ -1215,11 +1243,12 @@ export class TeamService {
     if (!teamId) {
       throw new TeamTaskBadRequestErrorResponseDto('팀 ID가 필요합니다.');
     }
-    // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
+    // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용, 활성화된 멤버만)
     const teamMembers = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [userId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
@@ -1269,11 +1298,12 @@ export class TeamService {
     // 2. newRole 유효성 검사 (DTO에서 'MANAGER' | 'MEMBER'로 제한됨)
     // MASTER로 변경은 타입 레벨에서 차단됨 (팀당 1명 유지 정책)
 
-    // 3. 요청자 팀 멤버 정보 조회
+    // 3. 요청자 팀 멤버 정보 조회 (활성화된 멤버만)
     const [actorMember] = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [actorUserId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!actorMember) {
@@ -1287,11 +1317,12 @@ export class TeamService {
       throw new TeamRoleChangeForbiddenErrorResponseDto('역할을 변경할 권한이 없습니다.');
     }
 
-    // 5. 대상 사용자 팀 멤버 정보 조회
+    // 5. 대상 사용자 팀 멤버 정보 조회 (활성화된 멤버만)
     const [targetMember] = await this.getTeamMembersBy({
       teamIds: [teamId],
       userIds: [targetUserId],
       actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
     });
 
     if (!targetMember) {
@@ -1346,6 +1377,127 @@ export class TeamService {
       userName,
       previousRole,
       newRole,
+      teamName: actorMember.teamName,
+    };
+  }
+
+  /**
+   * 팀 멤버 활성 상태 변경 (토글)
+   * @param teamId 팀 ID
+   * @param targetUserId 대상 사용자 ID
+   * @param newStatus 새 상태 (0: 비활성, 1: 활성)
+   * @param actorUserId 요청자 사용자 ID
+   * @returns 변경된 멤버 정보
+   */
+  async updateMemberStatus({
+    teamId,
+    targetUserId,
+    newStatus,
+    actorUserId,
+  }: {
+    teamId: number;
+    targetUserId: number;
+    newStatus: ActStatus;
+    actorUserId: number;
+  }): Promise<{
+    teamId: number;
+    userId: number;
+    userName: string | null;
+    previousStatus: number;
+    newStatus: number;
+    teamName: string;
+  }> {
+    // 1. 본인 상태 변경 차단
+    if (actorUserId === targetUserId) {
+      throw new TeamSelfStatusChangeErrorResponseDto();
+    }
+
+    // 2. 요청자 팀 멤버 정보 조회 (활성화된 멤버만)
+    const [actorMember] = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [actorUserId],
+      actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!actorMember) {
+      throw new TeamForbiddenErrorResponseDto('팀 멤버만 상태를 변경할 수 있습니다.');
+    }
+
+    const actorRole = actorMember.role.toUpperCase() as RoleKey;
+
+    // 3. 요청자 관리 권한 확인
+    if (!hasManagementPermission(actorRole)) {
+      throw new TeamMemberStatusChangeForbiddenErrorResponseDto('멤버 상태를 변경할 권한이 없습니다.');
+    }
+
+    // 4. 대상 사용자 팀 멤버 정보 조회 (비활성화된 멤버 포함)
+    const [targetMember] = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [targetUserId],
+      actStatus: [ActStatus.ACTIVE],
+      // userActStatus 필터 없음 (비활성화된 멤버도 조회)
+    });
+
+    if (!targetMember) {
+      throw new TeamMemberNotFoundErrorResponseDto('대상 사용자가 팀 멤버가 아닙니다.');
+    }
+
+    const targetCurrentRole = targetMember.role.toUpperCase() as RoleKey;
+
+    // 5. MASTER는 상태 변경 불가
+    if (targetCurrentRole === 'MASTER') {
+      throw new TeamMasterStatusChangeErrorResponseDto();
+    }
+
+    // 6. 대상자 관리 가능 여부 확인 (역할 변경 권한과 동일)
+    if (!canManageRole(actorRole, targetCurrentRole)) {
+      throw new TeamMemberStatusChangeForbiddenErrorResponseDto(
+        `${ROLE_LABELS[actorRole]}는 ${ROLE_LABELS[targetCurrentRole]}의 상태를 변경할 수 없습니다.`,
+      );
+    }
+
+    // 7. 상태가 동일하면 변경하지 않음
+    const previousStatus = targetMember.userActStatus;
+    if (previousStatus === newStatus) {
+      throw new TeamInvalidRoleErrorResponseDto(
+        newStatus === ActStatus.ACTIVE ? '이미 활성화된 멤버입니다.' : '이미 비활성화된 멤버입니다.',
+      );
+    }
+
+    // 8. 상태 변경
+    await this.teamMemberRepository.update(
+      { teamId, userId: targetUserId },
+      { actStatus: newStatus },
+    );
+
+    // 9. 대상 사용자 이름 조회
+    const targetUser = await this.userRepository.findOne({
+      where: { userId: targetUserId },
+      select: ['userName'],
+    });
+
+    const userName = targetUser?.userName || null;
+
+    // 10. 텔레그램 알림 전송
+    const statusLabel = newStatus === ActStatus.ACTIVE ? '활성화' : '비활성화';
+    const message = [
+      `[${actorMember.teamName}]`,
+      `🔄 멤버 상태 변경 알림 🔄`,
+      `${userName || `사용자 ${targetUserId}`}님이 ${statusLabel}되었습니다.`,
+    ].join('\n');
+
+    this.telegramService.sendTeamNotification({
+      team: { teamId, telegramChatId: actorMember.telegramChatId } as Team,
+      message,
+    });
+
+    return {
+      teamId,
+      userId: targetUserId,
+      userName,
+      previousStatus,
+      newStatus,
       teamName: actorMember.teamName,
     };
   }

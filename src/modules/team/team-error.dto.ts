@@ -172,3 +172,39 @@ export class TeamSelfRoleChangeErrorResponseDto extends ApiErrorResponseDto {
     super(400, message, 'TEAM_SELF_ROLE_CHANGE');
   }
 }
+
+/**
+ * 멤버 상태 변경 권한 없음 (403)
+ */
+export class TeamMemberStatusChangeForbiddenErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN', enum: ['TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN'] })
+  readonly code: string = 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN';
+
+  constructor(message: string = '멤버 상태를 변경할 권한이 없습니다.') {
+    super(403, message, 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN');
+  }
+}
+
+/**
+ * 본인 상태 변경 불가 (400)
+ */
+export class TeamSelfStatusChangeErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_SELF_STATUS_CHANGE', enum: ['TEAM_SELF_STATUS_CHANGE'] })
+  readonly code: string = 'TEAM_SELF_STATUS_CHANGE';
+
+  constructor(message: string = '본인의 상태는 변경할 수 없습니다.') {
+    super(400, message, 'TEAM_SELF_STATUS_CHANGE');
+  }
+}
+
+/**
+ * 마스터 상태 변경 불가 (400)
+ */
+export class TeamMasterStatusChangeErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_MASTER_STATUS_CHANGE', enum: ['TEAM_MASTER_STATUS_CHANGE'] })
+  readonly code: string = 'TEAM_MASTER_STATUS_CHANGE';
+
+  constructor(message: string = '마스터의 상태는 변경할 수 없습니다.') {
+    super(400, message, 'TEAM_MASTER_STATUS_CHANGE');
+  }
+}

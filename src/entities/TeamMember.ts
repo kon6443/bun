@@ -17,6 +17,9 @@ export class TeamMember {
   @Column({ name: "ROLE", type: "varchar2" })
   role: string;
 
+  @Column({ name: "ACT_STATUS", type: "number", default: 1 })
+  actStatus: number;
+
   // 관계
   // @ManyToOne(() => Team, (team) => team.teamId)
   @OneToOne(() => Team, (team) => team.teamId)

@@ -262,8 +262,11 @@ export class TeamUserDto {
   @ApiProperty({ description: '생성일시', example: '2026-01-01T00:00:00.000Z' })
   createdDate: Date;
 
-  @ApiProperty({ description: '활성화 여부', example: 1 })
+  @ApiProperty({ description: '유저 활성화 여부 (계정)', example: 1 })
   isActivated: 0 | 1;
+
+  @ApiProperty({ description: '팀 멤버 활성화 여부', example: 1 })
+  userActStatus: 0 | 1;
 }
 
 export class TeamUsersListResponseDto extends ApiSuccessResponseDto {
@@ -538,3 +541,54 @@ export class UpdateMemberRoleResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ description: '역할 변경 결과', type: MemberRoleDataDto })
   data: MemberRoleDataDto;
 }
+
+// ==================== Member Status Management DTOs ====================
+
+export class UpdateMemberStatusDto {
+  @ApiProperty({
+    description: '변경할 활성 상태',
+    example: ActStatus.ACTIVE,
+    enum: ActStatus,
+    enumName: 'ActStatus',
+  })
+  @IsNumber()
+  @IsEnum(ActStatus)
+  @Min(0)
+  @Max(1)
+  actStatus: ActStatus;
+}
+
+export class MemberStatusDataDto {
+  @ApiProperty({ description: '팀 ID', example: 1 })
+  teamId: number;
+
+  @ApiProperty({ description: '사용자 ID', example: 1 })
+  userId: number;
+
+  @ApiProperty({ description: '사용자 이름', example: '홍길동', nullable: true })
+  userName: string | null;
+
+  @ApiProperty({ description: '이전 상태 (0: 비활성, 1: 활성)', example: 1 })
+  previousStatus: number;
+
+  @ApiProperty({ description: '새 상태 (0: 비활성, 1: 활성)', example: 0 })
+  newStatus: number;
+}
+
+export class UpdateMemberStatusResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ description: '상태 변경 결과', type: MemberStatusDataDto })
+  data: MemberStatusDataDto;
+}
+
+// ==================== Team Users Query DTO ====================
+
+/**
+ * 팀 사용자 목록 조회 시 필터 타입
+ */
+/**
+ * 팀 사용자 목록 조회 시 상태 필터
+ * - 0: 비활성 멤버만
+ * - 1: 활성 멤버만
+ * - undefined: 전체
+ */
+export type MemberStatusFilterType = 0 | 1 | undefined;
