@@ -14,6 +14,7 @@ import { Server, Socket } from 'socket.io';
 
 import { WsJwtGuard, AuthenticatedSocket } from '../../common/guards/ws-jwt-auth.guard';
 import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
+import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamService } from './team.service';
 import { JoinTeamDto, LeaveTeamDto } from './team.gateway.dto';
 import {
@@ -144,8 +145,8 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     await client.join(roomName);
 
     // 온라인 유저에 추가
-    if (userId && client.data.user?.userName) {
-      const userName = client.data.user.userName;
+    if (userId) {
+      const userName = getDisplayName(client.data.user?.userName, userId);
 
       // 추가 전에 이미 접속 중인지 확인 (중복 알림 방지)
       const wasAlreadyOnline = this.getUserOnlineInfo(teamId, userId) !== null;
@@ -186,6 +187,8 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * 팀 room 퇴장
+   * 
+   * 주의: handleDisconnect에서 이미 처리된 소켓이면 중복 처리하지 않음
    */
   @UseGuards(WsJwtGuard)
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -198,9 +201,10 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const roomName = this.getRoomName(teamId);
 
     // 온라인 유저에서 제거 및 퇴장 알림
+    // 이미 handleDisconnect에서 처리된 소켓이면 스킵 (중복 알림 방지)
     const userId = client.data.user?.userId;
-    const userName = client.data.user?.userName;
-    if (userId && userName) {
+    if (userId && this.isSocketRegistered(client.id)) {
+      const userName = getDisplayName(client.data.user?.userName, userId);
       this.removeUserSocketFromTeam(teamId, userId, client.id);
       this.broadcastUserLeftIfOffline(teamId, userId, userName, client.id);
     }
@@ -432,9 +436,11 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * 소켓 연결 해제 시 온라인 목록에서 제거
+   * 
+   * 주의: handleLeaveTeam에서 이미 처리된 경우 스킵됨 (중복 알림 방지)
    */
   private removeUserFromOnline(socketId: string): void {
-    const userMapping = this.socketToUser.get(socketId);
+    const userMapping = this.getSocketUserMapping(socketId);
     if (!userMapping) return;
 
     const { teamId, userId, userName } = userMapping;
@@ -488,5 +494,31 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   getOnlineUsersCount(teamId: number): number {
     const teamUsers = this.onlineUsers.get(teamId);
     return teamUsers?.size ?? 0;
+  }
+
+  // ===== 소켓 상태 확인 헬퍼 (중복 처리 방지) =====
+
+  /**
+   * 소켓이 온라인 유저 시스템에 등록되어 있는지 확인
+   * 
+   * 사용 목적:
+   * - handleLeaveTeam과 handleDisconnect의 중복 처리 방지
+   * - 이미 처리된 소켓인지 확인하여 중복 알림 방지
+   * 
+   * @param socketId - 확인할 소켓 ID
+   * @returns 등록 여부
+   */
+  private isSocketRegistered(socketId: string): boolean {
+    return this.socketToUser.has(socketId);
+  }
+
+  /**
+   * 소켓의 유저/팀 매핑 정보 조회
+   * 
+   * @param socketId - 소켓 ID
+   * @returns 매핑 정보 (없으면 null)
+   */
+  private getSocketUserMapping(socketId: string): { teamId: number; userId: number; userName: string } | null {
+    return this.socketToUser.get(socketId) ?? null;
   }
 }
