@@ -146,23 +146,30 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // 온라인 유저에 추가
     if (userId && client.data.user?.userName) {
       const userName = client.data.user.userName;
+
+      // 추가 전에 이미 접속 중인지 확인 (중복 알림 방지)
+      const wasAlreadyOnline = this.getUserOnlineInfo(teamId, userId) !== null;
+
       this.addUserToOnline(teamId, userId, userName, client.id);
 
-      // 다른 유저들에게 접속 알림 브로드캐스트
       const userInfo = this.getUserOnlineInfo(teamId, userId);
       if (userInfo) {
         const onlineUsers = this.getOnlineUsersForTeam(teamId);
-        const payload: UserJoinedPayload = {
-          teamId,
-          userId,
-          userName,
-          connectionCount: userInfo.connectionCount,
-          totalOnlineCount: onlineUsers.length,
-        };
-        // 본인 제외하고 브로드캐스트
-        client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
 
-        // 본인에게는 현재 온라인 유저 목록 전송
+        // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
+        if (!wasAlreadyOnline) {
+          const payload: UserJoinedPayload = {
+            teamId,
+            userId,
+            userName,
+            connectionCount: userInfo.connectionCount,
+            totalOnlineCount: onlineUsers.length,
+          };
+          // 본인 제외하고 브로드캐스트
+          client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
+        }
+
+        // 본인에게는 항상 현재 온라인 유저 목록 전송
         const onlineUsersPayload: OnlineUsersPayload = {
           teamId,
           users: onlineUsers,
@@ -198,14 +205,17 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const userInfo = this.getUserOnlineInfo(teamId, userId);
       const onlineUsers = this.getOnlineUsersForTeam(teamId);
 
-      const payload: UserLeftPayload = {
-        teamId,
-        userId,
-        userName,
-        connectionCount: userInfo?.connectionCount ?? 0,
-        totalOnlineCount: onlineUsers.length,
-      };
-      client.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+      // 완전히 오프라인이 될 때만 (남은 연결이 없을 때만) 퇴장 알림
+      if (!userInfo) {
+        const payload: UserLeftPayload = {
+          teamId,
+          userId,
+          userName,
+          connectionCount: 0,
+          totalOnlineCount: onlineUsers.length,
+        };
+        client.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+      }
     }
 
     await client.leave(roomName);
@@ -408,16 +418,18 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const userInfo = this.getUserOnlineInfo(teamId, userId);
     const onlineUsers = this.getOnlineUsersForTeam(teamId);
 
-    // 퇴장 이벤트 브로드캐스트
-    const roomName = this.getRoomName(teamId);
-    const payload: UserLeftPayload = {
-      teamId,
-      userId,
-      userName,
-      connectionCount: userInfo?.connectionCount ?? 0,
-      totalOnlineCount: onlineUsers.length,
-    };
-    this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+    // 완전히 오프라인이 될 때만 (남은 연결이 없을 때만) 퇴장 알림
+    if (!userInfo) {
+      const roomName = this.getRoomName(teamId);
+      const payload: UserLeftPayload = {
+        teamId,
+        userId,
+        userName,
+        connectionCount: 0,
+        totalOnlineCount: onlineUsers.length,
+      };
+      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
+    }
 
     this.logger.debug(`온라인 유저 제거 (disconnect): socketId=${socketId}`);
   }
