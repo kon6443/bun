@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TeamController } from './team.controller';
 import { TeamService } from './team.service';
 import { TeamGateway } from './team.gateway';
+import { OnlineUserService } from './online-user.service';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
@@ -24,8 +25,9 @@ import { WsJwtGuard } from '../../common/guards/ws-jwt-auth.guard';
   providers: [
     TeamService,
     TeamGateway, // NestJS 정석: Gateway를 Provider로 등록
+    OnlineUserService, // Redis 기반 온라인 유저 관리
     WsJwtGuard, // WebSocket 인증 Guard
   ],
-  exports: [TeamService, TeamGateway], // 다른 모듈에서 Gateway 사용 가능
+  exports: [TeamService, TeamGateway, OnlineUserService],
 })
 export class TeamModule {}
