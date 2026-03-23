@@ -5,6 +5,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
+import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigService } from '@nestjs/config';
@@ -57,6 +58,11 @@ async function bootstrap() {
     // Redis 클라이언트를 OnlineUserService에 주입
     const onlineUserService = app.get(OnlineUserService);
     onlineUserService.setRedisClient(redisAdapter.getPubClient());
+
+    // Redis 클라이언트를 FishingOnlineService에 주입
+    const fishingOnlineService = app.get(FishingOnlineService);
+    fishingOnlineService.setRedisClient(redisAdapter.getPubClient());
+
     logger.log('WebSocket RedisIoAdapter 설정 완료');
 
     // 보안 미들웨어

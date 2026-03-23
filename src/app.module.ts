@@ -17,6 +17,7 @@ import { FileShareModule } from './modules/file-share/file-share.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { UsersModule } from './modules/users/users.module';
+import { FishingModule } from './modules/fishing/fishing.module';
 import databaseConfig from './config/database.config';
 import oracleConfig from './config/oracle.config';
 import oracledb from 'oracledb';
@@ -61,6 +62,7 @@ import oracledb from 'oracledb';
     NotificationModule,
     SchedulerModule,
     UsersModule,
+    FishingModule,
   ],
 })
 export class AppModule {}
