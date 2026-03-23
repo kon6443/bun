@@ -2,8 +2,9 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
+import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
+import { OnlineUserService } from './modules/team/online-user.service';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigService } from '@nestjs/config';
@@ -48,10 +49,15 @@ async function bootstrap() {
       credentials: true,
     });
 
-    // WebSocket Adapter 설정 (NestJS 정석)
-    // Socket.io와 NestJS를 통합하여 동일한 HTTP 서버에서 WebSocket 지원
-    app.useWebSocketAdapter(new IoAdapter(app));
-    logger.log('WebSocket IoAdapter 설정 완료');
+    // WebSocket Adapter 설정 - Redis Pub/Sub으로 멀티 레플리카 지원
+    const redisAdapter = new RedisIoAdapter(app);
+    await redisAdapter.connectToRedis();
+    app.useWebSocketAdapter(redisAdapter);
+
+    // Redis 클라이언트를 OnlineUserService에 주입
+    const onlineUserService = app.get(OnlineUserService);
+    onlineUserService.setRedisClient(redisAdapter.getPubClient());
+    logger.log('WebSocket RedisIoAdapter 설정 완료');
 
     // 보안 미들웨어
     app.use(helmet());

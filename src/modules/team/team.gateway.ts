@@ -16,6 +16,7 @@ import { WsJwtGuard, AuthenticatedSocket } from '../../common/guards/ws-jwt-auth
 import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamService } from './team.service';
+import { OnlineUserService } from './online-user.service';
 import { JoinTeamDto, LeaveTeamDto } from './team.gateway.dto';
 import {
   TeamSocketEvents,
@@ -47,6 +48,9 @@ import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
  * - @Injectable: DI 지원
  * - OnGatewayInit/Connection/Disconnect: 라이프사이클 훅 구현
  * - @UseGuards + @UsePipes: 인증 및 유효성 검사
+ *
+ * Redis adapter가 server.to(room).emit()을 모든 레플리카에 자동 전달.
+ * 온라인 유저 상태는 OnlineUserService(Redis)에서 관리.
  */
 @WebSocketGateway({
   namespace: '/teams',
@@ -63,20 +67,10 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @WebSocketServer()
   server: Server;
 
-  /**
-   * 온라인 유저 저장소
-   * Map<teamId, Map<userId, { userName, socketIds }>>
-   */
-  private onlineUsers = new Map<number, Map<number, { userName: string; socketIds: Set<string> }>>();
-
-  /**
-   * 소켓 ID → 유저/팀 매핑 (disconnect 시 빠른 조회용)
-   */
-  private socketToUser = new Map<string, { teamId: number; userId: number; userName: string }>();
-
   constructor(
     private readonly teamService: TeamService,
     private readonly configService: ConfigService,
+    private readonly onlineUserService: OnlineUserService,
   ) {}
 
   // ===== 라이프사이클 훅 (NestJS 정석) =====
@@ -98,11 +92,11 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   /**
    * 클라이언트 연결 해제 시 호출
    */
-  handleDisconnect(client: Socket): void {
+  async handleDisconnect(client: Socket): Promise<void> {
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
 
     // 온라인 유저에서 제거
-    this.removeUserFromOnline(client.id);
+    await this.removeUserFromOnline(client.id);
   }
 
   // ===== 팀 Room 관리 (Client → Server) =====
@@ -149,14 +143,16 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     if (userId) {
       const userName = getDisplayName(client.data.user?.userName, userId);
 
-      // 추가 전에 이미 접속 중인지 확인 (중복 알림 방지)
-      const wasAlreadyOnline = this.getUserOnlineInfo(teamId, userId) !== null;
+      const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
+        teamId,
+        userId,
+        userName,
+        client.id,
+      );
 
-      this.addUserToOnline(teamId, userId, userName, client.id);
-
-      const userInfo = this.getUserOnlineInfo(teamId, userId);
+      const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
       if (userInfo) {
-        const onlineUsers = this.getOnlineUsersForTeam(teamId);
+        const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
 
         // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
         if (!wasAlreadyOnline) {
@@ -188,7 +184,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * 팀 room 퇴장
-   * 
+   *
    * 주의: handleDisconnect에서 이미 처리된 소켓이면 중복 처리하지 않음
    */
   @UseGuards(WsJwtGuard)
@@ -204,10 +200,11 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // 온라인 유저에서 제거 및 퇴장 알림
     // 이미 handleDisconnect에서 처리된 소켓이면 스킵 (중복 알림 방지)
     const userId = client.data.user?.userId;
-    if (userId && this.isSocketRegistered(client.id)) {
-      const userName = getDisplayName(client.data.user?.userName, userId);
-      this.removeUserSocketFromTeam(teamId, userId, client.id);
-      this.broadcastUserLeftIfOffline(teamId, userId, userName, client.id);
+    if (userId && (await this.onlineUserService.isSocketRegistered(client.id))) {
+      const result = await this.onlineUserService.removeSocket(client.id);
+      if (result?.isFullyOffline) {
+        await this.broadcastUserLeftIfOffline(teamId, userId, result.userName);
+      }
     }
 
     await client.leave(roomName);
@@ -353,24 +350,18 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * 유저 퇴장 알림 브로드캐스트 (완전히 오프라인일 때만)
-   *
-   * @param teamId - 팀 ID
-   * @param userId - 유저 ID
-   * @param userName - 유저 이름
-   * @param excludeSocketId - 브로드캐스트에서 제외할 소켓 ID (본인 제외용, optional)
    */
-  private broadcastUserLeftIfOffline(
+  private async broadcastUserLeftIfOffline(
     teamId: number,
     userId: number,
     userName: string,
-    excludeSocketId?: string,
-  ): void {
-    const userInfo = this.getUserOnlineInfo(teamId, userId);
+  ): Promise<void> {
+    const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
 
     // 아직 접속 중이면 알림 안 보냄
     if (userInfo) return;
 
-    const onlineUsers = this.getOnlineUsersForTeam(teamId);
+    const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
     const roomName = this.getRoomName(teamId);
     const payload: UserLeftPayload = {
       teamId,
@@ -380,158 +371,30 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       totalOnlineCount: onlineUsers.length,
     };
 
-    if (excludeSocketId) {
-      // 특정 소켓 제외하고 브로드캐스트 (handleLeaveTeam에서 사용)
-      // excludeSocketId는 이미 room을 떠났거나 떠날 예정이므로 server.to로 전송
-      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
-    } else {
-      // 전체 브로드캐스트 (removeUserFromOnline에서 사용)
-      this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
-    }
-  }
-
-  /**
-   * 유저를 온라인 목록에 추가
-   */
-  private addUserToOnline(teamId: number, userId: number, userName: string, socketId: string): void {
-    // 팀별 Map 초기화
-    if (!this.onlineUsers.has(teamId)) {
-      this.onlineUsers.set(teamId, new Map());
-    }
-
-    const teamUsers = this.onlineUsers.get(teamId)!;
-
-    // 유저별 소켓 Set 초기화 또는 추가
-    if (!teamUsers.has(userId)) {
-      teamUsers.set(userId, { userName, socketIds: new Set([socketId]) });
-    } else {
-      teamUsers.get(userId)!.socketIds.add(socketId);
-    }
-
-    // 역방향 매핑 저장
-    this.socketToUser.set(socketId, { teamId, userId, userName });
-
-    this.logger.debug(
-      `온라인 유저 추가: teamId=${teamId}, userId=${userId}, socketId=${socketId}, ` +
-        `총 접속 수=${teamUsers.get(userId)!.socketIds.size}`,
-    );
-  }
-
-  /**
-   * 특정 소켓을 팀의 온라인 목록에서 제거
-   */
-  private removeUserSocketFromTeam(teamId: number, userId: number, socketId: string): void {
-    const teamUsers = this.onlineUsers.get(teamId);
-    if (!teamUsers) return;
-
-    const userInfo = teamUsers.get(userId);
-    if (!userInfo) return;
-
-    userInfo.socketIds.delete(socketId);
-
-    // 모든 소켓이 제거되면 유저도 제거
-    if (userInfo.socketIds.size === 0) {
-      teamUsers.delete(userId);
-    }
-
-    // 팀에 유저가 없으면 팀 Map도 제거
-    if (teamUsers.size === 0) {
-      this.onlineUsers.delete(teamId);
-    }
-
-    // 역방향 매핑 제거
-    this.socketToUser.delete(socketId);
-
-    this.logger.debug(
-      `온라인 유저 소켓 제거: teamId=${teamId}, userId=${userId}, socketId=${socketId}`,
-    );
+    this.server.to(roomName).emit(TeamSocketEvents.USER_LEFT, payload);
   }
 
   /**
    * 소켓 연결 해제 시 온라인 목록에서 제거
-   * 
+   *
    * 주의: handleLeaveTeam에서 이미 처리된 경우 스킵됨 (중복 알림 방지)
    */
-  private removeUserFromOnline(socketId: string): void {
-    const userMapping = this.getSocketUserMapping(socketId);
-    if (!userMapping) return;
+  private async removeUserFromOnline(socketId: string): Promise<void> {
+    const result = await this.onlineUserService.removeSocket(socketId);
+    if (!result) return;
 
-    const { teamId, userId, userName } = userMapping;
-    this.removeUserSocketFromTeam(teamId, userId, socketId);
-    this.broadcastUserLeftIfOffline(teamId, userId, userName);
+    const { teamId, userId, userName, isFullyOffline } = result;
+    if (isFullyOffline) {
+      await this.broadcastUserLeftIfOffline(teamId, userId, userName);
+    }
 
     this.logger.debug(`온라인 유저 제거 (disconnect): socketId=${socketId}`);
   }
 
   /**
-   * 특정 유저의 온라인 정보 조회
-   */
-  private getUserOnlineInfo(teamId: number, userId: number): OnlineUserInfo | null {
-    const teamUsers = this.onlineUsers.get(teamId);
-    if (!teamUsers) return null;
-
-    const userInfo = teamUsers.get(userId);
-    if (!userInfo) return null;
-
-    return {
-      userId,
-      userName: userInfo.userName,
-      connectionCount: userInfo.socketIds.size,
-    };
-  }
-
-  /**
-   * 팀의 온라인 유저 목록 조회 (최대 100명)
-   */
-  private getOnlineUsersForTeam(teamId: number): OnlineUserInfo[] {
-    const teamUsers = this.onlineUsers.get(teamId);
-    if (!teamUsers) return [];
-
-    const users: OnlineUserInfo[] = [];
-    for (const [userId, userInfo] of teamUsers.entries()) {
-      users.push({
-        userId,
-        userName: userInfo.userName,
-        connectionCount: userInfo.socketIds.size,
-      });
-      // 최대 100명까지만
-      if (users.length >= 100) break;
-    }
-
-    return users;
-  }
-
-  /**
    * 팀의 온라인 유저 수 조회
    */
-  getOnlineUsersCount(teamId: number): number {
-    const teamUsers = this.onlineUsers.get(teamId);
-    return teamUsers?.size ?? 0;
-  }
-
-  // ===== 소켓 상태 확인 헬퍼 (중복 처리 방지) =====
-
-  /**
-   * 소켓이 온라인 유저 시스템에 등록되어 있는지 확인
-   * 
-   * 사용 목적:
-   * - handleLeaveTeam과 handleDisconnect의 중복 처리 방지
-   * - 이미 처리된 소켓인지 확인하여 중복 알림 방지
-   * 
-   * @param socketId - 확인할 소켓 ID
-   * @returns 등록 여부
-   */
-  private isSocketRegistered(socketId: string): boolean {
-    return this.socketToUser.has(socketId);
-  }
-
-  /**
-   * 소켓의 유저/팀 매핑 정보 조회
-   * 
-   * @param socketId - 소켓 ID
-   * @returns 매핑 정보 (없으면 null)
-   */
-  private getSocketUserMapping(socketId: string): { teamId: number; userId: number; userName: string } | null {
-    return this.socketToUser.get(socketId) ?? null;
+  async getOnlineUsersCount(teamId: number): Promise<number> {
+    return this.onlineUserService.getOnlineUsersCount(teamId);
   }
 }
