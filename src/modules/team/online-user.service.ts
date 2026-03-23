@@ -10,6 +10,7 @@ import { OnlineUserInfo } from './team.events';
  */
 
 const SOCKET_KEY_TTL = 3600; // 1시간 (고아 키 자동 정리 안전장치)
+const TEAM_ONLINE_KEY_TTL = 7200; // 2시간 (online 해시 — 서버 재시작 시 고아 데이터 자동 정리)
 
 @Injectable()
 export class OnlineUserService {
@@ -68,8 +69,9 @@ export class OnlineUserService {
       pipeline.sadd(uKey, socketId);
       pipeline.expire(uKey, SOCKET_KEY_TTL);
 
-      // 팀 온라인 유저
+      // 팀 온라인 유저 (TTL로 고아 데이터 자동 정리)
       pipeline.hset(tKey, String(userId), userName);
+      pipeline.expire(tKey, TEAM_ONLINE_KEY_TTL);
 
       await pipeline.exec();
 
