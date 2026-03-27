@@ -50,6 +50,7 @@ import {
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
 import { TelegramService } from '../notification/telegram.service';
+import { formatDateTime } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
 // export type TeamMemberType = {
@@ -373,7 +374,7 @@ export class TeamService {
       `[${team.teamName}] - ${task.taskName}`,
       `✅ 태스크 생성 ✅`,
       task.startAt || task.endAt
-        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
     this.telegramService.sendTeamNotification({ team, message, buttons: [{ text: '바로가기', url }] });
@@ -431,7 +432,7 @@ export class TeamService {
       `[${teamMember.teamName}]`,
       `🔄 태스크 수정 🔄`,
       task.startAt || task.endAt
-        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
     this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
@@ -487,7 +488,7 @@ export class TeamService {
       `🔄 태스크 작업 상태 변경 🔄`,
       `[${TaskStatusMsg[oldTaskStatus]}] → [${TaskStatusMsg[task.taskStatus]}]`,
       task.startAt || task.endAt
-        ? `📅 기간: ${task.startAt?.toLocaleDateString() ?? ''} ~ ${task.endAt?.toLocaleDateString() ?? ''}`
+        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
     this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });

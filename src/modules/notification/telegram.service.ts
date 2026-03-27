@@ -11,8 +11,8 @@ import { randomBytes } from 'crypto';
  * 텔레그램 인라인 키보드 버튼 타입
  */
 export interface TelegramInlineButton {
-  text: string;  // 버튼에 표시될 텍스트
-  url: string;   // 클릭 시 이동할 URL
+  text: string; // 버튼에 표시될 텍스트
+  url: string; // 클릭 시 이동할 URL
 }
 
 /**
@@ -154,7 +154,9 @@ export class TelegramService {
 
     try {
       if (!telegramChatId) {
-        console.warn(`[teamId: ${teamId} - TELEGRAM] sendTeamNotification(): 팀에 telegramChatId가 설정되지 않았습니다`);
+        console.warn(
+          `[teamId: ${teamId} - TELEGRAM] sendTeamNotification(): 팀에 telegramChatId가 설정되지 않았습니다`,
+        );
         return;
       }
 
@@ -253,17 +255,14 @@ export class TelegramService {
 
         if (token) {
           const result = await this.verifyAndLinkTeam(token, chat.id);
-          
+
           if (result.success) {
             await this.sendMessageAsync(
               chat.id,
               `✅ 연동이 완료되었습니다!\n\n팀: <b>${result.teamName}</b>\n\n이제 이 그룹으로 팀 알림을 받을 수 있습니다.`,
             );
           } else {
-            await this.sendMessageAsync(
-              chat.id,
-              `❌ 연동에 실패했습니다.\n\n사유: ${result.message}`,
-            );
+            await this.sendMessageAsync(chat.id, `❌ 연동에 실패했습니다.\n\n사유: ${result.message}`);
           }
 
           return result;
@@ -334,13 +333,17 @@ export class TelegramService {
       await this.dataSource.transaction(async (manager: EntityManager) => {
         await Promise.all([
           manager.update(Team, { teamId: team.teamId }, { telegramChatId: chatId }),
-          manager.update(TelegramLink, { linkId: telegramLink.linkId }, { usedAt: new Date(), actStatus: ActStatus.INACTIVE }),
+          manager.update(
+            TelegramLink,
+            { linkId: telegramLink.linkId },
+            { usedAt: new Date(), actStatus: ActStatus.INACTIVE },
+          ),
         ]);
       });
-    } catch(err) {
+    } catch (err) {
       return { success: false, message: '연동 처리 중 오류가 발생했습니다.' };
     }
-    
+
     console.log(`[TELEGRAM] 팀 연동 완료. teamId: ${team.teamId}, chatId: ${chatId}`);
     return { success: true, message: '연동이 완료되었습니다.', teamName: team.teamName };
   }
@@ -432,7 +435,7 @@ export class TelegramService {
           manager.update(TelegramLink, { teamId }, { actStatus: ActStatus.INACTIVE }),
         ]);
       });
-    } catch(err) {
+    } catch (err) {
       throw new Error('연동 해제 처리 중 오류가 발생했습니다.');
     }
     console.log(`[TELEGRAM] 팀 연동 해제. teamId: ${teamId}`);
@@ -448,10 +451,7 @@ export class TelegramService {
     });
 
     if (team) {
-      await this.teamRepository.update(
-        { teamId: team.teamId },
-        { telegramChatId: null },
-      );
+      await this.teamRepository.update({ teamId: team.teamId }, { telegramChatId: null });
       console.log(`[TELEGRAM] chatId로 팀 연동 해제. teamId: ${team.teamId}, chatId: ${chatId}`);
     }
   }
