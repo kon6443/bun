@@ -507,6 +507,32 @@ export class TelegramStatusResponseDto extends ApiSuccessResponseDto {
 
 export class DeleteTelegramLinkResponseDto extends ApiSuccessResponseDto {}
 
+// --- Discord ---
+
+export class SaveDiscordWebhookDto {
+  @ApiProperty({ description: '디스코드 채널 Webhook URL', example: 'https://discord.com/api/webhooks/123456/abcdef...' })
+  @IsString()
+  @IsNotEmpty()
+  webhookUrl: string;
+}
+
+export class DiscordStatusDataDto {
+  @ApiProperty({ description: '연동 여부', example: true })
+  isLinked: boolean;
+
+  @ApiProperty({ description: '등록된 Webhook URL', example: 'https://discord.com/api/webhooks/...', nullable: true })
+  webhookUrl: string | null;
+}
+
+export class DiscordStatusResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ description: '디스코드 연동 상태', type: DiscordStatusDataDto })
+  data: DiscordStatusDataDto;
+}
+
+export class SaveDiscordWebhookResponseDto extends ApiSuccessResponseDto {}
+
+export class DeleteDiscordWebhookResponseDto extends ApiSuccessResponseDto {}
+
 // ==================== Role Management DTOs ====================
 
 export class UpdateMemberRoleDto {
