@@ -208,3 +208,15 @@ export class TeamMasterStatusChangeErrorResponseDto extends ApiErrorResponseDto 
     super(400, message, 'TEAM_MASTER_STATUS_CHANGE');
   }
 }
+
+/**
+ * 디스코드 Webhook URL 유효성 검증 실패 (400)
+ */
+export class TeamDiscordWebhookInvalidErrorResponseDto extends ApiErrorResponseDto {
+  @ApiProperty({ example: 'TEAM_DISCORD_WEBHOOK_INVALID', enum: ['TEAM_DISCORD_WEBHOOK_INVALID'] })
+  readonly code: string = 'TEAM_DISCORD_WEBHOOK_INVALID';
+
+  constructor(message: string = '유효하지 않은 디스코드 Webhook URL입니다.') {
+    super(400, message, 'TEAM_DISCORD_WEBHOOK_INVALID');
+  }
+}

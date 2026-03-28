@@ -32,6 +32,9 @@ export class Team {
   @Column({ name: 'TELEGRAM_CHAT_ID', type: 'number', nullable: true })
   telegramChatId: number | null;
 
+  @Column({ name: 'DISCORD_WEBHOOK_URL', type: 'varchar2', nullable: true })
+  discordWebhookUrl: string | null;
+
   // 관계
   @ManyToMany(() => User, user => user.userId)
   @JoinColumn({ name: 'LEADER_ID' })

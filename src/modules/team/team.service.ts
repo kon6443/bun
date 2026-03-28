@@ -49,7 +49,7 @@ import {
   hasManagementPermission,
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
-import { TelegramService } from '../notification/telegram.service';
+import { NotificationService } from '../notification/notification.service';
 import { formatDateTime } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
@@ -66,6 +66,7 @@ export type TeamType = {
   actStatus: number;
   leaderId: number;
   telegramChatId: number | null;
+  discordWebhookUrl: string | null;
   teamDescription: string | null;
 };
 
@@ -99,7 +100,7 @@ export class TeamService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly configService: ConfigService,
-    private readonly telegramService: TelegramService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   getTeamTaskUrl({teamId, taskId}:{teamId: number, taskId: number}): string {
@@ -140,6 +141,7 @@ export class TeamService {
         't.actStatus',
         't.leaderId',
         't.telegramChatId',
+        't.discordWebhookUrl',
       ]);
 
     if (userIds?.length) {
@@ -173,6 +175,7 @@ export class TeamService {
         actStatus: tm.team.actStatus,
         leaderId: tm.team.leaderId,
         telegramChatId: tm.team.telegramChatId,
+        discordWebhookUrl: tm.team.discordWebhookUrl,
       };
     });
   }
@@ -198,6 +201,7 @@ export class TeamService {
       teamDescription: string | null;
       leaderId: number;
       telegramChatId: number | null;
+      discordWebhookUrl: string | null;
       taskId: number;
       teamId: number;
       taskName: string;
@@ -220,6 +224,7 @@ export class TeamService {
         'team.teamDescription',
         'team.leaderId',
         'team.telegramChatId',
+        'team.discordWebhookUrl',
         'task.taskId',
         'task.teamId',
         'task.taskName',
@@ -256,6 +261,7 @@ export class TeamService {
       teamDescription: task.team.teamDescription,
       leaderId: task.team.leaderId,
       telegramChatId: task.team.telegramChatId,
+      discordWebhookUrl: task.team.discordWebhookUrl,
       taskId: task.taskId,
       teamId: task.teamId,
       taskName: task.taskName,
@@ -377,7 +383,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team, message, buttons: [{ text: '바로가기', url }] });
+    this.notificationService.notifyTeam({ team, message, url });
 
     return task;
   }
@@ -435,7 +441,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
+    this.notificationService.notifyTeam({ team: teamMember, message, url });
 
     return task;
   }
@@ -491,7 +497,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
+    this.notificationService.notifyTeam({ team: teamMember, message, url });
 
     return task;
   }
@@ -579,7 +585,7 @@ export class TeamService {
       // `${comment.user.userName}: ${comment.commentContent}`,
       comment.commentContent,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: teamMember, message, buttons: [{ text: '바로가기', url }] });
+    this.notificationService.notifyTeam({ team: teamMember, message, url });
     return comment;
   }
 
@@ -645,7 +651,11 @@ export class TeamService {
       `💬 ${teamTask.taskName} 태스크에 댓글이 수정되었습니다 💬`,
       updatedComment.commentContent,
     ].filter(Boolean).join('\n');
-    this.telegramService.sendTeamNotification({ team: {teamId: teamTask.teamId, telegramChatId: teamTask.telegramChatId} as Team, message, buttons: [{ text: '바로가기', url }] });
+    this.notificationService.notifyTeam({
+      team: { teamId: teamTask.teamId, telegramChatId: teamTask.telegramChatId, discordWebhookUrl: teamTask.discordWebhookUrl } as Team,
+      message,
+      url,
+    });
     return updatedComment;
   }
 
@@ -1359,7 +1369,7 @@ export class TeamService {
 
     const userName = targetUser?.userName || null;
 
-    // 10. 텔레그램 알림 전송
+    // 10. 알림 전송
     const message = [
       `[${actorMember.teamName}]`,
       `🔄 역할 변경 알림 🔄`,
@@ -1367,8 +1377,8 @@ export class TeamService {
       `${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`,
     ].join('\n');
 
-    this.telegramService.sendTeamNotification({
-      team: { teamId, telegramChatId: actorMember.telegramChatId } as Team,
+    this.notificationService.notifyTeam({
+      team: { teamId, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl } as Team,
       message,
     });
 
@@ -1480,7 +1490,7 @@ export class TeamService {
 
     const userName = targetUser?.userName || null;
 
-    // 10. 텔레그램 알림 전송
+    // 10. 알림 전송
     const statusLabel = newStatus === ActStatus.ACTIVE ? '활성화' : '비활성화';
     const message = [
       `[${actorMember.teamName}]`,
@@ -1488,8 +1498,8 @@ export class TeamService {
       `${userName || `사용자 ${targetUserId}`}님이 ${statusLabel}되었습니다.`,
     ].join('\n');
 
-    this.telegramService.sendTeamNotification({
-      team: { teamId, telegramChatId: actorMember.telegramChatId } as Team,
+    this.notificationService.notifyTeam({
+      team: { teamId, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl } as Team,
       message,
     });
 

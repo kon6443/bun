@@ -45,15 +45,20 @@ import {
   CreateTelegramLinkResponseDto,
   TelegramStatusResponseDto,
   DeleteTelegramLinkResponseDto,
+  SaveDiscordWebhookDto,
+  DiscordStatusResponseDto,
+  SaveDiscordWebhookResponseDto,
+  DeleteDiscordWebhookResponseDto,
   UpdateMemberRoleResponseDto,
   UpdateMemberStatusResponseDto,
 } from './team.dto';
-import { TeamForbiddenErrorResponseDto } from './team-error.dto';
+import { TeamForbiddenErrorResponseDto, TeamDiscordWebhookInvalidErrorResponseDto } from './team-error.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../entities/User';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { TelegramService } from '../notification/telegram.service';
+import { DiscordService } from '../notification/discord.service';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -61,8 +66,25 @@ export class TeamController {
   constructor(
     private readonly teamService: TeamService,
     private readonly telegramService: TelegramService,
+    private readonly discordService: DiscordService,
     private readonly teamGateway: TeamGateway, // WebSocket Gateway DI
   ) {}
+
+  /**
+   * MASTER/MANAGER 권한 체크 공통 메서드
+   */
+  private async requireManagerAccess(teamId: number, userId: number, errorMessage?: string): Promise<void> {
+    const [teamMember] = await this.teamService.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
+    });
+
+    if (!teamMember || !['MASTER', 'MANAGER'].includes(teamMember?.role)) {
+      throw new TeamForbiddenErrorResponseDto(errorMessage || '팀 리더 또는 매니저만 이 작업을 할 수 있습니다.');
+    }
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -579,17 +601,7 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // MASTER/MANAGER 권한 체크 (활성화된 멤버만)
-    const [teamMembers] = await this.teamService.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [user.userId],
-      actStatus: [ActStatus.ACTIVE],
-      userActStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
-      throw new TeamForbiddenErrorResponseDto('팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.');
-    }
+    await this.requireManagerAccess(teamId, user.userId);
 
     const result = await this.telegramService.generateLinkToken(teamId);
     return {
@@ -618,8 +630,9 @@ export class TeamController {
 
     const status = await this.telegramService.getLinkStatus(teamId);
     return {
-      message: 'SUCCESS',
+      code: 'SUCCESS',
       data: status,
+      message: '',
     };
   }
 
@@ -637,19 +650,84 @@ export class TeamController {
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
     const user = req.user;
-    // MASTER/MANAGER 권한 체크 (활성화된 멤버만)
-    const [teamMembers] = await this.teamService.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [user.userId],
-      actStatus: [ActStatus.ACTIVE],
-      userActStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers || !['MASTER', 'MANAGER'].includes(teamMembers?.role)) {
-      throw new TeamForbiddenErrorResponseDto('팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.');
-    }
+    await this.requireManagerAccess(teamId, user.userId);
 
     await this.telegramService.unlinkTeam(teamId);
+    return { code: 'SUCCESS', data: null, message: '' };
+  }
+
+  // ==================== 디스코드 연동 API ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':teamId/discord/webhook')
+  @ApiOperation({ summary: '디스코드 Webhook URL 저장' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiBody({ type: SaveDiscordWebhookDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: SaveDiscordWebhookResponseDto })
+  @ApiResponse({ status: 400, description: '유효하지 않은 Webhook URL입니다.' })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async saveDiscordWebhook(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Body() dto: SaveDiscordWebhookDto,
+  ) {
+    const user = req.user;
+    await this.requireManagerAccess(teamId, user.userId);
+
+    // Webhook URL 유효성 검증
+    const validation = await this.discordService.validateWebhookUrl(dto.webhookUrl);
+    if (!validation.valid) {
+      throw new TeamDiscordWebhookInvalidErrorResponseDto();
+    }
+
+    await this.discordService.saveWebhookUrl(teamId, dto.webhookUrl);
+    return { code: 'SUCCESS', data: null, message: '' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':teamId/discord/status')
+  @ApiOperation({ summary: '디스코드 연동 상태 조회' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: DiscordStatusResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async getDiscordStatus(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+  ) {
+    const user = req.user;
+    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+
+    const status = await this.discordService.getLinkStatus(teamId);
+    return {
+      code: 'SUCCESS',
+      data: status,
+      message: '',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':teamId/discord/webhook')
+  @ApiOperation({ summary: '디스코드 연동 해제' })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteDiscordWebhookResponseDto })
+  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 해제할 수 있습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  async deleteDiscordWebhook(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+  ) {
+    const user = req.user;
+    await this.requireManagerAccess(teamId, user.userId);
+
+    await this.discordService.unlinkTeam(teamId);
     return { code: 'SUCCESS', data: null, message: '' };
   }
 
