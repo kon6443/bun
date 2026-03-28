@@ -1,22 +1,26 @@
 # FiveSouth Backend (NestJS)
 
-## Stack & Dev
-- NestJS 11 + TypeScript, Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
+NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub.
+
+## Commands
+- `pnpm dev` | `pnpm run build` (tsc) | Port: 3500, prefix `/api/v1`
+- Swagger: `/api/v1/docs` (LOCAL only)
+
+## Conventions
 - Auth: Kakao OAuth + JWT — HTTP: cookie `access_token` 우선 → Bearer 헤더 | WS: `handshake.auth.token` → Bearer 헤더
-- `pnpm dev` | `pnpm run build` (tsc) | Port: 3500, prefix `/api/v1` | Swagger: `/api/v1/docs` (LOCAL only)
+- ValidationPipe: `transform: true`, `enableImplicitConversion: true`
+- 프론트엔드 프로젝트: `../next-bun` (Next.js 15 App Router + Bun)
+
+## Rules
+- **추측/추론 금지**: 항상 코드, 로그, DB 데이터 등 근거 기반으로 작업. 확인 불가한 사항은 추측하지 말고 사용자에게 확인 요청
+- **필요 시 요청**: 정보가 부족하거나 판단이 어려운 경우 반드시 사용자에게 질문. 임의로 결정하지 않음
+- 코드에 있는 그대로 보고 판단 (추론/추측 금지)
 
 ## Active Work — Redis Pub/Sub 멀티 레플리카
-- PRD: `docs/prd-redis-pubsub.md` | **Task 체크리스트**: `docs/tasks-redis-pubsub.md`
-- **구현 완료**, 테스트·배포 TODO → tasks 파일 체크리스트 순서대로 진행
+- **구현 완료**, 테스트·배포 TODO → `docs/tasks-redis-pubsub.md` 체크리스트 순서대로 진행
 
-## Key Files
-- `src/common/adapters/redis-io.adapter.ts` — Redis Socket.IO 어댑터 (pub/sub 2연결)
-- `src/modules/team/online-user.service.ts` — Redis 온라인 유저 관리 (Hash/Set, TTL 1h)
-- `src/modules/team/team.gateway.ts` — WS Gateway `/teams` 네임스페이스, room `team-{teamId}`
-- `src/main.ts` — RedisIoAdapter 초기화 + OnlineUserService에 pubClient 주입
-
-## Deploy
-- push to `main` → GitHub Actions → `sys_express` 서비스 업데이트 (multi-arch amd64/arm64)
-- Redis: `bash infra/setup-redis.sh` → `sys_redis` on `sys_default` network
-- 서버 env 파일(`/home/ubuntu/desktop/deploy/sys/config/env/.env`)에 `REDIS_HOST=sys_redis` 필요
-- 레플리카 확장: `docker service scale sys_express=2` (Redis 배포 완료 후)
+## Docs
+- 배포 & 인프라: `docs/deploy.md`
+- 아키텍처 & 주요 파일: `docs/architecture.md`
+- Redis Pub/Sub PRD: `docs/prd-redis-pubsub.md`
+- Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md`
