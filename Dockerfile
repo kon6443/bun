@@ -26,6 +26,9 @@ RUN pnpm run build
 # ============================================
 FROM node:20-bullseye-slim
 
+# 타임존 설정 (UTC 명시 — 모든 날짜는 UTC로 저장/처리, 표시 단계에서만 KST 변환)
+ENV TZ=UTC
+
 # 필요한 패키지만 설치 (Oracle 클라이언트 라이브러리 및 health check용 curl)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libaio1 \
