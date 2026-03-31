@@ -301,6 +301,9 @@ export class TeamTaskDto {
   @ApiProperty({ description: '종료일시', example: '2026-01-31T00:00:00.000Z', nullable: true })
   endAt: Date | null;
 
+  @ApiProperty({ description: '완료/취소 시각 (자동 아카이브 기준)', example: '2026-01-15T00:00:00.000Z', nullable: true })
+  completedAt: Date | null;
+
   @ApiProperty({ description: '생성일시', example: '2026-01-01T00:00:00.000Z' })
   crtdAt: Date;
 
@@ -424,6 +427,9 @@ export class TaskDetailDto {
 
   @ApiProperty({ description: '종료일시', example: '2026-01-31T00:00:00.000Z', nullable: true })
   endAt: Date | null;
+
+  @ApiProperty({ description: '완료/취소 시각 (자동 아카이브 기준)', example: '2026-01-15T00:00:00.000Z', nullable: true })
+  completedAt: Date | null;
 
   @ApiProperty({ description: '생성일시', example: '2026-01-01T00:00:00.000Z' })
   crtdAt: Date;

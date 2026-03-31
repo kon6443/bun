@@ -180,13 +180,24 @@ export class TeamController {
   @Get(':teamId/tasks')
   @ApiOperation({ summary: '팀 태스크 목록 조회' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiQuery({
+    name: 'actStatus',
+    description: '태스크 활성 상태 필터 (0: 비활성/보관함, 1: 활성, 미지정: 활성만)',
+    required: false,
+    enum: [ActStatus.INACTIVE, ActStatus.ACTIVE],
+  })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamTaskListResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async getTasks(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
+  async getTasks(
+    @Req() req: Request & { user: User },
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Query('actStatus', new ParseIntPipe({ optional: true })) actStatus?: number,
+  ) {
     const user = req.user;
-    const { team, tasks } = await this.teamService.getTasksByTeamId(teamId, user.userId);
+    const actStatusFilter = actStatus !== undefined ? [actStatus] : undefined;
+    const { team, tasks } = await this.teamService.getTasksByTeamId(teamId, user.userId, actStatusFilter);
     return {
       code: 'SUCCESS',
       data: {
@@ -345,6 +356,7 @@ export class TeamController {
       teamId,
       oldStatus: task.taskStatus, // 업데이트 후 값이지만, 호환성을 위해 포함
       newStatus,
+      completedAt: task.completedAt?.toISOString() ?? null,
       updatedBy: user.userId,
     });
 
