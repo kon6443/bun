@@ -40,6 +40,10 @@ export class TeamTask {
   @Column({ name: 'END_AT', type: 'timestamp', nullable: true })
   endAt: Date | null;
 
+  // 완료/취소 시각 (자동 아카이브 기준 — COMPLETED/CANCELLED 상태 진입 시 기록, 다른 상태로 변경 시 null)
+  @Column({ name: 'COMPLETED_AT', type: 'timestamp', nullable: true })
+  completedAt: Date | null;
+
   @Column({ name: 'CRTD_AT', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   crtdAt: Date;
 

@@ -210,6 +210,7 @@ export class TeamService {
       actStatus: number;
       startAt: Date | null;
       endAt: Date | null;
+      completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
       userName: string | null;
@@ -233,6 +234,7 @@ export class TeamService {
         'task.actStatus',
         'task.startAt',
         'task.endAt',
+        'task.completedAt',
         'task.crtdAt',
         'task.crtdBy',
         'user.userName',
@@ -270,6 +272,7 @@ export class TeamService {
       actStatus: task.actStatus,
       startAt: task.startAt,
       endAt: task.endAt,
+      completedAt: task.completedAt,
       crtdAt: task.crtdAt,
       crtdBy: task.crtdBy,
       userName: task.user?.userName || null,
@@ -485,6 +488,11 @@ export class TeamService {
     // 작업 상태 업데이트
     const oldTaskStatus = task.taskStatus;
     task.taskStatus = updateStatusDto.taskStatus;
+
+    // completedAt 자동 관리: COMPLETED/CANCELLED → 현재 시간, 그 외 → null
+    const isTerminalStatus =
+      task.taskStatus === TaskStatus.COMPLETED || task.taskStatus === TaskStatus.CANCELLED;
+    task.completedAt = isTerminalStatus ? new Date() : null;
 
     // 업데이트된 엔티티 저장
     await this.teamTaskRepository.save(task);
@@ -736,6 +744,7 @@ export class TeamService {
   async getTasksByTeamId(
     teamId: number,
     userId: number,
+    actStatusFilter?: number[],
   ): Promise<{
     team: Team;
     tasks: Array<{
@@ -747,6 +756,7 @@ export class TeamService {
       actStatus: number;
       startAt: Date | null;
       endAt: Date | null;
+      completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
       userName: string | null;
@@ -764,18 +774,10 @@ export class TeamService {
       throw new TeamNotFoundErrorResponseDto();
     }
 
-    // 3. 태스크 목록 조회 (활성 태스크만, 시작일시 내림차순, 생성자 이름 포함)
-    // [기존 코드 - 주석처리]
-    // const tasks = await this.teamTaskRepository
-    //   .createQueryBuilder('task')
-    //   .where('task.teamId = :teamId', { teamId })
-    //   .andWhere('task.actStatus = :actStatus', { actStatus: ActStatus.ACTIVE })
-    //   .orderBy('task.startAt', 'DESC')
-    //   .addOrderBy('task.crtdAt', 'DESC') // startAt이 null인 경우를 대비하여 생성일시로 추가 정렬
-    //   .getMany();
+    // 3. 태스크 목록 조회 (기본: 활성 태스크만, actStatusFilter로 변경 가능)
     const tasks = await this.getTeamTasksBy({
       teamIds: [teamId],
-      actStatus: [ActStatus.ACTIVE],
+      actStatus: actStatusFilter ?? [ActStatus.ACTIVE],
     });
 
     return { team, tasks };
@@ -851,6 +853,7 @@ export class TeamService {
       actStatus: number;
       startAt: Date | null;
       endAt: Date | null;
+      completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
       userName: string | null;
@@ -871,10 +874,6 @@ export class TeamService {
     await this.verifyTeamMemberAccess(teamId, userId);
 
     // 2. 태스크 존재 여부 확인 (생성자 이름 포함)
-    // [기존 코드 - 주석처리]
-    // const task = await this.teamTaskRepository.findOne({
-    //   where: { taskId },
-    // });
     const tasks = await this.getTeamTasksBy({
       taskIds: [taskId],
     });
