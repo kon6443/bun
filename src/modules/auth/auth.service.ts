@@ -112,6 +112,18 @@ export class AuthService {
     return savedUser.userId;
   }
 
+  async updateUserName(userId: number, userName: string): Promise<{ userId: number; userName: string }> {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) {
+      throw new AuthUnauthorizedErrorResponseDto('사용자를 찾을 수 없습니다.');
+    }
+
+    user.userName = userName;
+    await this.userRepository.save(user);
+
+    return { userId: user.userId, userName: user.userName ?? '' };
+  }
+
   async postKakaoSignInUp({
     kakaoUserSign,
   }: {

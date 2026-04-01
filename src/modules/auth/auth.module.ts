@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
+import { UsersController } from './users.controller';
 import { AuthService } from './auth.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../entities/User';
@@ -8,7 +9,7 @@ import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guar
 
 @Module({
   imports: [TypeOrmModule.forFeature([User])],
-  controllers: [AuthController],
+  controllers: [AuthController, UsersController],
   providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard],
   // AuthModule을 import하는 다른 모듈(예: TeamModule)에서도
   // JwtAuthGuard의 의존성(@InjectRepository(User))을 해결할 수 있도록
