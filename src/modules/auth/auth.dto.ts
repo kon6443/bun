@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 
 // ==================== Request DTOs ====================
@@ -38,4 +38,27 @@ export class KakaoSignInUpDataDto {
 export class KakaoSignInUpResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: KakaoSignInUpDataDto })
   data: KakaoSignInUpDataDto;
+}
+
+// ==================== User Profile ====================
+
+export class UpdateUserNameDto {
+  @ApiProperty({ description: '변경할 닉네임', example: '홍길동' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  userName: string;
+}
+
+export class UpdateUserNameDataDto {
+  @ApiProperty({ description: '사용자 ID', example: 1 })
+  userId: number;
+
+  @ApiProperty({ description: '변경된 닉네임', example: '홍길동' })
+  userName: string;
+}
+
+export class UpdateUserNameResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: UpdateUserNameDataDto })
+  data: UpdateUserNameDataDto;
 }
