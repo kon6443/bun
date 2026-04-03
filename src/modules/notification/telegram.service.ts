@@ -4,7 +4,7 @@ import { Repository, MoreThan, EntityManager, DataSource } from 'typeorm';
 import { Team } from '../../entities/Team';
 import { TelegramLink } from '../../entities/TelegramLink';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { TeamMemberType } from '../team/team.service';
+import { NotificationTeamInfo } from '../../common/port/notification.port';
 import { randomBytes } from 'crypto';
 
 /**
@@ -147,11 +147,11 @@ export class TelegramService {
     message,
     buttons,
   }: {
-    team: Team | TeamMemberType;
+    team: NotificationTeamInfo;
     message: string;
     buttons?: TelegramInlineButton[];
   }): Promise<void> {
-    const { teamId, telegramChatId } = team as Team;
+    const { teamId, telegramChatId } = team;
 
     try {
       if (!telegramChatId) {
