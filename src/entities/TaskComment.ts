@@ -4,7 +4,6 @@ import {
   Column,
   PrimaryColumn,
   ManyToOne,
-  OneToOne,
   JoinColumn,
 } from 'typeorm';
 import { Team } from './Team';
@@ -39,7 +38,7 @@ export class TaskComment {
   crtdAt: Date;
 
   // 관계
-  @OneToOne(() => Team)
+  @ManyToOne(() => Team)
   @JoinColumn({ name: 'TEAM_ID' })
   team: Team;
 
@@ -47,7 +46,7 @@ export class TaskComment {
   @JoinColumn({ name: 'TASK_ID' })
   task: TeamTask;
 
-  @OneToOne(() => User)
+  @ManyToOne(() => User)
   @JoinColumn({ name: 'USER_ID' })
   user: User;
 }

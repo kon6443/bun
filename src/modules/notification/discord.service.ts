@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Team } from '../../entities/Team';
@@ -28,6 +28,8 @@ export interface DiscordEmbed {
 
 @Injectable()
 export class DiscordService {
+  private readonly logger = new Logger(DiscordService.name);
+
   constructor(
     @InjectRepository(Team)
     private readonly teamRepository: Repository<Team>,
@@ -45,7 +47,7 @@ export class DiscordService {
     embeds?: DiscordEmbed[],
   ): Promise<void> {
     if (!webhookUrl || !content) {
-      console.warn('[DISCORD] sendWebhookMessage(): webhookUrl 또는 content가 없습니다.');
+      this.logger.warn('sendWebhookMessage(): webhookUrl 또는 content가 없습니다.');
       return;
     }
 
@@ -86,8 +88,8 @@ export class DiscordService {
 
     try {
       if (!discordWebhookUrl) {
-        console.warn(
-          `[teamId: ${teamId} - DISCORD] sendTeamNotification(): 팀에 discordWebhookUrl이 설정되지 않았습니다`,
+        this.logger.warn(
+          `[teamId: ${teamId}] sendTeamNotification(): 팀에 discordWebhookUrl이 설정되지 않았습니다`,
         );
         return;
       }
@@ -95,7 +97,7 @@ export class DiscordService {
       const messageWithLink = url ? `${content}\n\n[바로가기](${url})` : content;
       await this.sendWebhookMessage(discordWebhookUrl, messageWithLink, embeds);
     } catch (error) {
-      console.error(`[DISCORD] sendTeamNotification() 오류:`, error);
+      this.logger.error(`sendTeamNotification() 오류:`, error);
     }
   }
 
@@ -137,7 +139,7 @@ export class DiscordService {
     }
 
     await this.teamRepository.update({ teamId }, { discordWebhookUrl: webhookUrl });
-    console.log(`[DISCORD] Webhook URL 저장 완료. teamId: ${teamId}`);
+    this.logger.log(`Webhook URL 저장 완료. teamId: ${teamId}`);
   }
 
   /**
@@ -176,6 +178,6 @@ export class DiscordService {
     }
 
     await this.teamRepository.update({ teamId }, { discordWebhookUrl: null });
-    console.log(`[DISCORD] 팀 연동 해제. teamId: ${teamId}`);
+    this.logger.log(`팀 연동 해제. teamId: ${teamId}`);
   }
 }

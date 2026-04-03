@@ -11,3 +11,6 @@ ssh-agent.sh
 
 # dist
 dist/
+
+# pino-roll 로그 파일
+logs/
