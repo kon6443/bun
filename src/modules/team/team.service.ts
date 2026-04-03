@@ -49,7 +49,11 @@ import {
   hasManagementPermission,
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
-import { NotificationService } from '../notification/notification.service';
+import { Inject } from '@nestjs/common';
+import {
+  INotificationPort,
+  NOTIFICATION_PORT,
+} from '../../common/port/notification.port';
 import { formatDateTime } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
@@ -100,7 +104,8 @@ export class TeamService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly configService: ConfigService,
-    private readonly notificationService: NotificationService,
+    @Inject(NOTIFICATION_PORT)
+    private readonly notificationPort: INotificationPort,
   ) {}
 
   getTeamTaskUrl({teamId, taskId}:{teamId: number, taskId: number}): string {
@@ -386,7 +391,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.notificationService.notifyTeam({ team, message, url });
+    this.notificationPort.notifyTeam({ team, message, url });
 
     return task;
   }
@@ -444,7 +449,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.notificationService.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({ team: teamMember, message, url });
 
     return task;
   }
@@ -505,7 +510,7 @@ export class TeamService {
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.notificationService.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({ team: teamMember, message, url });
 
     return task;
   }
@@ -593,7 +598,7 @@ export class TeamService {
       // `${comment.user.userName}: ${comment.commentContent}`,
       comment.commentContent,
     ].filter(Boolean).join('\n');
-    this.notificationService.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({ team: teamMember, message, url });
     return comment;
   }
 
@@ -659,8 +664,8 @@ export class TeamService {
       `💬 ${teamTask.taskName} 태스크에 댓글이 수정되었습니다 💬`,
       updatedComment.commentContent,
     ].filter(Boolean).join('\n');
-    this.notificationService.notifyTeam({
-      team: { teamId: teamTask.teamId, telegramChatId: teamTask.telegramChatId, discordWebhookUrl: teamTask.discordWebhookUrl } as Team,
+    this.notificationPort.notifyTeam({
+      team: { teamId: teamTask.teamId, teamName: teamTask.teamName, telegramChatId: teamTask.telegramChatId, discordWebhookUrl: teamTask.discordWebhookUrl },
       message,
       url,
     });
@@ -1376,8 +1381,8 @@ export class TeamService {
       `${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`,
     ].join('\n');
 
-    this.notificationService.notifyTeam({
-      team: { teamId, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl } as Team,
+    this.notificationPort.notifyTeam({
+      team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
       message,
     });
 
@@ -1497,8 +1502,8 @@ export class TeamService {
       `${userName || `사용자 ${targetUserId}`}님이 ${statusLabel}되었습니다.`,
     ].join('\n');
 
-    this.notificationService.notifyTeam({
-      team: { teamId, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl } as Team,
+    this.notificationPort.notifyTeam({
+      team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
       message,
     });
 

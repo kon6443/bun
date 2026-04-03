@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Team } from '../../entities/Team';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { TeamMemberType } from '../team/team.service';
+import { NotificationTeamInfo } from '../../common/port/notification.port';
 
 /**
  * 디스코드 Embed 필드 타입
@@ -79,12 +79,12 @@ export class DiscordService {
     url,
     embeds,
   }: {
-    team: Team | TeamMemberType;
+    team: NotificationTeamInfo;
     content: string;
     url?: string;
     embeds?: DiscordEmbed[];
   }): Promise<void> {
-    const { teamId, discordWebhookUrl } = team as Team;
+    const { teamId, discordWebhookUrl } = team;
 
     try {
       if (!discordWebhookUrl) {

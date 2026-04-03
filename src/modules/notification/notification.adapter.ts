@@ -1,25 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { TelegramService } from './telegram.service';
 import { DiscordService } from './discord.service';
-import { Team } from '../../entities/Team';
-import { TeamMemberType } from '../team/team.service';
+import {
+  INotificationPort,
+  TeamNotificationParams,
+} from '../../common/port/notification.port';
 
 /**
- * 팀 알림 전송 파라미터
- */
-export interface TeamNotificationParams {
-  team: Team | TeamMemberType;
-  message: string;
-  url?: string;
-}
-
-/**
- * 통합 알림 서비스
- * 모든 메신저 서비스를 하나의 인터페이스로 관리
+ * 알림 서비스 Adapter (INotificationPort 구현체)
+ * Telegram + Discord로 팀 알림 전송
  * 새 메신저 추가 시 이 서비스의 notifyTeam 내부에만 추가하면 됨
  */
 @Injectable()
-export class NotificationService {
+export class NotificationAdapter implements INotificationPort {
   constructor(
     private readonly telegramService: TelegramService,
     private readonly discordService: DiscordService,
