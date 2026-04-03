@@ -73,10 +73,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // 에러 로깅 (레벨 분리)
     const logMessage = `${request.method} ${request.url} - ${JSON.stringify(errorResponse)}`;
     if (status >= 500) {
-      this.logger.error(
-        logMessage,
-        exception instanceof Error ? exception.stack : JSON.stringify(exception),
-      );
+      if (exception instanceof Error) {
+        this.logger.error(logMessage, exception.stack);
+      } else {
+        // 알 수 없는 예외: 원본 객체 전체 로깅
+        this.logger.error(`${logMessage} | 원본 예외:`, exception);
+      }
     } else {
       this.logger.warn(logMessage);
     }

@@ -47,10 +47,7 @@ export class SchedulerService {
     try {
       const count = await this.userRepository.count();
     } catch (err: any) {
-      console.error(
-        `SCHEDULER ERROR::[doTrash] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]\n`,
-        err,
-      );
+      this.logger.error(`[doTrash] 스케줄러 오류`, err?.stack ?? err);
     }
   }
 
@@ -70,10 +67,7 @@ export class SchedulerService {
       }
 
     } catch (err: any) {
-      console.error(
-        `SCHEDULER ERROR::[runCpuIntensiveLoop] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]\n`,
-        err,
-      );
+      this.logger.error(`[runCpuIntensiveLoop] 스케줄러 오류`, err?.stack ?? err);
     }
   }
 
@@ -105,10 +99,7 @@ export class SchedulerService {
         this.logger.log(`[autoArchiveTasks] ${result.affected}건 자동 아카이브 완료`);
       }
     } catch (err: any) {
-      console.error(
-        `SCHEDULER ERROR::[autoArchiveTasks] - [${new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })}]\n`,
-        err,
-      );
+      this.logger.error(`[autoArchiveTasks] 스케줄러 오류`, err?.stack ?? err);
     }
   }
 }

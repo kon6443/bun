@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, EntityManager, DataSource } from 'typeorm';
 import { Team } from '../../entities/Team';
@@ -63,6 +63,7 @@ export interface LinkTokenResult {
 
 @Injectable()
 export class TelegramService {
+  private readonly logger = new Logger(TelegramService.name);
   private readonly baseUrl = 'https://api.telegram.org';
   private readonly botToken: string;
   private readonly botUsername: string;
@@ -79,10 +80,10 @@ export class TelegramService {
     this.botToken = process.env.BOT_TOKEN_TELEGRAM || '';
     this.botUsername = process.env.BOT_USERNAME_TELEGRAM || '';
     if (!this.botToken) {
-      console.warn('[TELEGRAM] BOT_TOKEN_TELEGRAM 환경변수가 설정되지 않았습니다.');
+      this.logger.warn('BOT_TOKEN_TELEGRAM 환경변수가 설정되지 않았습니다.');
     }
     if (!this.botUsername) {
-      console.warn('[TELEGRAM] BOT_USERNAME_TELEGRAM 환경변수가 설정되지 않았습니다.');
+      this.logger.warn('BOT_USERNAME_TELEGRAM 환경변수가 설정되지 않았습니다.');
     }
   }
 
@@ -99,12 +100,12 @@ export class TelegramService {
     buttons?: TelegramInlineButton[],
   ): Promise<void> {
     if (!this.botToken) {
-      console.warn('[TELEGRAM] sendMessageAsync(): REQUIRES: BOT_TOKEN_TELEGRAM');
+      this.logger.warn('sendMessageAsync(): REQUIRES: BOT_TOKEN_TELEGRAM');
       return;
     }
 
     if (!chatId || !message) {
-      console.warn('[TELEGRAM] sendMessageAsync(): chatId 또는 message가 없습니다.');
+      this.logger.warn('sendMessageAsync(): chatId 또는 message가 없습니다.');
       return;
     }
 
@@ -154,15 +155,15 @@ export class TelegramService {
 
     try {
       if (!telegramChatId) {
-        console.warn(
-          `[teamId: ${teamId} - TELEGRAM] sendTeamNotification(): 팀에 telegramChatId가 설정되지 않았습니다`,
+        this.logger.warn(
+          `[teamId: ${teamId}] sendTeamNotification(): 팀에 telegramChatId가 설정되지 않았습니다`,
         );
         return;
       }
 
       await this.sendMessageAsync(telegramChatId, message, buttons);
     } catch (error) {
-      console.error(`[TELEGRAM] sendTeamNotification() 오류:`, error);
+      this.logger.error(`sendTeamNotification() 오류:`, error);
     }
   }
 
@@ -219,7 +220,7 @@ export class TelegramService {
    * @returns 처리 결과
    */
   async handleWebhook(update: TelegramUpdate): Promise<{ success: boolean; message: string }> {
-    console.log('[TELEGRAM] Webhook received:', JSON.stringify(update, null, 2));
+    this.logger.debug('Webhook received: ' + JSON.stringify(update, null, 2));
 
     // my_chat_member 이벤트: 봇이 그룹에 추가/제거될 때
     if (update.my_chat_member) {
@@ -227,14 +228,14 @@ export class TelegramService {
 
       // 봇이 그룹에 추가된 경우 (member 또는 administrator)
       if (['member', 'administrator'].includes(new_chat_member.status)) {
-        console.log(`[TELEGRAM] 봇이 그룹에 추가됨. chatId: ${chat.id}, title: ${chat.title}`);
+        this.logger.log(`봇이 그룹에 추가됨. chatId: ${chat.id}, title: ${chat.title}`);
         // 그룹에 추가된 후 /start 명령을 기다림
         return { success: true, message: '봇이 그룹에 추가되었습니다. /start 명령을 기다리는 중입니다.' };
       }
 
       // 봇이 그룹에서 제거된 경우
       if (['left', 'kicked'].includes(new_chat_member.status)) {
-        console.log(`[TELEGRAM] 봇이 그룹에서 제거됨. chatId: ${chat.id}`);
+        this.logger.log(`봇이 그룹에서 제거됨. chatId: ${chat.id}`);
         // 해당 chatId를 사용하는 팀의 연동 해제
         await this.unlinkTeamByChatId(chat.id);
         return { success: true, message: '봇이 그룹에서 제거되었습니다.' };
@@ -344,7 +345,7 @@ export class TelegramService {
       return { success: false, message: '연동 처리 중 오류가 발생했습니다.' };
     }
 
-    console.log(`[TELEGRAM] 팀 연동 완료. teamId: ${team.teamId}, chatId: ${chatId}`);
+    this.logger.log(`팀 연동 완료. teamId: ${team.teamId}, chatId: ${chatId}`);
     return { success: true, message: '연동이 완료되었습니다.', teamName: team.teamName };
   }
 
@@ -438,7 +439,7 @@ export class TelegramService {
     } catch (err) {
       throw new Error('연동 해제 처리 중 오류가 발생했습니다.');
     }
-    console.log(`[TELEGRAM] 팀 연동 해제. teamId: ${teamId}`);
+    this.logger.log(`팀 연동 해제. teamId: ${teamId}`);
   }
 
   /**
@@ -452,7 +453,7 @@ export class TelegramService {
 
     if (team) {
       await this.teamRepository.update({ teamId: team.teamId }, { telegramChatId: null });
-      console.log(`[TELEGRAM] chatId로 팀 연동 해제. teamId: ${team.teamId}, chatId: ${chatId}`);
+      this.logger.log(`chatId로 팀 연동 해제. teamId: ${team.teamId}, chatId: ${chatId}`);
     }
   }
 }

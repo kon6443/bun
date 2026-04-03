@@ -68,4 +68,16 @@ export class RedisIoAdapter extends IoAdapter {
   getPubClient(): Redis {
     return this.pubClient;
   }
+
+  /**
+   * Graceful shutdown 시 Redis 연결 정리
+   */
+  async disconnect(): Promise<void> {
+    try {
+      await Promise.all([this.pubClient.quit(), this.subClient.quit()]);
+      this.logger.log('Redis 연결 정리 완료');
+    } catch (error) {
+      this.logger.error('Redis 연결 정리 실패:', (error as Error).message);
+    }
+  }
 }
