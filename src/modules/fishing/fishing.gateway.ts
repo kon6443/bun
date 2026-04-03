@@ -107,7 +107,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     await client.join(roomName);
 
     // mapId를 소켓에 캐싱 (move 등 고빈도 이벤트에서 Redis 조회 생략용)
-    (client as any)._fishingMapId = mapId;
+    client._fishingMapId = mapId;
 
     if (info) {
       const { userId, userName } = info;
@@ -194,7 +194,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   ): Promise<void> {
     // client.data에서 직접 읽기 (Redis 조회 생략 — 고빈도 이벤트 최적화)
     const info = getClientInfo(client);
-    const mapId = (client as any)._fishingMapId;
+    const mapId = client._fishingMapId;
     if (!info || !mapId) return;
 
     const { userId, userName } = info;
@@ -229,7 +229,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @MessageBody() dto: FishingStateDto,
   ): Promise<void> {
     const info = getClientInfo(client);
-    const mapId = (client as any)._fishingMapId;
+    const mapId = client._fishingMapId;
     if (!info || !mapId) return;
 
     const { userId, userName } = info;
@@ -261,7 +261,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @MessageBody() dto: ChatMessageDto,
   ): Promise<void> {
     const info = getClientInfo(client);
-    const mapId = (client as any)._fishingMapId;
+    const mapId = client._fishingMapId;
     if (!info || !mapId) return;
 
     const { userId, userName } = info;
@@ -291,7 +291,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @MessageBody() dto: CatchResultDto,
   ): Promise<void> {
     const info = getClientInfo(client);
-    const mapId = (client as any)._fishingMapId;
+    const mapId = client._fishingMapId;
     if (!info || !mapId) return;
 
     const { userId, userName } = info;

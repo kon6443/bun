@@ -29,7 +29,7 @@ export class User {
   isActivated: 0 | 1;
 
   // 관계
-  @OneToMany(() => Team, (team) => team.leaderId)
+  @OneToMany(() => Team, (team) => team.leader)
   teams: Team[];
 
   @OneToMany(() => TeamMember, (teamMember) => teamMember.user)

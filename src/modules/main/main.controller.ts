@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,6 +8,8 @@ import { MainResponseDto, HealthCheckResponseDto } from './main.dto';
 @ApiTags('main')
 @Controller()
 export class MainController {
+  private readonly logger = new Logger(MainController.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -27,7 +29,7 @@ export class MainController {
     try {
       return { code: 'SUCCESS', data: { database: 'connected' }, message: '' };
     } catch (error) {
-      console.error('Database connection error:', error);
+      this.logger.error('Database connection error:', error);
       return { code: 'SUCCESS', data: { database: 'disconnected' }, message: '' };
     }
   }

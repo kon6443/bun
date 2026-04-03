@@ -10,6 +10,7 @@ import {
   NotFoundException,
   BadRequestException,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -21,7 +22,8 @@ import * as fs from 'fs';
 const isLocal = process.env.ENV?.toUpperCase() == 'LOCAL';
 const SHARED_BASE_DIR = isLocal ? path.join(process.cwd(), 'shared') : '/app/shared';
 
-// 디렉토리 생성 헬퍼 함수
+// 디렉토리 생성 헬퍼 함수 (클래스 밖이라 모듈 스코프 Logger 사용)
+const sharedDirLogger = new Logger('FileShare:ensureSharedDirectory');
 function ensureSharedDirectory() {
   if (!fs.existsSync(SHARED_BASE_DIR)) {
     try {
@@ -29,7 +31,7 @@ function ensureSharedDirectory() {
     } catch (error: any) {
       // 권한 오류 등은 무시 (실제 사용 시점에 다시 시도)
       if (error.code !== 'EACCES') {
-        console.warn(`Failed to create shared directory: ${error.message}`);
+        sharedDirLogger.warn(`Failed to create shared directory: ${error.message}`);
       }
     }
   }
@@ -38,6 +40,8 @@ function ensureSharedDirectory() {
 @ApiTags('files')
 @Controller('files')
 export class FileShareController {
+  private readonly logger = new Logger(FileShareController.name);
+
   constructor(@Inject(FileShareService) private readonly fileShareService: FileShareService) {}
 
   @Get()
@@ -188,7 +192,7 @@ export class FileShareController {
     fileStream.pipe(res);
 
     fileStream.on('error', error => {
-      console.error('파일 스트리밍 오류:', error);
+      this.logger.error('파일 스트리밍 오류:', error);
       if (!res.headersSent) {
         res.status(500).json({
           code: 'INTERNAL_SERVER_ERROR',

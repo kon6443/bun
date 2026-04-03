@@ -6,7 +6,8 @@ if (typeof globalThis.crypto === 'undefined') {
   } as any;
 }
 
-import { Module } from '@nestjs/common';
+import { Module, ValidationPipe } from '@nestjs/common';
+import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -18,16 +19,41 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { UsersModule } from './modules/users/users.module';
 import { FishingModule } from './modules/fishing/fishing.module';
+import { LoggerModule } from './common/logger/logger.module';
 import databaseConfig from './config/database.config';
 import oracleConfig from './config/oracle.config';
+import { validateEnv } from './config/env.validation';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import oracledb from 'oracledb';
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('AppModule');
 
 @Module({
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
+    {
+      provide: APP_PIPE,
+      useFactory: () =>
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+          forbidNonWhitelisted: true,
+          transformOptions: {
+            enableImplicitConversion: true,
+          },
+        }),
+    },
+  ],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig, oracleConfig],
       envFilePath: '.env',
+      validate: validateEnv,
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -39,9 +65,9 @@ import oracledb from 'oracledb';
             libDir: oracleConfig.libDir,
             configDir: oracleConfig.walletPath,
           });
-          console.log('Oracle Client initialized');
+          logger.log('Oracle Client initialized');
         } else {
-          console.warn(
+          logger.warn(
             'Oracle Client initialization skipped (ORACLE_LIB_DIR or ORACLE_WALLET_PATH not set)',
           );
         }
@@ -55,6 +81,7 @@ import oracledb from 'oracledb';
       inject: [ConfigService],
     }),
     ScheduleModule.forRoot(),
+    LoggerModule,
     MainModule,
     AuthModule,
     TeamModule,

@@ -1,13 +1,12 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -18,8 +17,11 @@ async function bootstrap() {
 
   try {
     const app = await NestFactory.create(AppModule, {
-      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+      bufferLogs: true,
     });
+
+    // Pino Logger 활성화 (bufferLogs 해제)
+    app.useLogger(app.get(PinoLogger));
 
     const configService = app.get(ConfigService);
 
@@ -30,13 +32,10 @@ async function bootstrap() {
 
     const isLocal = configService.get<string>('ENV')?.toUpperCase() === 'LOCAL';
     const port = configService.get<number>('EXPRESS_PORT') || 3500;
-    const domain = configService.get<string>('DOMAIN');
 
-    // 전역 예외 필터 (Nest.js 정석 방식)
-    app.useGlobalFilters(new HttpExceptionFilter());
-
-    // 전역 인터셉터 (Nest.js 정석 방식)
-    app.useGlobalInterceptors(new LoggingInterceptor(configService));
+    // 전역 Filter/Pipe는 AppModule providers에서 DI 기반으로 등록됨
+    // (APP_FILTER → HttpExceptionFilter, APP_PIPE → ValidationPipe)
+    // 전역 인터셉터: pino-http가 요청 로깅 자동 처리
 
     // CORS 설정 (전역 상수 사용)
     app.enableCors({
@@ -81,18 +80,6 @@ async function bootstrap() {
       return next();
     });
 
-    // 전역 유효성 검사 파이프 (Nest.js 정석 방식)
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
-
     // 글로벌 프리픽스
     app.setGlobalPrefix('api/v1');
 
@@ -113,9 +100,40 @@ async function bootstrap() {
       logger.log('Swagger documentation available at /api/v1/docs');
     }
 
+    // NestJS 라이프사이클 훅 활성화 (OnModuleDestroy 등)
+    app.enableShutdownHooks();
+
     await app.listen(port, '0.0.0.0');
     logger.log(`Application is running on: http://0.0.0.0:${port}`);
     logger.log(`Health check: http://localhost:${port}/api/v1/health-check`);
+
+    // Graceful Shutdown
+    let isShuttingDown = false;
+    const shutdown = async (signal: string) => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+
+      logger.log(`${signal} 수신, graceful shutdown 시작...`);
+
+      const timer = setTimeout(() => {
+        logger.error('Graceful shutdown 타임아웃, 강제 종료');
+        process.exit(1);
+      }, 30_000);
+      timer.unref();
+
+      try {
+        await redisAdapter.disconnect();
+        await app.close();
+        logger.log('Graceful shutdown 완료');
+        process.exit(0);
+      } catch (error) {
+        logger.error('Graceful shutdown 실패:', error);
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     logger.error('Failed to start application:', error);
     process.exit(1);

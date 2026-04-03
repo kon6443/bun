@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Entity, Column, ManyToOne, JoinColumn, PrimaryColumn, OneToOne } from "typeorm";
+import { Entity, Column, ManyToOne, JoinColumn, PrimaryColumn } from "typeorm";
 import { User } from "./User";
 import { Team } from "./Team";
 
@@ -21,12 +21,11 @@ export class TeamMember {
   actStatus: number;
 
   // 관계
-  // @ManyToOne(() => Team, (team) => team.teamId)
-  @OneToOne(() => Team, (team) => team.teamId)
+  @ManyToOne(() => Team, (team) => team.teamMembers)
   @JoinColumn({ name: "TEAM_ID" })
   team: Team;
 
-  @ManyToOne(() => User, (user) => user.userId)
+  @ManyToOne(() => User, (user) => user.teamMembers)
   @JoinColumn({ name: "USER_ID" })
   user: User;
 }

@@ -4,9 +4,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   ManyToOne,
-  OneToMany,
   JoinColumn,
-  ManyToMany,
 } from 'typeorm';
 import { User } from './User';
 import { Team } from './Team';

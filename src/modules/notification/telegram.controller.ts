@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { TelegramService, TelegramUpdate } from './telegram.service';
 import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.dto';
@@ -6,6 +6,8 @@ import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.d
 @ApiTags('telegram')
 @Controller('telegram')
 export class TelegramController {
+  private readonly logger = new Logger(TelegramController.name);
+
   constructor(private readonly telegramService: TelegramService) {}
 
   /**
@@ -27,7 +29,7 @@ export class TelegramController {
       const result = await this.telegramService.handleWebhook(update);
       return result;
     } catch (error) {
-      console.error('[TELEGRAM] Webhook 처리 오류:', error);
+      this.logger.error('Webhook 처리 오류:', error);
       // 텔레그램은 200 OK를 받아야 재시도하지 않음
       return { success: false, message: '처리 중 오류 발생' };
     }

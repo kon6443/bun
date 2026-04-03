@@ -4,7 +4,8 @@ import {
   Column,
   PrimaryGeneratedColumn,
   JoinColumn,
-  ManyToMany,
+  ManyToOne,
+  OneToMany,
 } from 'typeorm';
 import { User } from './User';
 import { TeamMember } from './TeamMember';
@@ -36,11 +37,10 @@ export class Team {
   discordWebhookUrl: string | null;
 
   // 관계
-  @ManyToMany(() => User, user => user.userId)
+  @ManyToOne(() => User, (user) => user.teams)
   @JoinColumn({ name: 'LEADER_ID' })
-  users: User[];
+  leader: User;
 
-  // @OneToMany(() => TeamMember, (teamMember) => teamMember.teamId)
-  @ManyToMany(() => TeamMember, teamMember => teamMember.teamId)
+  @OneToMany(() => TeamMember, (teamMember) => teamMember.team)
   teamMembers: TeamMember[];
 }

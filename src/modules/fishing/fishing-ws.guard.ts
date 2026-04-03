@@ -23,6 +23,8 @@ export interface FishingSocket extends Socket {
     /** 인증 여부 */
     isAuthenticated: boolean;
   };
+  /** 현재 참가 중인 맵 ID (고빈도 이벤트 최적화용 캐시) */
+  _fishingMapId?: string;
 }
 
 /**
