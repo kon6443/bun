@@ -62,87 +62,83 @@ function redactSensitiveData(obj: unknown): unknown {
         const logLevel = configService.get<string>('LOG_LEVEL', 'debug');
         const isLocal = env === 'LOCAL';
 
-        const pinoOptions: pino.LoggerOptions = {
-          level: logLevel,
-          timestamp: pino.stdTimeFunctions.isoTime,
-          formatters: {
-            level: (label) => ({ level: label }),
-          },
-          serializers: {
-            req: (req: {
-              id?: string;
-              method?: string;
-              url?: string;
-              headers?: Record<string, unknown>;
-              remoteAddress?: string;
-              remotePort?: number;
-            }) => ({
-              id: req.id,
-              method: req.method,
-              url: req.url,
-              headers: redactSensitiveData(req.headers),
-              remoteAddress: req.remoteAddress,
-              remotePort: req.remotePort,
-            }),
-            res: (res: { statusCode?: number; headers?: Record<string, unknown> }) => ({
-              statusCode: res.statusCode,
-              headers: redactSensitiveData(res.headers),
-            }),
-            err: pino.stdSerializers.err,
-          },
+        const serializers = {
+          req: (req: {
+            id?: string;
+            method?: string;
+            url?: string;
+            headers?: Record<string, unknown>;
+            remoteAddress?: string;
+            remotePort?: number;
+          }) => ({
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            headers: redactSensitiveData(req.headers),
+            remoteAddress: req.remoteAddress,
+            remotePort: req.remotePort,
+          }),
+          res: (res: { statusCode?: number; headers?: Record<string, unknown> }) => ({
+            statusCode: res.statusCode,
+            headers: redactSensitiveData(res.headers),
+          }),
+          err: pino.stdSerializers.err,
         };
 
         const genReqId = (req: { headers?: Record<string, unknown> }) =>
           (req.headers?.['x-request-id'] as string) ||
           `req-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
+        const baseHttpOptions = {
+          level: logLevel,
+          timestamp: pino.stdTimeFunctions.isoTime,
+          serializers,
+          customProps: () => ({ context: 'HTTP' }),
+          genReqId,
+        };
+
         // LOCAL: pretty print + 파일 로깅
+        // transport.targets 사용 시 formatters.level 함수 전달 불가 (worker thread 제약)
+        // pino-pretty가 자체적으로 level을 문자열로 포맷하므로 문제 없음
         if (isLocal) {
-          const streams: Array<{ level?: string; stream: NodeJS.WritableStream }> = [
-            {
-              level: logLevel,
-              stream: pino.transport({
-                target: 'pino-pretty',
-                options: {
-                  colorize: true,
-                  translateTime: 'SYS:standard',
-                  ignore: 'pid,hostname',
-                  singleLine: false,
-                },
-              }) as unknown as NodeJS.WritableStream,
-            },
-            {
-              level: logLevel,
-              stream: pino.transport({
-                target: 'pino-roll',
-                options: {
-                  file: join(process.cwd(), 'logs', 'app'),
-                  frequency: 'daily',
-                  mkdir: true,
-                  limit: { count: 7 },
-                },
-              }) as unknown as NodeJS.WritableStream,
-            },
-          ];
-
-          const logger = pino(pinoOptions, pino.multistream(streams));
-
           return {
             pinoHttp: {
-              logger,
-              customProps: () => ({ context: 'HTTP' }),
-              genReqId,
+              ...baseHttpOptions,
+              transport: {
+                targets: [
+                  {
+                    target: 'pino-pretty',
+                    options: {
+                      colorize: true,
+                      translateTime: 'SYS:standard',
+                      ignore: 'pid,hostname',
+                      singleLine: false,
+                    },
+                    level: logLevel,
+                  },
+                  {
+                    target: 'pino-roll',
+                    options: {
+                      file: join(process.cwd(), 'logs', 'app'),
+                      frequency: 'daily',
+                      mkdir: true,
+                      limit: { count: 7 },
+                    },
+                    level: logLevel,
+                  },
+                ],
+              },
             },
           };
         }
 
-        // QA/PROD: JSON stdout
+        // QA/PROD: JSON stdout — formatters 사용 가능 (transport 미사용)
         return {
           pinoHttp: {
-            ...pinoOptions,
-            stream: process.stdout,
-            customProps: () => ({ context: 'HTTP' }),
-            genReqId,
+            ...baseHttpOptions,
+            formatters: {
+              level: (label) => ({ level: label }),
+            },
           },
         };
       },

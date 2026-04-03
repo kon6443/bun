@@ -8,6 +8,7 @@ if (typeof globalThis.crypto === 'undefined') {
 
 import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { ApiValidationErrorResponseDto } from './common/dto/api-error.dto';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -44,6 +45,14 @@ const logger = new Logger('AppModule');
           forbidNonWhitelisted: true,
           transformOptions: {
             enableImplicitConversion: true,
+          },
+          exceptionFactory: (errors) => {
+            const messages = errors
+              .map((e) => Object.values(e.constraints || {}).join(', '))
+              .join('; ');
+            return new ApiValidationErrorResponseDto(
+              messages || '요청 값이 올바르지 않습니다.',
+            );
           },
         }),
     },

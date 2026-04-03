@@ -96,7 +96,9 @@ async function bootstrap() {
         })
         .build();
       const document = SwaggerModule.createDocument(app, config);
-      SwaggerModule.setup('api/v1/docs', app, document);
+      SwaggerModule.setup('api/v1/docs', app, document, {
+        swaggerOptions: { persistAuthorization: true },
+      });
       logger.log('Swagger documentation available at /api/v1/docs');
     }
 
@@ -139,5 +141,16 @@ async function bootstrap() {
     process.exit(1);
   }
 }
+
+// 예기치 않은 에러로 서버가 죽는 것 방지
+process.on('uncaughtException', (error) => {
+  const logger = new Logger('UncaughtException');
+  logger.error('Uncaught Exception — 서버는 계속 실행됩니다:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const logger = new Logger('UnhandledRejection');
+  logger.error('Unhandled Rejection — 서버는 계속 실행됩니다:', reason);
+});
 
 bootstrap();
