@@ -1,479 +1,421 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03  
-> 브랜치: `feat-onam`  
-> 목표: 안정성 + 구조적 업그레이드  
+> 작성일: 2026-04-03 | 최종 수정: 2026-04-04
+> 브랜치: `feat-onam`
+> 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
 
 ---
 
-## 완료된 작업 (Phase 1)
+## 환경 제약사항
 
-### A2. 환경변수 스키마 검증 추가
-- **상태**: 완료
-- **변경**: `src/config/env.validation.ts` (신규), `src/app.module.ts`
-- **내용**: ConfigModule `validate` 옵션으로 필수 환경변수(DB, JWT) 누락 시 앱 시작 차단
-
-### B1. console.* → NestJS Logger 통일
-- **상태**: 완료
-- **변경**: 8개 파일, 30+곳
-
-### B4. 소켓 타입 안전성 강화
-- **상태**: 완료
-- **변경**: `fishing-ws.guard.ts`, `fishing.gateway.ts` — `(client as any)` 5곳 제거
+| 항목 | 상태 |
+|------|------|
+| DB | Oracle (LOCAL/PROD **동일 DB 공유**, QA 환경 없음) |
+| 인메모리 테스트 DB | **사용 불가** — Entity에 Oracle 전용 타입(`varchar2`, `number`, `clob`) 하드코딩 |
+| Redis | 상용 Redis 사용 중 |
+| 테스트 전략 | **100% Mock 기반** — 실제 DB/Redis 연결 금지 (상용 데이터 오염 위험) |
 
 ---
 
-## Phase 2 — NestJS 정석화
+## 진행률
 
-### A1. Entity 관계 데코레이터 수정
-
-- **난이도**: 보통 | **효과**: 높음 | **위험도**: 낮음~중간 | **범위**: 5파일
-
-#### 변경 대상 (전수 확인 완료)
-
-| Entity | 현재 | 올바른 관계 | 파일:줄 |
-|--------|------|-------------|---------|
-| `Team.users` | `@ManyToMany` + `@JoinColumn` | `@ManyToOne(() => User)` | `Team.ts:39-41` |
-| `Team.teamMembers` | `@ManyToMany` | `@OneToMany(() => TeamMember, tm => tm.team)` | `Team.ts:44-45` |
-| `TaskComment.team` | `@OneToOne` | `@ManyToOne(() => Team)` | `TaskComment.ts:42-44` |
-| `TaskComment.user` | `@OneToOne` | `@ManyToOne(() => User)` | `TaskComment.ts:50-52` |
-| `TeamMember.team` | `@OneToOne` | `@ManyToOne(() => Team, t => t.teamMembers)` | `TeamMember.ts:25-27` |
-
-#### 필드명 변경 필요
-
-- `Team.users` → `Team.leader` (리더 1명인데 users 복수형은 혼란)
-- 단, **프로젝트 전체에서 `team.users` 직접 참조 0곳** → 안전하게 변경 가능
-- 타입 변경: `users: User[]` (배열) → `leader: User` (단일)
-
-#### ⚠️ User.ts 역관계 주의
-
-현재 `User.ts:32`:
-```typescript
-@OneToMany(() => Team, (team) => team.leaderId)
-teams: Team[];
 ```
-**문제**: `team.leaderId`는 **컬럼(숫자)**이지 **관계(엔티티)**가 아님.
-TypeORM에서 역관계 콜백은 반드시 관계 프로퍼티를 가리켜야 함.
-
-변경 후:
-```typescript
-@OneToMany(() => Team, (team) => team.leader)  // leaderId → leader
-teams: Team[];
-```
-
-이 수정을 하지 않으면 `User.teams` relation loading 시 TypeORM이 올바른 FK를 찾지 못함.
-(현재 `relations:` 사용 0곳이라 당장 에러는 안 나지만, 정확하지 않은 관계 정의는 향후 버그원.)
-
-#### 영향받는 코드 (전수 확인)
-
-**team.leaderId를 직접 참조하는 코드 (9곳 — 모두 안전):**
-
-| 파일:줄 | 코드 | 변경 후 영향 |
-|---------|------|-------------|
-| `team.service.ts:142` | `'t.leaderId'` (select) | 안전 — `leaderId` 컬럼은 그대로 |
-| `team.service.ts:176` | `tm.team.leaderId` | 안전 — 컬럼 필드 접근 |
-| `team.service.ts:226` | `'team.leaderId'` (select) | 안전 — 컬럼 필드 접근 |
-| `team.service.ts:264` | `task.team.leaderId` | 안전 — 컬럼 필드 접근 |
-| `team.service.ts:308` | `createTeamDto.leaderId` | 안전 — DTO 필드 |
-| `team.controller.ts:115` | `createTeamDto.leaderId = user.userId` | 안전 — DTO 필드 |
-| `team.controller.ts:147` | `leaderId: team.leaderId` | 안전 — 컬럼 필드 접근 |
-| `team.controller.ts:208` | `leaderId: team.leaderId` | 안전 — 컬럼 필드 접근 |
-
-> `leaderId` **컬럼 프로퍼티**(`@Column`)는 그대로 유지. `leader` **관계 프로퍼티**(`@ManyToOne`)가 새로 추가되는 것이므로 기존 코드는 영향 없음.
-
-**QueryBuilder join (4곳 — 모두 호환):**
-
-| 파일:줄 | 코드 | 변경 후 영향 |
-|---------|------|-------------|
-| `team.service.ts:131` | `.innerJoinAndSelect('ut.team', 't')` | 호환 — QB join은 관계 타입 무관 |
-| `team.service.ts:172-178` | `tm.team.teamName` 등 7곳 | 호환 — 필드 접근 동일 |
-| `team.service.ts:806` | `.leftJoinAndSelect('comment.user', 'user')` | 호환 |
-| `team.service.ts:827` | `comment.user?.userName` | 호환 |
-
-#### 위험 요소
-
-- **`relations: [...]` 옵션 사용 코드**: 0곳 → 안전
-- **`find()`/`findOne()` with relations**: 0곳 → 안전
-- **DB 스키마 변경**: 불필요 (FK/PK 그대로, TypeORM 데코레이터만 정정)
-- **`leaderId` 컬럼 프로퍼티**: `@Column({ name: 'LEADER_ID' })` 그대로 유지 — 기존 9곳 참조에 영향 없음
-
-#### 실행 체크리스트
-```
-[ ] Team.ts: users → leader (ManyToOne, 타입 User[] → User), teamMembers → OneToMany
-[ ] Team.ts: import 정리 (ManyToMany 제거, ManyToOne/OneToMany 추가)
-[ ] TeamMember.ts: team → ManyToOne (import OneToOne 제거)
-[ ] TaskComment.ts: team, user → ManyToOne (import OneToOne 제거)
-[ ] User.ts: teams 역관계 수정 (team.leaderId → team.leader)
-[ ] tsc --noEmit 통과 확인
-[ ] 앱 시작 후 팀 목록 조회 정상 확인 (getTeamMembersBy)
-[ ] 앱 시작 후 태스크 조회 정상 확인 (getTeamTasksBy)
-[ ] 앱 시작 후 댓글 조회 정상 확인 (getCommentsByTaskId)
+완료: 15/21  |  남은: 6  |  보류: 1
 ```
 
 ---
 
-### B2. 글로벌 Filter/Interceptor/Pipe를 DI 기반으로 전환
+## 남은 작업 (Phase 5) — 실행 순서
 
-- **난이도**: 보통 | **효과**: 보통 | **위험도**: 낮음 | **범위**: 3파일
+| 순서 | 태스크 | 난이도 | 위험도 | 효과 | 선행 |
+|:---:|--------|:---:|:---:|:---:|:---:|
+| 9 | **D2 테스트 인프라 구축** | 어려움 | 🟢 | 매우 높음 | 없음 |
+| 10 | **D3 Port/Adapter (외부 서비스)** | 보통 | 🟢 | 높음 | 없음 |
+| 11 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
+| 12 | **D1 TeamService 분리** | 어려움 | 🟡 | 높음 | D5 |
+| 13 | **D6 E2E 테스트 작성** | 어려움 | 🟡 | 매우 높음 | D2 |
+| 14 | **D4 typeorm-transactional** | 보통 | 🟡 | 보통 | 없음 |
+| — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
-#### 현재 상태 (main.ts — C1 Pino 적용 후)
+### 의존 관계
 
-| 항목 | 줄 | 현재 방식 | 주입 서비스 |
-|------|-----|----------|------------|
-| `HttpExceptionFilter` | 37 | `new HttpExceptionFilter()` | 없음 (Logger만 내부 생성) |
-| ~~`LoggingInterceptor`~~ | — | C1에서 제거됨 (pino-http 대체) | — |
-| `ValidationPipe` | 85 | `new ValidationPipe({...})` | 없음 |
-
-#### 전환 방법
-
-```typescript
-// app.module.ts providers에 추가
-{
-  provide: APP_FILTER,
-  useClass: HttpExceptionFilter,
-},
-{
-  provide: APP_INTERCEPTOR,
-  useClass: LoggingInterceptor,  // ConfigService 자동 주입됨
-},
-{
-  provide: APP_PIPE,
-  useFactory: () => new ValidationPipe({ whitelist: true, transform: true, ... }),
-},
 ```
-
-#### 위험 요소
-
-- **WsExceptionFilter는 건드리지 않음**: Gateway별 `@UseFilters(new WsExceptionFilter())`는 HTTP 필터와 독립. 현 구조 유지
-- **APP_INTERCEPTOR의 WebSocket 영향**: 없음 — NestJS 정책상 HTTP만 처리
-- **순환 의존성**: LoggingInterceptor는 ConfigService만 의존 → 문제 없음
-
-#### C1 Pino 완료로 인한 변경
-
-LoggingInterceptor는 C1에서 이미 제거됨 → B2에서는 **`APP_FILTER`와 `APP_PIPE`만 전환**하면 됨. Interceptor 관련 작업 불필요.
-
-#### 실행 체크리스트
-```
-[ ] app.module.ts에 APP_FILTER, APP_PIPE 등록
-[ ] main.ts에서 useGlobalFilters, useGlobalPipes 제거
-[ ] WsExceptionFilter는 Gateway에서 그대로 유지 확인
-[ ] HTTP 에러 응답 포맷 동일 확인 ({ code, message, timestamp })
-[ ] WebSocket 이벤트 에러 처리 정상 확인
-[ ] ValidationPipe 옵션이 동일한지 확인 (whitelist, transform, forbidNonWhitelisted, enableImplicitConversion)
+D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
+           ──→ D6 (E2E 테스트)
+D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
+D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검증만)
 ```
 
 ---
 
-### C3. Graceful Shutdown
+## D2. 테스트 인프라 구축
 
-- **난이도**: 보통 | **효과**: ⚠️ 매우 높음 | **위험도**: 낮음 | **범위**: 3파일
+- **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟢 낮음 | **범위**: 설정 + 유틸 파일 다수
 
-#### 현재 문제 (전수 확인)
+### 현재 상태
 
-| 컴포넌트 | 종료 시 정리 | 현재 상태 | 위험도 |
-|---------|------------|----------|--------|
-| TypeORM 연결 풀 | `app.close()` 시 자동 | 미호출 | 🔴 |
-| Redis pub/sub 연결 | 수동 `quit()` 필요 | disconnect 메서드 없음 | 🔴 |
-| WebSocket 클라이언트 | `disconnectSockets()` 필요 | 미처리 (강제 종료 시 고아 키) | 🔴 |
-| 스케줄러 Cron | `app.close()` 시 자동 취소 | 미호출 | 🟡 |
-| Redis 고아 키 | TTL 1-2시간 후 자동 정리 | 안전장치 있음 | 🟢 |
-
-#### 구현 계획
-
-**1. RedisIoAdapter에 disconnect 추가** (`redis-io.adapter.ts`)
-```typescript
-async disconnect(): Promise<void> {
-  try {
-    await Promise.all([this.pubClient.quit(), this.subClient.quit()]);
-    this.logger.log('Redis 연결 정리 완료');
-  } catch (error) {
-    this.logger.error('Redis 연결 정리 실패:', (error as Error).message);
-  }
-}
-```
-
-**2. main.ts에 shutdown handler 추가** (app.listen() 직후)
-```typescript
-// NestJS 라이프사이클 훅 활성화 (OnModuleDestroy 등)
-app.enableShutdownHooks();
-
-// Redis Adapter는 NestJS DI 밖이라 수동 정리 필요
-const shutdown = async (signal: string) => {
-  logger.log(`${signal} 수신, graceful shutdown 시작...`);
-  
-  try {
-    // 1. Redis 어댑터 연결 정리 (DI 밖이라 수동)
-    await redisAdapter.disconnect();
-    
-    // 2. NestJS app.close()
-    //    → TypeORM 연결 풀 자동 정리
-    //    → ScheduleModule Cron 자동 취소
-    //    → WebSocket Gateway의 OnModuleDestroy 실행
-    await app.close();
-    
-    logger.log('Graceful shutdown 완료');
-    process.exit(0);
-  } catch (error) {
-    logger.error('Graceful shutdown 실패:', error);
-    process.exit(1);
-  }
-};
-
-// 30초 타임아웃 (Docker Swarm 기본 stop_grace_period: 10s보다 여유있게)
-const withTimeout = (signal: string) => {
-  const timer = setTimeout(() => {
-    logger.error('Graceful shutdown 타임아웃, 강제 종료');
-    process.exit(1);
-  }, 30_000);
-  timer.unref();  // 타이머가 프로세스 종료를 방해하지 않도록
-  shutdown(signal);
-};
-
-process.on('SIGTERM', () => withTimeout('SIGTERM'));
-process.on('SIGINT', () => withTimeout('SIGINT'));
-```
-
-#### ⚠️ redisAdapter 변수 스코프 주의
-
-현재 `redisAdapter`는 `bootstrap()` 함수의 try 블록 안에서 선언됨 (`main.ts:54`).
-shutdown handler에서 접근하려면 try 블록 상단에서 `let redisAdapter: RedisIoAdapter;`로 선언하거나,
-handler를 try 블록 안에 배치해야 함.
-
-```typescript
-async function bootstrap() {
-  // ...
-  try {
-    // ...
-    const redisAdapter = new RedisIoAdapter(app);  // ← 현재 위치
-    // ...
-    
-    await app.listen(port, '0.0.0.0');
-    
-    // shutdown handler는 여기 (redisAdapter 스코프 안)
-    process.on('SIGTERM', () => withTimeout('SIGTERM'));
-    process.on('SIGINT', () => withTimeout('SIGINT'));
-    
-  } catch (error) { ... }
-}
-```
-
-#### 위험 요소
-
-- **`app.enableShutdownHooks()`와 Docker Swarm**: Docker 기본 stop_grace_period 10초. 30초 타임아웃이면 Docker가 먼저 SIGKILL 보냄. → Docker Compose/Swarm에서 `stop_grace_period: 35s`로 늘려야 30초 graceful이 의미 있음
-- **진행 중인 Cron 작업**: `autoArchiveTasks`는 UPDATE 쿼리 → 강제 종료 시 부분 업데이트 가능하나, Oracle은 커밋 안 된 트랜잭션을 자동 rollback
-- **Redis 고아 키**: TTL 설정으로 자동 정리 → graceful shutdown 실패해도 안전장치 있음
-- **이중 종료 방지**: SIGINT 2번 누르면 handler가 2번 실행됨 → `let isShuttingDown = false;` 가드 추가 권장
-
-#### 실행 체크리스트
-```
-[ ] redis-io.adapter.ts에 disconnect() 메서드 추가
-[ ] main.ts에 app.enableShutdownHooks() 추가
-[ ] main.ts에 shutdown handler 추가 (redisAdapter 스코프 안)
-[ ] 이중 종료 방지 가드 (isShuttingDown flag)
-[ ] SIGTERM 시 정상 종료 테스트 (로그 확인)
-[ ] 진행 중인 WS 연결이 있을 때 종료 테스트
-[ ] Docker 배포 시 stop_grace_period 설정 확인 (필요 시 조정)
-```
-
----
-
-## 완료된 작업 (Phase 3)
-
-### C1. Pino 로깅 도입
-- **상태**: 완료
-- **변경 파일**:
-  - `package.json` — `nestjs-pino`, `pino`, `pino-http` 추가 / `pino-pretty`, `pino-roll` (dev)
-  - `src/common/logger/logger.module.ts` — 신규 (환경별 분리, 민감정보 마스킹, Request ID)
-  - `src/app.module.ts` — `LoggerModule` import
-  - `src/main.ts` — `bufferLogs: true`, `app.useLogger()`, LoggingInterceptor 제거, 미사용 domain 변수 제거
-  - `src/config/env.validation.ts` — `LOG_LEVEL` 검증 추가
-  - `.gitignore` — `logs/` 추가
-- **자동 해결**: F2(Request ID), F3(민감정보 마스킹)
-- **후속**: `pnpm install` 실행 필요 (pnpm store 문제로 CLI에서 설치 불가)
-- **RedisIoAdapter**: DI 밖이라 기존 `new Logger()` 유지 중. Pino 활성화 후에도 정상 동작 (NestJS Logger가 Pino로 위임)
-
----
-
-## Phase 4 — 에러/HTTP 강화
-
-### F1. ValidationPipe exceptionFactory
-
-- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: ⚠️ 프론트 확인 필수 | **범위**: 1파일
-
-#### 현재 문제
-
-NestJS 기본 ValidationPipe는 에러 시 다음 형태로 응답:
-```json
-{ "statusCode": 400, "message": ["taskName must be a string"], "error": "Bad Request" }
-```
-
-이 프로젝트의 에러 포맷(`{ code, message, timestamp }`)과 불일치.
-
-#### 프론트엔드 영향 분석 (전수 확인)
-
-| 프론트 파일 | message 배열 처리 | 영향 |
-|-----------|:---:|------|
-| `authService.ts` | ✅ `Array.isArray(message)` 처리 | 안전 |
-| `teamService.ts` | ❌ 미처리 (문자열로 가정) | **현재도 배열이 올 수 있어 잠재 버그** |
-| `userService.ts` | ❌ 미처리 | **동일** |
-| `FetchService.ts` | `data.code && data.message` 체크 | NestJS 기본 포맷은 `code` 없어서 폴백 |
-
-#### 결론
-
-**exceptionFactory 추가하면 오히려 프론트 호환성이 개선됨:**
-- `message`가 항상 문자열로 정규화 → teamService/userService의 잠재 버그 해소
-- `code: 'VALIDATION_ERROR'` 포함 → FetchService의 `data.code` 체크 통과
-
-현재 ValidationPipe 옵션 (`main.ts:85-93`, B2 전환 후 `app.module.ts`):
-```typescript
-new ValidationPipe({
-  whitelist: true,
-  transform: true,
-  forbidNonWhitelisted: true,
-  transformOptions: {
-    enableImplicitConversion: true,
-  },
-  // ↓ 추가
-  exceptionFactory: (errors) => {
-    const messages = errors
-      .map(e => Object.values(e.constraints || {}).join(', '))
-      .join('; ');
-    return new ApiValidationErrorResponseDto(messages || '요청 값이 올바르지 않습니다.');
-  },
-})
-```
-
-> `ApiValidationErrorResponseDto`는 `src/common/dto/api-error.dto.ts`에 이미 정의됨 (status 422, code 'VALIDATION_ERROR')
-
-#### ⚠️ 에러 포맷 변경 전후 비교
-
-| | 변경 전 (NestJS 기본) | 변경 후 (exceptionFactory) |
-|---|---|---|
-| HTTP 상태 | 400 | **422** (ApiValidationErrorResponseDto) |
-| `code` | 없음 | `VALIDATION_ERROR` |
-| `message` | `["taskName must..."]` (배열) | `"taskName must..."` (문자열) |
-| `timestamp` | 없음 | 있음 (HttpExceptionFilter에서 추가) |
-
-> HTTP 상태가 400 → 422로 변경됨. 프론트의 `handleApiError`는 status 기반 폴백을 사용하는데, 422는 `UNPROCESSABLE_ENTITY`로 매핑됨. 그러나 응답에 `code: 'VALIDATION_ERROR'`가 포함되므로 프론트는 이 코드를 우선 사용 → **실질 영향 없음**.
-
-#### 실행 체크리스트
-```
-[ ] ValidationPipe에 exceptionFactory 추가 (main.ts 또는 app.module.ts)
-[ ] ApiValidationErrorResponseDto import 확인
-[ ] Swagger에서 잘못된 요청 보내서 에러 포맷 확인:
-    - code: 'VALIDATION_ERROR'
-    - message: 문자열 (배열 아님)
-    - timestamp 포함
-    - HTTP 상태 422
-[ ] 프론트 팀 서비스/유저 서비스에서 validation 에러 toast 정상 확인
-[ ] 프론트 auth 서비스에서 카카오 로그인 validation 에러 정상 확인
-```
-
----
-
-### F2. 에러 응답에 Request ID 포함
-- **Pino 도입 시 자동 해결** (req.id 접근 가능)
-- Pino 미도입 시: 에러 필터에서 `request.headers['x-request-id']` 또는 UUID 생성
-
-### F3. 민감정보 마스킹
-- **Pino 도입 시 자동 해결** (serializer에 redactSensitiveData 포함)
-
-### F4. 에러 필터 로깅 강화
-- **현재 이미 양호** (500+ → error with stack, 나머지 → warn)
-- 추가 가능: 알 수 없는 예외의 원본 객체 전체 로깅
-
----
-
-## Phase 5 — 확장 대비
-
-### C2. Health Check 강화
-- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 낮음
-- `@nestjs/terminus` 도입, DB/Redis 연결 상태 포함
-
-### D1. TeamService 분리 (Fat Service 해소)
-- **난이도**: 어려움 | **효과**: 높음 | **위험도**: 중간
-- `TaskService`, `CommentService`, `InvitationService`로 분리
-
-### D2. 테스트 인프라 구축
-- **난이도**: 어려움 | **효과**: 높음 | **위험도**: 낮음
-- mobisell-back 참고: Entity Factory (`@faker-js/faker`) + Mock Adapter
-
-### D3. Port/Adapter 패턴 (알림 서비스)
-- **난이도**: 보통 | **효과**: 보통 | **위험도**: 낮음
-- `INotificationPort` 인터페이스 + Symbol 토큰 DI
-- 테스트 시 Mock 교체 가능
-
-### D4. typeorm-transactional 도입
-- **난이도**: 보통 | **효과**: 보통 | **위험도**: ⚠️ Oracle 호환성 확인 필요
-- `@Transactional()` 데코레이터로 선언적 트랜잭션
-- `initializeTransactionalContext()`는 `NestFactory.create` 전 호출 필수
-
-### B3. Redis 클라이언트 수동 주입 → Custom Provider (보류)
-- **난이도**: 보통 | **효과**: 보통 | **위험도**: 🔴 높음 | **상태**: 보류
-- **보류 이유**: RedisIoAdapter가 `app.useWebSocketAdapter()` 전에 준비 완료되어야 하는데, Provider `onModuleInit` 타이밍이 이를 보장하지 못함. Silent failure 가능성.
-- **현재 방식**: main.ts에서 수동 관리 (명시적 초기화 순서 보장, 안전)
-- **재검토 시점**: NestJS가 WebSocket Adapter의 DI 지원을 공식 개선할 때
-
----
-
-## 추천 실행 순서 (위험도 리뷰 반영)
-
-> Phase 내에서도 아래 순서대로 실행 권장. 각 작업 완료 후 `tsc --noEmit` + 앱 시작 확인.
-
-| 순서 | 작업 | 위험도 | 근거 |
-|:---:|------|:---:|------|
-| ~~1~~ | ~~C1 Pino 도입~~ | ✅ | 완료 |
-| 2 | **C3 Graceful Shutdown** | 🟢 | 가장 시급. 추가만 함, 기존 코드 변경 없음 |
-| 3 | **A1 Entity 관계 수정** | 🟢 | 직접 참조 0곳, QB join 호환 확인 완료 |
-| 4 | **B2 DI 기반 전환** | 🟢 | WS 독립, Filter/Pipe만 (Interceptor는 C1에서 제거됨) |
-| 5 | **F1 ValidationPipe 에러 통일** | 🟡 | 프론트 호환성 개선 방향이지만 확인 필요 |
-| 6 | **F4 에러 필터 로깅 강화** | 🟢 | 작은 추가 |
-
----
-
-## 실행 체크리스트 (전체)
-
-```
-Phase 1 — 완료
-  [✓] A2  환경변수 검증
-  [✓] B1  console → Logger
-  [✓] B4  소켓 타입 안전성
-
-Phase 2 — NestJS 정석화
-  [ ] C3  Graceful shutdown          ← 가장 시급 (현재 정리 0)
-  [ ] A1  Entity 관계 수정           ← 안전 확인 (직접 참조 0곳, QB 호환)
-  [ ] B2  글로벌 설정 DI 기반        ← 안전 확인 (WS 독립, 의존성 단순)
-
-Phase 3 — Pino 로깅
-  [✓] C1  Pino 도입                  ← F2(Request ID) + F3(마스킹) 자동 해결. pnpm install 필요
-
-Phase 4 — 에러/HTTP 강화
-  [ ] F1  ValidationPipe 에러 통일   ← 프론트 잠재 버그 해소
-  [✓] F2  Request ID                ← C1에서 해결됨
-  [✓] F3  민감정보 마스킹            ← C1에서 해결됨
-  [ ] F4  에러 필터 로깅 강화
-
-Phase 5 — 확장 대비
-  [ ] C2  Health check 강화
-  [ ] D1  TeamService 분리
-  [ ] D2  테스트 인프라
-  [ ] D3  Port/Adapter (알림)
-  [ ] D4  typeorm-transactional
-  [⏸] B3  Redis Custom Provider     ← 보류 (타이밍 위험, 현재 방식이 안전)
-```
-
----
-
-## 프론트엔드 영향 상세
-
-| 작업 | 프론트 수정 | 상세 |
+| 항목 | 상태 | 비고 |
 |------|:---:|------|
-| Phase 1~2 | 없음 | |
-| C1 Pino | 없음 | 서버 내부 로깅만 변경 |
-| F1 ValidationPipe | **없음 (오히려 개선)** | message가 항상 문자열로 → 잠재 버그 해소 |
-| F2 Request ID | 없음 | 에러 응답에 필드 추가 (하위 호환) |
-| Phase 5 | 없음 | 내부 리팩토링 |
+| jest.config.js | ✅ 존재 | ts-jest, 모듈 매핑(@common, @entities, @modules) 설정됨 |
+| 테스트 패키지 | ❌ 미설치 | jest, ts-jest, @nestjs/testing, supertest, @types/jest 전부 없음 |
+| 테스트 스크립트 | ❌ 없음 | package.json에 test/test:watch/test:cov/test:e2e 없음 |
+| 기존 테스트 파일 | 2개 | `users.service.spec.ts`, `users.controller.spec.ts` (스캐폴딩 수준) |
+| 테스트 커버리지 | 0% | 실행 불가 상태 |
+
+### 구현 내용
+
+**1. 패키지 설치**
+```bash
+pnpm add -D jest ts-jest @types/jest @nestjs/testing supertest @types/supertest
+pnpm add -D @faker-js/faker rosie @types/rosie   # Entity Factory (Build 패턴)
+pnpm add -D ioredis-mock                          # Redis 모킹
+pnpm add -D socket.io-client                      # WS E2E 테스트
+```
+
+> **`rosie` 도입 근거** (mobisell-back 검증됨): `Factory.build()`, `Factory.buildList(5)` 패턴으로 기본값+override 지원.
+
+**2. package.json 스크립트 추가**
+```json
+{
+  "test": "jest",
+  "test:watch": "jest --watch",
+  "test:cov": "jest --coverage",
+  "test:e2e": "jest --config ./test/jest-e2e.json"
+}
+```
+
+**3. Entity Factory** (`src/entities/__spec__/` — co-location 패턴)
+
+```typescript
+// src/entities/__spec__/user.entity.factory.ts
+export const UserEntityFactory = new Factory<User>()
+  .attrs({
+    userId: () => faker.number.int({ min: 1, max: 99999 }),
+    userName: () => faker.person.fullName(),
+    kakaoId: () => faker.number.int({ min: 100000, max: 999999 }),
+    kakaoEmail: () => faker.internet.email(),
+    createdDate: () => new Date(),
+    isActivated: 1,
+  })
+  .after((obj) => Object.assign(new User(), obj));
+```
+
+대상 Entity (8개): User, Team, TeamMember, TeamTask, TaskComment, TeamInvitation, TelegramLink, FileShare
+
+**4. Mock Adapter 패턴** (D3 Port/Adapter 완료 후)
+```typescript
+export class MockNotificationAdapter {
+  static build(): jest.Mocked<INotificationPort> {
+    return { sendTeamNotification: jest.fn() };
+  }
+}
+```
+
+**5. Mock Repository Helper** (`test/helpers/mock-repository.ts`)
+
+**6. E2E 헬퍼** (`test/helpers/`)
+- `create-testing-app.ts` — NestJS 앱 생성 + 전역 설정
+- `e2e-auth.ts` — 고정 테스트 계정 + JWT 토큰 발급
+
+**7. jest.config.js 업데이트**
+- `transformIgnorePatterns`: `@faker-js/faker` ESM 모듈 변환 허용
+- `@config` path alias 추가 (현재 누락)
+
+**8. 기존 테스트 파일 호환성**
+- mockUser에 `teams: []`, `teamMembers: []` relation 필드 포함 — Entity 관계 수정(A1) 후 타입 호환 확인 필요
+
+### ⚠️ 주의 사항
+
+- **인메모리 테스트 DB 사용 불가**: Entity에 Oracle 전용 타입 하드코딩 → SQLite/pg-mem 등 모두 호환 불가. **모든 테스트는 Mock Repository 기반**
+- **상용 DB 공유**: LOCAL/PROD 동일 DB → **테스트에서 실제 DB 연결 절대 금지**
+- **Redis 모킹**: `ioredis-mock` — `pipeline()`, `hgetall()`, `expire()` 지원 여부 확인 필요
+- **fetch 모킹**: `jest.spyOn(global, 'fetch')` (Node 18+ 내장 fetch)
+- **typeorm-transactional mock**: D4 도입 후 no-op 모킹 필요
+
+### 실행 체크리스트
+```
+[ ] 테스트 패키지 설치
+[ ] package.json 스크립트 추가
+[ ] jest.config.js 업데이트 (transformIgnorePatterns, @config alias)
+[ ] test/jest-e2e.json 생성
+[ ] src/entities/__spec__/ — Entity Factory 구현 (8개)
+[ ] test/helpers/mock-repository.ts
+[ ] test/helpers/create-testing-app.ts
+[ ] test/helpers/e2e-auth.ts
+[ ] 기존 spec 파일 실행 가능 확인
+[ ] jest 정상 동작 확인
+```
+
+---
+
+## D3. Port/Adapter 패턴 (외부 서비스 분리)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 4~6파일
+
+> **mobisell-back 검증**: 6개 Port/Adapter 운영 중. `MockAdapter.build()` 패턴으로 테스트에서 완전 교체 가능.
+
+### 현재 외부 의존성
+
+| 서비스 | 외부 API | fetch 위치 | Port 후보 |
+|--------|---------|:---:|----------|
+| AuthService | Kakao OAuth | :49 | `IKakaoAuthPort` |
+| TelegramService | Telegram Bot API | :113 | `ITelegramPort` |
+| DiscordService | Discord Webhook | :54, :117 | `IDiscordPort` |
+
+### 영향 범위 (전수 확인 완료)
+
+- **NotificationService 주입처**: 1곳만 (`TeamService:103` — `notifyTeam()` 7곳 호출)
+- **NotificationModule**: `@Global()` — Port 전환 후에도 유지 필요
+- **TelegramService/DiscordService**: Repository 의존성 있음 (Team, TelegramLink) — Adapter 내부에 유지
+
+### 단계적 적용
+
+1. **NotificationPort** (가장 단순, 주입처 1곳)
+2. **KakaoAuthPort** (AuthService fetch 분리)
+3. **Telegram/DiscordPort** (Repository 의존성 처리)
+
+### 실행 체크리스트
+```
+[ ] INotificationPort + NOTIFICATION_PORT Symbol 정의
+[ ] NotificationAdapter 구현
+[ ] TeamService 주입부 Symbol 토큰 교체
+[ ] MockNotificationAdapter.build() 구현
+[ ] IKakaoAuthPort (선택)
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D5. 단위 테스트 작성 (Unit Test)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **선행**: D2 완료
+
+### Service 테스트 (10개)
+
+| 우선순위 | 대상 | 줄 수 | 의존성 | 테스트 핵심 |
+|:---:|------|:---:|------|------|
+| 1 | **AuthService** | 168 | ConfigService, User Repo, fetch | JWT 생성/검증, 카카오 ID 검증 |
+| 2 | **TeamService** (핵심) | 1514 | 6 Repo, ConfigService, NotificationService | 팀/태스크 CRUD, 권한 검증 |
+| 3 | **OnlineUserService** | 238 | Redis | 소켓-유저 매핑, 온라인 목록 |
+| 4 | **FishingOnlineService** | 320 | Redis | 맵 참가/이탈, 위치/상태 |
+| 5 | **SchedulerService** | 109 | User Repo, TeamTask Repo | autoArchiveTasks |
+| 6 | **NotificationService** | 49 | TelegramService, DiscordService | 알림 분기 |
+| 7 | **TelegramService** | 459 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
+| 8 | **DiscordService** | 183 | Team Repo, fetch | Webhook, 연동/해제 |
+| 9 | **FileShareService** | 40 | FileShare Repo | API Key 검증 |
+| 10 | **UsersService** | 55 | User Repo | 기존 spec 보완 |
+
+### 모킹 전략
+
+| 의존성 | 모킹 방법 |
+|--------|----------|
+| TypeORM Repository | `createMockRepository()` (D2 헬퍼) |
+| TypeORM DataSource | `jest.fn()` mock (TeamService의 `dataSource.transaction()`) |
+| ConfigService | `{ get: jest.fn((key) => defaults[key]) }` |
+| Redis (ioredis) | `ioredis-mock` 또는 수동 mock |
+| fetch | `jest.spyOn(global, 'fetch')` |
+| NotificationService | `MockNotificationAdapter.build()` (D3 후) |
+| typeorm-transactional | `jest.mock(...)` no-op (D4 후) |
+
+### Controller 테스트 (8개, 33 엔드포인트)
+
+| 우선순위 | Controller | 엔드포인트 | 테스트 핵심 |
+|:---:|-----------|:---:|------|
+| 1 | **TeamController** | 24 | CRUD, 권한 검증 |
+| 2 | **AuthController** | 1 | 카카오 로그인 → JWT → Cookie |
+| 3 | **UsersController** | 2 | 기존 spec 검증 |
+| 4 | **TelegramController** | 1 | Webhook → 200 OK |
+| 5 | **FileShareController** | 2 | API Key 검증 |
+| 6 | **MainController** | 1 | 루트 엔드포인트 |
+| 7 | **HealthController** | 1 | terminus DB ping 응답 |
+| 8 | **UsersController** (auth/) | 1 | 닉네임 수정 |
+
+### Gateway 핸들러 테스트 (8개)
+
+| Gateway | 이벤트 | DTO | 테스트 핵심 |
+|---------|--------|-----|------|
+| TeamGateway | `joinTeam` | `JoinTeamDto` | Room 참가, 온라인 등록 |
+| TeamGateway | `leaveTeam` | `LeaveTeamDto` | Room 퇴장, 온라인 제거 |
+| FishingGateway | `joinMap` | `JoinMapDto` | 맵 참가, `_fishingMapId` 캐싱 |
+| FishingGateway | `leaveMap` | `LeaveMapDto` | 맵 퇴장, 상태 제거 |
+| FishingGateway | `move` | `MoveDto` | 위치 브로드캐스트 (고빈도) |
+| FishingGateway | `fishingState` | `FishingStateDto` | 상태 변경 브로드캐스트 |
+| FishingGateway | `chatMessage` | `ChatMessageDto` | 채팅 브로드캐스트 |
+| FishingGateway | `catchResult` | `CatchResultDto` | 낚시 결과 브로드캐스트 |
+
+### Guard/Filter 테스트 (6개)
+
+| 대상 | 테스트 핵심 |
+|------|------|
+| **HttpExceptionFilter** | ApiErrorResponseDto/HttpException/unknown 3분기 |
+| **WsExceptionFilter** | WS 에러 이벤트 전송 |
+| **JwtAuthGuard** | Cookie→Bearer 폴백, 만료/잘못된/없는 토큰 |
+| **OptionalJwtAuthGuard** | 토큰 없어도 통과, 잘못된 토큰 차단 |
+| **WsJwtGuard** | handshake.auth.token 추출, 인증 실패 시 disconnect |
+| **FishingWsGuard** | FishingSocket data 설정, 인증 여부 |
+
+### ⚠️ TeamService 테스트 주의
+
+- **1514줄, 의존성 9개** → D1 분리 전에는 핵심 메서드만
+- QueryBuilder mock 체이닝 필요: `select().where().innerJoinAndSelect().getMany()` 등
+
+### 실행 체크리스트
+
+```
+Service (10개):
+  [ ] AuthService, TeamService (핵심), OnlineUserService, FishingOnlineService
+  [ ] SchedulerService, NotificationService, TelegramService, DiscordService
+  [ ] FileShareService, UsersService (기존 spec 보완)
+
+Controller (8개, 33 엔드포인트):
+  [ ] TeamController (24), AuthController (1), UsersController (2)
+  [ ] TelegramController (1), FileShareController (2)
+  [ ] MainController (1), HealthController (1), UsersController-auth (1)
+
+Guard/Filter (6개):
+  [ ] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
+  [ ] HttpExceptionFilter, WsExceptionFilter
+
+Gateway (8개):
+  [ ] TeamGateway (joinTeam, leaveTeam)
+  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult)
+```
+
+---
+
+## D1. TeamService 분리 (Fat Service 해소)
+
+- **난이도**: 어려움 | **효과**: 높음 | **위험도**: 🟡 중간 | **선행**: D5 (테스트 안전망)
+- 1514줄 → `TaskService`, `CommentService`, `InvitationService`로 분리
+- TeamService에 남는 것: 팀 CRUD, 팀원 관리
+
+---
+
+## D6. E2E 테스트 작성
+
+- **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟡 중간 | **선행**: D2 완료
+
+### E2E 전략
+
+| 전략 | 상태 | 이유 |
+|------|:---:|------|
+| **A. Mock Repository E2E** | **채택** | DB 불필요, CI 친화적 |
+| ~~B. 인메모리 DB~~ | **불가** | Oracle 전용 타입 호환 불가 |
+| ~~C. 테스트 Oracle DB~~ | **불가** | 상용 DB 공유, QA DB 없음 |
+| D. Docker Oracle (향후) | **향후** | 이미지 8GB, 시작 5분+ |
+
+### 테스트 대상 플로우
+
+| 우선순위 | 플로우 | 엔드포인트 | 검증 내용 |
+|:---:|--------|----------|----------|
+| 1 | 인증 | `POST /auth/kakao` | 카카오 토큰 → JWT → Cookie |
+| 2 | 팀 CRUD | `POST/GET/PUT/DELETE /teams` | 팀 생성, 조회, 수정, 삭제 |
+| 3 | 태스크 CRUD | `POST/GET/PUT /teams/:id/tasks` | 태스크 생성, 상태 변경 |
+| 4 | 팀원 관리 | `POST /teams/:id/invite` 등 | 초대, 수락, 역할 변경 |
+| 5 | 댓글 | `POST/GET /teams/:id/tasks/:taskId/comments` | 댓글 CRUD |
+| 6 | 파일 공유 | `GET /files` | API Key 검증 |
+| 7 | 헬스 체크 | `GET /health-check` | DB 상태 응답 |
+
+### ⚠️ 인증 모킹
+
+- CRUD 테스트: `JwtAuthGuard` override → 인증 우회
+- 인증 테스트: 카카오 API만 mock, Guard 실제 사용
+
+### WebSocket E2E
+
+| 플로우 | 이벤트 | 검증 |
+|--------|--------|------|
+| 팀 온라인 | joinTeam → leaveTeam | 온라인 목록, Redis 키 |
+| 낚시 맵 | joinMap → move → leaveMap | 위치 브로드캐스트 |
+
+### 실행 체크리스트
+```
+[ ] test/jest-e2e.json, 인증 우회/포함 모듈
+[ ] health-check.e2e-spec.ts (인프라 검증용)
+[ ] auth, team, task, invitation, comment, file-share
+[ ] WS: team-gateway, fishing-gateway
+```
+
+---
+
+## D4. typeorm-transactional 도입
+
+- **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 3~5파일
+
+> **mobisell-back 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
+
+### 현재 트랜잭션 사용 (전수 확인)
+
+| 메서드 | 줄 | 내용 | 마이그레이션 |
+|--------|:---:|------|------------|
+| `insertTeam()` | 300-314 | Team 생성 + TeamMember 삽입 | `@Transactional()` + Repository 전환 |
+| `acceptTeamInvite()` | 1183-1233 | 초대 검증 + TeamMember + 상태 업데이트 | `@Transactional()` + Repository 전환 |
+
+**마이그레이션 주의**: 현재 `manager.create()`/`manager.save()` → `@Transactional()` 후 주입된 Repository 사용으로 변경 필요
+
+### ⚠️ Oracle 호환성 위험
+
+- CLS + Oracle connection pool 동작 차이 가능
+- **테스트 DB 없음** → 수동 검증만 가능 (INSERT 2건 → 1건 실패 → 롤백 확인)
+- 자동화된 Integration Test는 Docker Oracle 도입 후
+
+### 실행 체크리스트
+```
+[ ] typeorm-transactional 설치
+[ ] Oracle 호환성 수동 테스트
+[ ] main.ts에 initializeTransactionalContext()
+[ ] TypeORM 설정에 addTransactionalDataSource
+[ ] TeamService 메서드에 @Transactional()
+[ ] 테스트 setup에 typeorm-transactional mock
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## B3. Redis Custom Provider (보류)
+
+- **위험도**: 🔴 높음 | **상태**: 보류
+- **이유**: RedisIoAdapter 초기화 타이밍 보장 불가 → Silent failure 위험
+- **현재**: main.ts 수동 관리 (안전)
+- **재검토**: NestJS WebSocket Adapter DI 공식 지원 시
+
+---
+
+## 전체 체크리스트
+
+```
+Phase 1~4 — 완료 (15개)
+  [✓] A2  환경변수 검증
+  [✓] B1  console → Logger (8파일 30+곳)
+  [✓] B4  소켓 타입 안전성 ((client as any) 5곳 제거)
+  [✓] C3  Graceful shutdown (enableShutdownHooks + Redis disconnect + 30s 타임아웃)
+  [✓] A1  Entity 관계 수정 (ManyToOne/OneToMany 정정)
+  [✓] B2  글로벌 설정 DI 기반 (APP_FILTER/APP_PIPE)
+  [✓] C1  Pino 도입 (+ F2 Request ID + F3 마스킹 자동 해결)
+  [✓] F1  ValidationPipe 에러 통일 (exceptionFactory + 422)
+  [✓] F4  에러 필터 로깅 강화 (알 수 없는 예외 원본 로깅)
+  [✓] C2  Health check 강화 (@nestjs/terminus DB ping)
+  [✓] E2  env.validation 리팩토링 (class-validator)
+  [✓] E1  Swagger persistAuth
+  [✓] uncaughtException/unhandledRejection 핸들러 추가
+  [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
+
+Phase 5 — 남은 작업 (6개)
+  [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
+  [✓] D3  Port/Adapter — NotificationPort 완료 (INotificationPort + Symbol + useExisting)
+  [ ] D5  단위 테스트 (Service 10 + Controller 8 + Guard/Filter 6 + Gateway 8)
+  [ ] D1  TeamService 분리 (1514줄 → 3~4 서비스)
+  [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
+  [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
+  [⏸] B3  Redis Custom Provider (보류)
+```
+
+---
+
+## 프론트엔드 영향
+
+**모든 Phase 5 작업은 프론트엔드 수정 불필요** — 내부 리팩토링/테스트만. API 응답 형식 무변경.
 
 ---
 
@@ -481,10 +423,10 @@ Phase 5 — 확장 대비
 
 | 작업 | 위험도 | 핵심 이유 |
 |------|:---:|----------|
-| A1 Entity | 🟢 낮음 | 직접 참조 0곳, QB join 호환 |
-| B2 DI 전환 | 🟢 낮음 | WS 독립, 단순 의존성 |
-| B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **SKIP** |
-| C3 Graceful Shutdown | 🟢 낮음 | 추가만 함, 기존 코드 변경 없음 |
-| C1 Pino | 🟢 낮음 | Logger 인터페이스 호환, 기존 코드 변경 없음 |
-| F1 ValidationPipe | 🟡 중간 | 에러 포맷 변경이지만 프론트 호환성 개선 방향 |
-| D4 typeorm-transactional | 🟡 중간 | Oracle 호환성 미확인 |
+| D2 테스트 인프라 | 🟢 낮음 | 설정/유틸 추가만, 프로덕션 무변경 |
+| D3 Port/Adapter | 🟢 낮음 | 주입처 1곳(TeamService). @Global() 유지 |
+| D5 단위 테스트 | 🟢 낮음 | 테스트 코드 추가만 |
+| D1 TeamService 분리 | 🟡 중간 | 1514줄 분리, 호출 체인 전수 확인 필요 |
+| D6 E2E 테스트 | 🟡 중간 | 인메모리 DB 불가 + 상용 DB 공유 → Mock 전용 |
+| D4 typeorm-transactional | 🟡 중간 | Oracle 호환성 미확인 + 테스트 DB 없음 |
+| B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |
