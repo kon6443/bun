@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { FishingGateway } from './fishing.gateway';
 import { FishingOnlineService } from './fishing-online.service';
 import { FishingWsGuard } from './fishing-ws.guard';
+import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 import { User } from '../../entities/User';
 
 @Module({
@@ -16,6 +17,7 @@ import { User } from '../../entities/User';
     FishingGateway,
     FishingOnlineService,
     FishingWsGuard,
+    WsExceptionFilter, // WebSocket 예외 필터 (DI 기반)
   ],
   exports: [FishingGateway, FishingOnlineService],
 })

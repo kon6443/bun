@@ -13,6 +13,7 @@ import { TeamInvitation } from '../../entities/TeamInvitation';
 import { User } from '../../entities/User';
 import { AuthModule } from '../auth/auth.module';
 import { WsJwtGuard } from '../../common/guards/ws-jwt-auth.guard';
+import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WsJwtGuard } from '../../common/guards/ws-jwt-auth.guard';
     TeamGateway, // NestJS 정석: Gateway를 Provider로 등록
     OnlineUserService, // Redis 기반 온라인 유저 관리
     WsJwtGuard, // WebSocket 인증 Guard
+    WsExceptionFilter, // WebSocket 예외 필터 (DI 기반)
   ],
   exports: [TeamService, TeamGateway, OnlineUserService],
 })
