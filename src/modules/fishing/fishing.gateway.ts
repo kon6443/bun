@@ -61,7 +61,7 @@ function getClientInfo(client: FishingAuthSocket): { userId: number; userName: s
     credentials: true,
   },
 })
-@UseFilters(new WsExceptionFilter())
+@UseFilters(WsExceptionFilter)
 @Injectable()
 export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(FishingGateway.name);
@@ -73,7 +73,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   // ===== 라이프사이클 훅 =====
 
-  afterInit(server: Server): void {
+  afterInit(_server: Server): void {
     this.logger.log('Fishing WebSocket Gateway 초기화 완료');
   }
 
@@ -213,7 +213,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
     // Redis 저장은 fire-and-forget (새 접속자용 스냅샷, broadcast와 독립)
     const position = { x: dto.x, y: dto.y, direction: dto.direction };
-    this.fishingOnlineService.updatePosition(mapId, userId, position);
+    void this.fishingOnlineService.updatePosition(mapId, userId, position);
   }
 
   // ===== 낚시 상태 =====
@@ -245,7 +245,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     client.to(roomName).emit(FishingSocketEvents.PLAYER_FISHING_STATE, payload);
 
     // Redis 저장은 fire-and-forget
-    this.fishingOnlineService.updateFishingState(mapId, userId, dto.state);
+    void this.fishingOnlineService.updateFishingState(mapId, userId, dto.state);
   }
 
   // ===== 채팅 =====

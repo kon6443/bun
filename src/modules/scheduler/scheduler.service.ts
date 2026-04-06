@@ -45,7 +45,8 @@ export class SchedulerService {
     if (this.shouldSkipScheduler()) return;
 
     try {
-      const count = await this.userRepository.count();
+      const _count = await this.userRepository.count();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error(`[doTrash] 스케줄러 오류`, err?.stack ?? err);
     }
@@ -59,13 +60,14 @@ export class SchedulerService {
 
     try {
       const iterations = 5_000_000;
-      let accumulator = 0;
+      let _accumulator = 0;
 
       for (let i = 0; i < iterations; i++) {
         const value = Math.sqrt((i % 1_000) + 1) * Math.sin(i);
-        accumulator += value;
+        _accumulator += value;
       }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error(`[runCpuIntensiveLoop] 스케줄러 오류`, err?.stack ?? err);
     }
@@ -98,6 +100,7 @@ export class SchedulerService {
       if (result.affected && result.affected > 0) {
         this.logger.log(`[autoArchiveTasks] ${result.affected}건 자동 아카이브 완료`);
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error(`[autoArchiveTasks] 스케줄러 오류`, err?.stack ?? err);
     }

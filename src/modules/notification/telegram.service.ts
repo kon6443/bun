@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, EntityManager, DataSource } from 'typeorm';
 import { Team } from '../../entities/Team';
@@ -76,9 +77,10 @@ export class TelegramService {
     private readonly telegramLinkRepository: Repository<TelegramLink>,
     @InjectRepository(Team)
     private readonly teamRepository: Repository<Team>,
+    private readonly configService: ConfigService,
   ) {
-    this.botToken = process.env.BOT_TOKEN_TELEGRAM || '';
-    this.botUsername = process.env.BOT_USERNAME_TELEGRAM || '';
+    this.botToken = this.configService.get<string>('BOT_TOKEN_TELEGRAM') || '';
+    this.botUsername = this.configService.get<string>('BOT_USERNAME_TELEGRAM') || '';
     if (!this.botToken) {
       this.logger.warn('BOT_TOKEN_TELEGRAM 환경변수가 설정되지 않았습니다.');
     }
@@ -341,7 +343,7 @@ export class TelegramService {
           ),
         ]);
       });
-    } catch (err) {
+    } catch (_err) {
       return { success: false, message: '연동 처리 중 오류가 발생했습니다.' };
     }
 
@@ -436,7 +438,7 @@ export class TelegramService {
           manager.update(TelegramLink, { teamId }, { actStatus: ActStatus.INACTIVE }),
         ]);
       });
-    } catch (err) {
+    } catch (_err) {
       throw new Error('연동 해제 처리 중 오류가 발생했습니다.');
     }
     this.logger.log(`팀 연동 해제. teamId: ${teamId}`);
