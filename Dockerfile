@@ -5,8 +5,8 @@ FROM node:20-bullseye-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Install pnpm globally (lockfile v6.0 호환 — pnpm v8)
+RUN npm install -g pnpm@8
 
 # Copy package files for dependency installation
 COPY package.json pnpm-lock.yaml ./
@@ -42,8 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory inside the container
 WORKDIR /app
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Install pnpm globally (lockfile v6.0 호환 — pnpm v8)
+RUN npm install -g pnpm@8
 
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
