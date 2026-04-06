@@ -24,14 +24,14 @@ export class NotificationAdapter implements INotificationPort {
    */
   notifyTeam({ team, message, url }: TeamNotificationParams): void {
     // 텔레그램
-    this.telegramService.sendTeamNotification({
+    void this.telegramService.sendTeamNotification({
       team,
       message,
       ...(url && { buttons: [{ text: '바로가기', url }] }),
     });
 
     // 디스코드
-    this.discordService.sendTeamNotification({
+    void this.discordService.sendTeamNotification({
       team,
       content: message,
       url,

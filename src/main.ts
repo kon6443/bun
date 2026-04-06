@@ -10,6 +10,7 @@ import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { ALLOWED_ORIGINS } from './common/constants/cors.constants';
 
 async function bootstrap() {
@@ -64,14 +65,20 @@ async function bootstrap() {
 
     logger.log('WebSocket RedisIoAdapter 설정 완료');
 
+    // Docker Swarm 프록시 뒤의 실제 클라이언트 IP (X-Forwarded-For)
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp.set('trust proxy', 1);
+
     // 보안 미들웨어
     app.use(helmet());
     app.use(cookieParser());
+    app.use(compression());
 
     // Swagger UI를 `/api/v1/docs/`(트레일링 슬래시)로 열면,
     // HTML 내부의 상대 경로가 잘못 해석되어
     // 정적 리소스(css/js)가 404가 나며 화면이 하얗게 보일 수 있습니다.
     // `/api/v1/docs/` -> `/api/v1/docs`로 리다이렉트하여 항상 정상 경로로 로드되게 합니다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     app.use((req: any, res: any, next: any) => {
       const originalUrl: string = req?.originalUrl ?? '';
       if (originalUrl === '/api/v1/docs/' || originalUrl.startsWith('/api/v1/docs/?')) {
@@ -134,8 +141,8 @@ async function bootstrap() {
       }
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
+    process.on('SIGINT', () => void shutdown('SIGINT'));
   } catch (error) {
     logger.error('Failed to start application:', error);
     process.exit(1);
@@ -153,4 +160,4 @@ process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Rejection — 서버는 계속 실행됩니다:', reason);
 });
 
-bootstrap();
+void bootstrap();

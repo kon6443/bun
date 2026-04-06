@@ -3,11 +3,14 @@ import { randomUUID } from 'crypto';
 if (typeof globalThis.crypto === 'undefined') {
   globalThis.crypto = {
     randomUUID,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 import { Module, ValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ApiValidationErrorResponseDto } from './common/dto/api-error.dto';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -32,6 +35,10 @@ const logger = new Logger('AppModule');
 
 @Module({
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CustomThrottlerGuard,
+    },
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
@@ -89,6 +96,10 @@ const logger = new Logger('AppModule');
       },
       inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1000, limit: 5 },     // 초당 5회 (순간 폭발 방지)
+      { name: 'long', ttl: 60000, limit: 60 },     // 분당 60회 (지속 남용 방지)
+    ]),
     ScheduleModule.forRoot(),
     LoggerModule,
     MainModule,

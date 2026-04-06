@@ -1,8 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { MainResponseDto } from './main.dto';
 
 @ApiTags('main')
+@SkipThrottle()
 @Controller()
 export class MainController {
   @Get()

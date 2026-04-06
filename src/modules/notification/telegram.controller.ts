@@ -1,9 +1,11 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { TelegramService, TelegramUpdate } from './telegram.service';
 import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.dto';
 
 @ApiTags('telegram')
+@SkipThrottle() // 텔레그램 Bot API에서 호출 — 스로틀링 제외
 @Controller('telegram')
 export class TelegramController {
   private readonly logger = new Logger(TelegramController.name);

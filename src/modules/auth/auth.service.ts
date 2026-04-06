@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User } from '../../entities/User';
+import { LoginType } from '../../common/enums/login-type.enum';
 import { sign, type SignOptions } from 'jsonwebtoken';
 import {
   AuthUnauthorizedErrorResponseDto,
@@ -77,10 +78,8 @@ export class AuthService {
     kakaoIds?: number[];
     isActivateds?: (0 | 1)[];
   }): Promise<User[]> {
-    const where: {
-      kakaoId?: any;
-      isActivated?: any;
-    } = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: { kakaoId?: any; isActivated?: any } = {};
 
     if (kakaoIds?.length) {
       where.kakaoId = In(kakaoIds);
@@ -140,7 +139,7 @@ export class AuthService {
       isActivateds: [1],
     });
 
-    const loginType = 'KAKAO';
+    const loginType: LoginType = 'KAKAO';
     let userId: number;
     let userName: string;
 

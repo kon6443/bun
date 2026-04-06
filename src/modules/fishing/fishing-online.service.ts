@@ -256,7 +256,7 @@ export class FishingOnlineService {
       const pipeline = this.redis.pipeline();
       pipeline.hset(pKey, String(userId), JSON.stringify(position));
       pipeline.expire(pKey, MAP_KEY_TTL);
-      pipeline.exec(); // fire-and-forget (await 불필요 — gateway에서 broadcast 먼저 처리)
+      void pipeline.exec(); // fire-and-forget (await 불필요 — gateway에서 broadcast 먼저 처리)
     } catch (error) {
       this.logger.error(`updatePosition 실패: ${(error as Error).message}`);
     }
@@ -312,7 +312,7 @@ export class FishingOnlineService {
       const pipeline = this.redis.pipeline();
       pipeline.hset(stKey, String(userId), state);
       pipeline.expire(stKey, MAP_KEY_TTL);
-      pipeline.exec(); // fire-and-forget
+      void pipeline.exec(); // fire-and-forget
     } catch (error) {
       this.logger.error(`updateFishingState 실패: ${(error as Error).message}`);
     }

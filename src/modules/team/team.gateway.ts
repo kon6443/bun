@@ -30,7 +30,6 @@ import {
   CommentDeletedPayload,
   JoinedTeamPayload,
   LeftTeamPayload,
-  OnlineUserInfo,
   UserJoinedPayload,
   UserLeftPayload,
   OnlineUsersPayload,
@@ -59,7 +58,7 @@ import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
     credentials: true,
   },
 })
-@UseFilters(new WsExceptionFilter())
+@UseFilters(WsExceptionFilter)
 @Injectable()
 export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TeamGateway.name);
@@ -78,7 +77,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   /**
    * Gateway 초기화 시 호출
    */
-  afterInit(server: Server): void {
+  afterInit(_server: Server): void {
     this.logger.log('Team WebSocket Gateway 초기화 완료');
   }
 
@@ -126,7 +125,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     if (userId) {
       try {
         await this.teamService.verifyTeamMemberAccess(teamId, userId);
-      } catch (error) {
+      } catch (_error) {
         this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
         client.emit(TeamSocketEvents.ERROR, {
           code: 'FORBIDDEN',
