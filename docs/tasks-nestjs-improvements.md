@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-04-04
+> 작성일: 2026-04-03 | 최종 수정: 2026-04-06 (D7,D9,D11,D12,D13 완료)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -21,7 +21,7 @@
 ## 진행률
 
 ```
-완료: 15/21  |  남은: 6  |  보류: 1
+완료: 22/28  |  남은: 6  |  보류: 1
 ```
 
 ---
@@ -30,12 +30,19 @@
 
 | 순서 | 태스크 | 난이도 | 위험도 | 효과 | 선행 |
 |:---:|--------|:---:|:---:|:---:|:---:|
-| 9 | **D2 테스트 인프라 구축** | 어려움 | 🟢 | 매우 높음 | 없음 |
-| 10 | **D3 Port/Adapter (외부 서비스)** | 보통 | 🟢 | 높음 | 없음 |
-| 11 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
-| 12 | **D1 TeamService 분리** | 어려움 | 🟡 | 높음 | D5 |
-| 13 | **D6 E2E 테스트 작성** | 어려움 | 🟡 | 매우 높음 | D2 |
-| 14 | **D4 typeorm-transactional** | 보통 | 🟡 | 보통 | 없음 |
+| ~~9~~ | ~~D3 Port/Adapter~~ | — | — | — | **✅ 완료** |
+| 10 | **D2 테스트 인프라 구축** | 어려움 | 🟢 | 매우 높음 | 없음 |
+| ~~11~~ | ~~D7 매직 문자열 enum화~~ | — | — | — | **✅ 완료** |
+| ~~12~~ | ~~D11 ESLint 설정~~ | — | — | — | **✅ 완료** |
+| 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
+| 14 | **D1 TeamService 분리** | 어려움 | 🟡 | 높음 | D5 |
+| 15 | **D6 E2E 테스트 작성** | 어려움 | 🟡 | 매우 높음 | D2 |
+| 16 | **D4 typeorm-transactional** | 보통 | 🟡 | 보통 | 없음 |
+| ~~17~~ | ~~D12 Express 흔적 제거~~ | — | — | — | **✅ 완료** |
+| ~~18~~ | ~~D13 NestJS 비정석 패턴 수정~~ | — | — | — | **✅ 완료** |
+| ~~19~~ | ~~D8 API Rate Limiting~~ | — | — | — | **✅ 완료** |
+| ~~20~~ | ~~D9 응답 압축~~ | — | — | — | **✅ 완료** |
+| 21 | **D10 메트릭 수집 (Prometheus+Grafana)** | 보통 | 🟢 | 높음 | 없음 (추후) |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -45,6 +52,13 @@ D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
            ──→ D6 (E2E 테스트)
 D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
 D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검증만)
+D7 (매직 문자열) ──→ 독립
+D8 (Rate Limiting) ──→ 독립 (추후)
+D9 (응답 압축) ──→ 독립 (추후)
+D10 (메트릭 수집) ──→ 독립 (추후, Docker 인프라 필요)
+D11 (ESLint) ──→ 독립 (D2 테스트 인프라 전에 하면 테스트 코드에도 lint 적용 가능)
+D12 (Express 흔적 제거) ──→ 독립
+D13 (NestJS 비정석 패턴) ──→ 독립
 ```
 
 ---
@@ -177,12 +191,12 @@ export class MockNotificationAdapter {
 
 ### 실행 체크리스트
 ```
-[ ] INotificationPort + NOTIFICATION_PORT Symbol 정의
-[ ] NotificationAdapter 구현
-[ ] TeamService 주입부 Symbol 토큰 교체
-[ ] MockNotificationAdapter.build() 구현
+[✓] INotificationPort + NOTIFICATION_PORT Symbol 정의
+[✓] NotificationAdapter 구현 (NotificationService → NotificationAdapter 이름 변경)
+[✓] TeamService 주입부 Symbol 토큰 교체 (@Inject(NOTIFICATION_PORT))
+[ ] MockNotificationAdapter.build() 구현 (D2/D5에서)
 [ ] IKakaoAuthPort (선택)
-[ ] tsc --noEmit + 앱 시작 확인
+[✓] tsc --noEmit + 앱 시작 확인
 ```
 
 ---
@@ -200,7 +214,7 @@ export class MockNotificationAdapter {
 | 3 | **OnlineUserService** | 238 | Redis | 소켓-유저 매핑, 온라인 목록 |
 | 4 | **FishingOnlineService** | 320 | Redis | 맵 참가/이탈, 위치/상태 |
 | 5 | **SchedulerService** | 109 | User Repo, TeamTask Repo | autoArchiveTasks |
-| 6 | **NotificationService** | 49 | TelegramService, DiscordService | 알림 분기 |
+| 6 | **NotificationAdapter** | 43 | TelegramService, DiscordService | 알림 분기 |
 | 7 | **TelegramService** | 459 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
 | 8 | **DiscordService** | 183 | Team Repo, fetch | Webhook, 연동/해제 |
 | 9 | **FileShareService** | 40 | FileShare Repo | API Key 검증 |
@@ -215,7 +229,7 @@ export class MockNotificationAdapter {
 | ConfigService | `{ get: jest.fn((key) => defaults[key]) }` |
 | Redis (ioredis) | `ioredis-mock` 또는 수동 mock |
 | fetch | `jest.spyOn(global, 'fetch')` |
-| NotificationService | `MockNotificationAdapter.build()` (D3 후) |
+| NotificationAdapter | `MockNotificationAdapter.build()` (D3 완료됨) |
 | typeorm-transactional | `jest.mock(...)` no-op (D4 후) |
 
 ### Controller 테스트 (8개, 33 엔드포인트)
@@ -373,6 +387,503 @@ Gateway (8개):
 
 ---
 
+## D7. 매직 문자열 enum화
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 4파일
+- **선행**: 없음 (독립 실행 가능)
+
+> **mobisell-back 패턴**: TypeScript enum + const object as const + Record 변환 테이블 3가지 병용. 이 프로젝트는 이미 `ROLE_HIERARCHY` const object 패턴을 사용 중이므로, 기존 패턴을 유지하면서 문자열 리터럴만 상수 참조로 교체.
+
+### 현재 문제 (전수 확인)
+
+`'MASTER'`, `'MANAGER'`, `'MEMBER'`, `'KAKAO'` 문자열이 코드에 직접 사용됨 (총 21곳).
+`RoleKey` 타입과 `ROLE_HIERARCHY` 상수는 있지만, 실제 코드에서 상수를 참조하지 않아 오타 시 TypeScript가 잡지 못함.
+
+### 변경 대상 (전수 확인)
+
+**역할 문자열 (19곳):**
+
+| 파일:줄 | 현재 코드 | 변경 후 |
+|---------|----------|--------|
+| `role.constants.ts:40` | `newRole === 'MASTER'` | 이미 상수 파일 내부 → 유지 |
+| `role.constants.ts:45,50,51,94` | `'MASTER'`, `'MANAGER'` | 이미 상수 파일 내부 → 유지 |
+| `team.service.ts:315` | `role: 'MASTER'` | `role: 'MASTER' as RoleKey` |
+| `team.service.ts:1015` | `['MASTER', 'MANAGER'].includes(...)` | `MANAGEMENT_ROLES.includes(... as RoleKey)` |
+| `team.service.ts:1220,1230` | `role: 'MEMBER'` | `role: 'MEMBER' as RoleKey` |
+| `team.service.ts:1269` | `['MASTER', 'MANAGER'].includes(...)` | `MANAGEMENT_ROLES.includes(... as RoleKey)` |
+| `team.service.ts:1298` | `'MANAGER' \| 'MEMBER'` | 타입 정의 → 유지 |
+| `team.service.ts:1464` | `targetCurrentRole === 'MASTER'` | 상수 참조 또는 유지 |
+| `team.controller.ts:84` | `['MASTER', 'MANAGER'].includes(...)` | `MANAGEMENT_ROLES.includes(... as RoleKey)` |
+| `team.dto.ts:24` | `type TeamMemberRoleType` | 유지 (타입 정의) |
+| `team.dto.ts:548` | `enum: ['MANAGER', 'MEMBER']` | Swagger 데코레이터 → 유지 |
+
+**로그인 타입 문자열 (2곳):**
+
+| 파일:줄 | 현재 코드 | 변경 후 |
+|---------|----------|--------|
+| `auth.service.ts:143` | `const loginType = 'KAKAO'` | `const loginType: LoginType = 'KAKAO'` |
+| `auth.dto.ts:28` | Swagger example | 유지 |
+
+### 구현 방법
+
+**1. LoginType 추가** (`src/common/enums/` 또는 `auth.dto.ts`)
+```typescript
+export type LoginType = 'KAKAO';
+// 향후 네이버/구글 추가 시: 'KAKAO' | 'NAVER' | 'GOOGLE'
+```
+
+**2. team.service.ts + team.controller.ts에서 MANAGEMENT_ROLES 활용**
+```typescript
+// Before
+if (!['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+
+// After
+import { MANAGEMENT_ROLES } from '../../common/constants/role.constants';
+if (!MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
+```
+
+### 실행 체크리스트
+```
+[ ] LoginType 타입 정의 추가
+[ ] team.service.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (3곳)
+[ ] team.controller.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (1곳)
+[ ] team.service.ts: role 할당 시 RoleKey 타입 명시 (3곳)
+[ ] auth.service.ts: loginType 타입 명시
+[ ] tsc --noEmit 통과 확인
+[ ] 프론트 영향: 없음 (API 응답 값 변경 없음, 타입만 강화)
+```
+
+---
+
+## D11. ESLint 설정
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 설정 파일 2~3개
+- **선행**: 없음 (독립 실행 가능, D2 전에 하면 테스트 코드에도 적용됨)
+
+### 현재 상태
+
+| 항목 | 상태 |
+|------|:---:|
+| ESLint 설정 파일 | ❌ 없음 |
+| ESLint 패키지 | ❌ 미설치 |
+| lint 스크립트 | ❌ 없음 |
+| Prettier | ✅ `.prettierrc` 있음 (singleQuote, printWidth:110, trailingComma:all) |
+| tsconfig strict | ✅ true |
+
+### ESLint 9 Flat Config (최신 방식)
+
+> ESLint 9부터 `.eslintrc` 대신 `eslint.config.mjs` (Flat Config) 사용. NestJS CLI 11도 Flat Config 기본 생성.
+
+### 패키지
+
+```bash
+pnpm add -D eslint @eslint/js typescript-eslint eslint-config-prettier eslint-plugin-prettier
+```
+
+| 패키지 | 역할 |
+|--------|------|
+| `eslint` | 코어 |
+| `@eslint/js` | ESLint 기본 규칙 |
+| `typescript-eslint` | TypeScript 파서 + 규칙 (v8부터 통합 패키지) |
+| `eslint-config-prettier` | Prettier와 충돌하는 ESLint 규칙 비활성화 |
+| `eslint-plugin-prettier` | Prettier를 ESLint 규칙으로 실행 |
+
+### 설정 파일 (`eslint.config.mjs`)
+
+```javascript
+import eslint from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import prettierConfig from 'eslint-config-prettier';
+
+export default tseslint.config(
+  eslint.configs.recommended,
+  ...tseslint.configs.recommended,
+  prettierConfig,
+  {
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.json',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      // NestJS 프로젝트 권장 규칙
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+
+      // 필요에 따라 완화
+      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/no-inferrable-types': 'off',
+    },
+  },
+  {
+    ignores: ['dist/', 'node_modules/', '*.js', '*.mjs'],
+  },
+);
+```
+
+### package.json 스크립트
+
+```json
+{
+  "lint": "eslint src/",
+  "lint:fix": "eslint src/ --fix"
+}
+```
+
+### ⚠️ 주의 사항
+
+- **초기 에러 대량 발생 가능**: `@typescript-eslint/no-explicit-any`를 `warn`으로 시작 → 점진적 `error`로 전환
+- **기존 `as any` 7곳**: 당장 에러가 아닌 경고로 표시됨. 점진적으로 제거
+- **`no-floating-promises`**: await 누락 감지 — Pino의 fire-and-forget 패턴(`pipeline.exec()` 등)에서 경고 발생 가능. 의도적인 경우 `void` 접두사로 명시
+- **Prettier 충돌**: `eslint-config-prettier`가 포맷 관련 ESLint 규칙을 비활성화하므로 충돌 없음
+- **CI 연동**: D2(테스트 인프라) 이후 CI에 `pnpm lint` 추가하면 PR 시 자동 검사
+
+### Git Hooks (선택 — 같이 하면 좋음)
+
+```bash
+pnpm add -D husky lint-staged
+npx husky init
+```
+
+```json
+// package.json
+"lint-staged": {
+  "src/**/*.ts": ["eslint --fix", "prettier --write"]
+}
+```
+
+→ 커밋 시 변경된 파일만 자동 lint + format
+
+### 실행 체크리스트
+```
+[ ] ESLint 패키지 설치
+[ ] eslint.config.mjs 생성
+[ ] package.json에 lint/lint:fix 스크립트 추가
+[ ] pnpm lint 실행 → 초기 에러/경고 확인
+[ ] 에러 0건 만들기 (경고는 점진적 해결)
+[ ] (선택) husky + lint-staged 설치 → pre-commit hook
+[ ] (선택) .editorconfig 생성 (IDE 기본 설정 통일)
+```
+
+---
+
+## D12. Express 흔적 제거
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2~3파일
+
+### 제거 대상
+
+| 항목 | 파일 | 설명 |
+|------|------|------|
+| `express-async-errors` | `package.json` | NestJS가 async 에러 자동 처리. 불필요한 Express 전용 패키지 |
+| `swagger-jsdoc` | `package.json` | `@nestjs/swagger` 데코레이터로 대체됨. 불필요한 Express 전용 패키지 |
+| `data-source.ts` | `src/database/data-source.ts` | TypeORM CLI 마이그레이션용 수동 DataSource. 현재 마이그레이션 미사용(`synchronize: false`), `TypeOrmModule.forRootAsync()`가 대체 |
+
+### ⚠️ 주의 사항
+
+- **`express-async-errors` 제거 전**: 프로젝트에서 `require('express-async-errors')` 또는 `import 'express-async-errors'`로 사용하는 곳이 있는지 grep 확인 필요
+- **`swagger-jsdoc` 제거 전**: `@swagger` JSDoc 주석이 남아있는지 확인 필요
+- **`data-source.ts` 제거 vs 보관**: 향후 마이그레이션 도입 시 필요할 수 있으므로 삭제 대신 `data-source.ts.bak` 또는 주석 처리도 가능
+
+### 실행 체크리스트
+```
+[ ] express-async-errors import/require 사용처 grep 확인
+[ ] express-async-errors 패키지 제거 (package.json)
+[ ] swagger-jsdoc @swagger 주석 사용처 grep 확인
+[ ] swagger-jsdoc 패키지 제거 (package.json)
+[ ] data-source.ts 제거 또는 주석 처리
+[ ] pnpm install + 앱 시작 확인
+```
+
+---
+
+## D13. NestJS 비정석 패턴 수정
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 4파일
+
+### 수정 대상
+
+**1. process.env 직접 접근 → ConfigService (2곳)**
+
+| 파일:줄 | 현재 코드 | 문제 |
+|---------|----------|------|
+| `file-share.controller.ts:22` | `process.env.ENV?.toUpperCase()` | 컨트롤러 초기화 수준에서 process.env 직접 접근 |
+| `telegram.service.ts:80-81` | `process.env.BOT_TOKEN_TELEGRAM` | 서비스 생성자에서 process.env 직접 접근 |
+
+변경: ConfigService 주입 후 `configService.get<string>('ENV')` 사용
+
+⚠️ **file-share.controller.ts 주의**: `isLocal`과 `SHARED_BASE_DIR`가 클래스 밖 모듈 스코프에서 선언됨. ConfigService는 클래스 안에서만 접근 가능하므로, 해당 로직을 클래스 안으로 이동하거나 별도 Config로 분리 필요
+
+**2. WsExceptionFilter 인스턴스 생성 → 클래스 참조 (2곳)**
+
+| 파일:줄 | 현재 코드 | 변경 |
+|---------|----------|------|
+| `team.gateway.ts:62` | `@UseFilters(new WsExceptionFilter())` | `@UseFilters(WsExceptionFilter)` |
+| `fishing.gateway.ts:64` | `@UseFilters(new WsExceptionFilter())` | `@UseFilters(WsExceptionFilter)` |
+
+⚠️ **전제 조건**: WsExceptionFilter를 해당 모듈의 `providers`에 등록해야 DI가 작동함
+
+### 실행 체크리스트
+```
+[ ] file-share.controller.ts: process.env → ConfigService 주입 (모듈 스코프 로직 이동)
+[ ] telegram.service.ts: process.env → ConfigService 주입
+[ ] team.gateway.ts: @UseFilters(new WsExceptionFilter()) → @UseFilters(WsExceptionFilter)
+[ ] fishing.gateway.ts: 동일
+[ ] TeamModule, FishingModule에 WsExceptionFilter providers 등록
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D8. API Rate Limiting (추후 적용)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 3~4파일
+- **상태**: 추후 적용 예정
+
+### 개념
+
+API 엔드포인트별로 일정 시간 내 요청 횟수를 제한. 브루트포스 공격, 서버 과부하 방지.
+
+### 패키지
+
+`@nestjs/throttler` — NestJS 공식 Rate Limiting 모듈
+
+### 적용 결정 사항
+
+적용 시 아래 2가지 중 선택 (또는 혼합) 필요:
+
+| 방식 | 식별 기준 | 장점 | 단점 | 적합한 API |
+|------|----------|------|------|-----------|
+| **IP 기반** (기본) | 요청자 IP | 비로그인 API도 보호 가능 | NAT/프록시 뒤 유저 구분 불가 (같은 회사 Wi-Fi = 같은 IP) | 로그인, 회원가입, 공개 API |
+| **userId 기반** | JWT에서 추출한 userId | 유저별 정확한 제한 | 로그인 필요 (비인증 API 불가) | 팀 CRUD, 태스크, 댓글 등 인증 API |
+
+### 권장 설정 (예시)
+
+| API | 방식 | 제한 | 이유 |
+|-----|------|------|------|
+| `POST /auth/kakao` | IP | 1분에 10회 | 브루트포스 방지 |
+| `POST /teams` | userId | 1분에 20회 | 팀 무한 생성 방지 |
+| `POST /teams/:id/tasks` | userId | 1분에 30회 | 일반적 사용 |
+| `GET /health-check` | 제외 (SkipThrottle) | — | 모니터링용 |
+| WebSocket 이벤트 | 별도 처리 | — | throttler는 HTTP만, WS는 자체 throttle |
+
+### 저장소 선택
+
+| 저장소 | 멀티 레플리카 | 현재 인프라 |
+|--------|:---:|:---:|
+| **메모리** (기본) | ❌ 레플리카별 독립 카운트 | — |
+| **Redis** | ✅ 공유 카운트 | ✅ Redis 이미 있음 |
+
+→ Docker Swarm 멀티 레플리카이므로 **Redis 저장소 권장**
+
+### ⚠️ 주의 사항
+
+- **Docker Swarm + 리버스 프록시**: 클라이언트 실제 IP 대신 프록시 IP가 올 수 있음. `X-Forwarded-For` 헤더 처리 필요
+- **WebSocket**: `@nestjs/throttler`는 HTTP만 지원. WS 이벤트 throttle은 클라이언트에서 처리 중 (fishing move 등)
+- **프론트 UX**: 429 응답 시 프론트에서 재시도 로직 또는 안내 메시지 필요
+
+### 권장 글로벌 설정
+
+```typescript
+// 2단계 설정 (순간 폭발 + 지속 남용 동시 방어)
+ThrottlerModule.forRoot([
+  { name: 'short', ttl: 1000, limit: 5 },     // 초당 5회
+  { name: 'long', ttl: 60000, limit: 60 },     // 분당 60회
+])
+```
+
+### 프론트엔드 연동 (next-bun)
+
+**파일 2개, 각 4줄 이하 변경:**
+
+| 파일 | 변경 |
+|------|------|
+| `FetchService.ts` | 429 시 `backend:rate-limited` 커스텀 이벤트 발행 (기존 401 패턴 동일) |
+| `SessionProvider.tsx` | 이벤트 리스너 → `toast.error('요청이 너무 많습니다...')` |
+
+- 배포 순서 무관 (프론트에 429 처리 없어도 앱 깨지지 않음, UX만 아쉬움)
+- `react-hot-toast` 이미 사용 중, 추가 라이브러리 불필요
+
+### 실행 체크리스트
+```
+백엔드:
+  [ ] @nestjs/throttler, @nestjs/throttler-storage-redis 설치
+  [ ] ThrottlerModule.forRoot() 설정 (app.module.ts) — 2단계 (short + long)
+  [ ] ThrottlerGuard를 APP_GUARD로 글로벌 등록
+  [ ] 커스텀 ThrottlerGuard 구현 (userId 기반 — 인증 API용)
+  [ ] main.ts에 trust proxy 설정 (X-Forwarded-For)
+  [ ] @Throttle() 엔드포인트별 오버라이드 (로그인 등)
+  [ ] @SkipThrottle() 제외 대상 (health-check, /metrics)
+  [ ] tsc --noEmit + 앱 시작 확인
+
+프론트 (next-bun):
+  [ ] FetchService.ts에 429 이벤트 발행
+  [ ] SessionProvider.tsx에 리스너 + toast.error
+```
+
+---
+
+## D9. 응답 압축 (Compression)
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
+- **상태**: ✅ 코드 완료 (pnpm install 필요)
+
+### 개념
+
+서버가 JSON 응답을 gzip 압축해서 전송. 브라우저가 자동으로 해제. 전송량 60~90% 감소.
+
+### 패키지
+
+`compression` — Express 미들웨어 (NestJS Express 어댑터에서 바로 사용)
+
+### 적용 방법
+
+```typescript
+// main.ts
+import compression from 'compression';
+app.use(compression());
+```
+
+### 서버 부하
+
+| 항목 | 수치 |
+|------|------|
+| CPU 오버헤드 | +1~3% (일반 JSON 응답) |
+| 현재 서버 | OCI A1 4 OCPU, 24GB RAM |
+| 판단 | **전혀 문제 없음** |
+
+### ⚠️ 주의 사항
+
+- **SSE(Server-Sent Events)**: 스트리밍 응답에 compression 적용 시 버퍼링 문제 가능 → 현재 SSE 미사용이므로 해당 없음
+- **이미 압축된 데이터**: 이미지, 파일 다운로드 등은 효과 없음 → file-share의 파일 다운로드는 `application/octet-stream`이라 compression이 자동 스킵
+- **WebSocket**: compression 미들웨어는 HTTP만 적용. Socket.IO는 자체 `perMessageDeflate` 옵션 있음 (별도 설정)
+- **threshold**: 기본 1KB 미만 응답은 압축하지 않음 (오버헤드가 더 큼)
+
+### 실행 체크리스트
+```
+[ ] compression 패키지 설치 (pnpm add compression @types/compression)
+[ ] main.ts에 app.use(compression()) 추가 (helmet() 뒤)
+[ ] 파일 다운로드 응답이 정상인지 확인
+[ ] 응답 헤더에 Content-Encoding: gzip 확인
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D10. 메트릭 수집 (Prometheus + Grafana)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 3파일 + Docker 설정
+- **상태**: 추후 적용 예정
+
+### 개념
+
+서버에서 측정값(응답 시간, 에러 수 등)을 수집 → Prometheus가 저장 → Grafana가 시각화
+
+### 구성
+
+```
+[NestJS + prom-client]  →  /metrics 엔드포인트 노출
+        ↓ (15초마다 수집)
+[Prometheus 컨테이너]   →  시계열 DB에 저장
+        ↓
+[Grafana 컨테이너]      →  대시보드 시각화 + 알림
+```
+
+### 패키지 및 도구
+
+| 도구 | 역할 | 설치 위치 |
+|------|------|----------|
+| `prom-client` | Node.js 메트릭 라이브러리 | NestJS 앱 (npm) |
+| `@willsoto/nestjs-prometheus` | NestJS 통합 모듈 | NestJS 앱 (npm) |
+| Prometheus | 메트릭 수집·저장 서버 | Docker 컨테이너 |
+| Grafana | 대시보드 시각화 | Docker 컨테이너 |
+
+### 수집할 메트릭
+
+| 메트릭 | 타입 | 용도 |
+|--------|------|------|
+| `http_request_duration_seconds` | Histogram | API 응답 시간 분포 |
+| `http_requests_total` | Counter | 총 요청 수 (method, status별) |
+| `nodejs_heap_used_bytes` | Gauge | 메모리 사용량 |
+| `ws_connections_active` | Gauge | WebSocket 접속자 수 (커스텀) |
+| `redis_connection_status` | Gauge | Redis 연결 상태 (커스텀) |
+
+### 서버 부하
+
+| 항목 | 수치 |
+|------|------|
+| prom-client CPU | 거의 0 (메트릭 기록은 원자적 카운터 연산) |
+| /metrics 엔드포인트 | 호출당 ~5ms (15초 간격이므로 무시 가능) |
+| Prometheus 컨테이너 | CPU ~0.5%, RAM ~200MB (소규모 환경) |
+| Grafana 컨테이너 | CPU ~0.5%, RAM ~150MB (대시보드 열 때만) |
+| **현재 서버 (4 OCPU, 24GB RAM)** | **전혀 문제 없음** |
+
+### ⚠️ 주의 사항
+
+- **/metrics 엔드포인트 보안**: 외부에서 접근 불가하도록 설정 필요 (내부 네트워크만 허용하거나 IP 제한)
+- **Prometheus 저장소**: 기본 15일 보관. 장기 보관 필요 시 디스크 용량 계획
+- **Grafana 초기 설정**: 대시보드 JSON export/import로 관리 (Infrastructure as Code)
+- **커스텀 메트릭**: ws_connections_active 등은 Gateway에서 직접 카운터 증감 필요
+- **Docker Swarm 연동**: Prometheus가 각 레플리카의 /metrics를 개별 수집해야 함 → service discovery 설정
+
+### 구현 단계
+
+```
+Step 1: NestJS 앱에 prom-client 적용 (30분)
+  - @willsoto/nestjs-prometheus 설치
+  - PrometheusModule.register() 추가
+  - /metrics 엔드포인트 자동 생성
+  - 기본 메트릭 (HTTP 요청, Node.js 런타임) 자동 수집
+
+Step 2: Prometheus Docker 컨테이너 (1시간)
+  - docker-compose에 prometheus 서비스 추가
+  - prometheus.yml 설정 (scrape target: NestJS /metrics)
+  - 데이터 볼륨 마운트
+
+Step 3: Grafana Docker 컨테이너 (2시간)
+  - docker-compose에 grafana 서비스 추가
+  - Prometheus 데이터소스 연결
+  - Node.js 대시보드 import (Grafana ID: 11159)
+  - 커스텀 대시보드 구성 (WS 접속자, 에러율 등)
+
+Step 4: 커스텀 메트릭 추가 (선택)
+  - WebSocket 접속자 수 Gauge
+  - Redis 연결 상태 Gauge
+  - 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+```
+
+### 실행 체크리스트
+```
+Step 1 — NestJS 앱:
+  [ ] prom-client, @willsoto/nestjs-prometheus 설치
+  [ ] PrometheusModule 등록 (app.module.ts)
+  [ ] /metrics 엔드포인트 접근 확인
+  [ ] 기본 메트릭 (HTTP, Node.js) 수집 확인
+  [ ] /metrics 보안 설정 (IP 제한 또는 Guard)
+
+Step 2 — Prometheus:
+  [ ] docker-compose에 prometheus 서비스 추가
+  [ ] prometheus.yml 작성 (scrape config)
+  [ ] Prometheus UI 접근 확인 (http://localhost:9090)
+  [ ] NestJS 타겟 메트릭 수집 확인
+
+Step 3 — Grafana:
+  [ ] docker-compose에 grafana 서비스 추가
+  [ ] Prometheus 데이터소스 연결
+  [ ] Node.js 기본 대시보드 import
+  [ ] 커스텀 대시보드 구성
+
+Step 4 — 커스텀 메트릭 (선택):
+  [ ] ws_connections_active (Gateway)
+  [ ] redis_connection_status (RedisIoAdapter)
+  [ ] 비즈니스 메트릭
+```
+
+---
+
 ## B3. Redis Custom Provider (보류)
 
 - **위험도**: 🔴 높음 | **상태**: 보류
@@ -401,13 +912,20 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 남은 작업 (6개)
+Phase 5 — 남은 작업 (7개)
   [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
-  [✓] D3  Port/Adapter — NotificationPort 완료 (INotificationPort + Symbol + useExisting)
+  [✓] D3  Port/Adapter — NotificationPort 완료
+  [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
+  [✓] D11 ESLint 설정 — Flat Config + Prettier + 경고 0건 달성
+  [✓] D9  응답 압축 — compression 미들웨어 (pnpm install 필요)
+  [✓] D12 Express 흔적 제거 — express-async-errors, swagger-jsdoc, data-source.ts 삭제
+  [✓] D13 NestJS 비정석 수정 — process.env→ConfigService, WsExceptionFilter DI 전환
   [ ] D5  단위 테스트 (Service 10 + Controller 8 + Guard/Filter 6 + Gateway 8)
   [ ] D1  TeamService 분리 (1514줄 → 3~4 서비스)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
+  [✓] D8  API Rate Limiting — 2단계 글로벌(초당5/분당60) + 로그인 엄격 + SkipThrottle 3곳
+  [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + prom-client)
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -415,7 +933,8 @@ Phase 5 — 남은 작업 (6개)
 
 ## 프론트엔드 영향
 
-**모든 Phase 5 작업은 프론트엔드 수정 불필요** — 내부 리팩토링/테스트만. API 응답 형식 무변경.
+**D8(Rate Limiting)을 제외한** 모든 Phase 5 작업은 프론트엔드 수정 불필요.
+D8 적용 시 프론트(`next-bun`)에서 429 응답 처리 추가 필요 (FetchService.ts + SessionProvider.tsx, 각 4줄 이하). 배포 순서 무관.
 
 ---
 
@@ -429,4 +948,10 @@ Phase 5 — 남은 작업 (6개)
 | D1 TeamService 분리 | 🟡 중간 | 1514줄 분리, 호출 체인 전수 확인 필요 |
 | D6 E2E 테스트 | 🟡 중간 | 인메모리 DB 불가 + 상용 DB 공유 → Mock 전용 |
 | D4 typeorm-transactional | 🟡 중간 | Oracle 호환성 미확인 + 테스트 DB 없음 |
+| D11 ESLint | 🟢 낮음 | 설정 추가만, 프로덕션 무변경. 초기 경고 대량 발생 가능 (점진적 해결) |
+| D12 Express 흔적 제거 | 🟢 낮음 | 미사용 패키지/파일 제거. 사전 grep 필수 |
+| D13 NestJS 비정석 패턴 | 🟢 낮음 | process.env→ConfigService, WsExceptionFilter DI 전환 |
+| D8 Rate Limiting | 🟢 낮음 | 추가만, IP/userId 기반 선택 필요. X-Forwarded-For 처리 주의 |
+| D9 응답 압축 | 🟢 낮음 | 1줄 추가, CPU +1~3% (OCI 4 OCPU에서 무시 가능) |
+| D10 메트릭 수집 | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 2개 추가 |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |
