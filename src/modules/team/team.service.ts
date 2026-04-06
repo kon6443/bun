@@ -47,6 +47,7 @@ import {
   canManageRole,
   ROLE_LABELS,
   hasManagementPermission,
+  MANAGEMENT_ROLES,
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
 import { Inject } from '@nestjs/common';
@@ -312,7 +313,7 @@ export class TeamService {
       const newTeamMember = manager.create(TeamMember, {
         userId: createTeamDto.leaderId,
         teamId: savedTeam.teamId,
-        role: 'MASTER',
+        role: 'MASTER' as RoleKey,
       });
       await manager.save(TeamMember, newTeamMember);
     });
@@ -1012,7 +1013,7 @@ export class TeamService {
       userActStatus: [ActStatus.ACTIVE],
     });
 
-    if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+    if (!teamMembers?.length || !MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
       throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
     }
 
@@ -1105,7 +1106,7 @@ export class TeamService {
         teamId: number;
         userId: number;
       };
-    } catch (error) {
+    } catch (_error) {
       throw new TeamInviteExpiredErrorResponseDto('유효하지 않거나 만료된 초대 링크입니다.');
     }
 
@@ -1217,7 +1218,7 @@ export class TeamService {
           { teamId: inviteInfo.teamId, userId },
           {
             actStatus: ActStatus.ACTIVE,
-            role: 'MEMBER',
+            role: 'MEMBER' as RoleKey,
             joinedAt: new Date(),
           },
         );
@@ -1227,7 +1228,7 @@ export class TeamService {
         const newTeamMember = manager.create(TeamMember, {
           userId,
           teamId: inviteInfo.teamId,
-          role: 'MEMBER',
+          role: 'MEMBER' as RoleKey,
           actStatus: ActStatus.ACTIVE,
         });
         await manager.save(TeamMember, newTeamMember);
@@ -1266,7 +1267,7 @@ export class TeamService {
       userActStatus: [ActStatus.ACTIVE],
     });
 
-    if (!teamMembers?.length || !['MASTER', 'MANAGER'].includes(teamMembers[0].role)) {
+    if (!teamMembers?.length || !MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
       throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
     }
 
