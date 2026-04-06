@@ -12,6 +12,7 @@ import {
   Inject,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { FileShareService } from './file-share.service';
@@ -19,30 +20,32 @@ import { FileListResponseDto } from './file-share.dto';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const isLocal = process.env.ENV?.toUpperCase() == 'LOCAL';
-const SHARED_BASE_DIR = isLocal ? path.join(process.cwd(), 'shared') : '/app/shared';
-
-// 디렉토리 생성 헬퍼 함수 (클래스 밖이라 모듈 스코프 Logger 사용)
-const sharedDirLogger = new Logger('FileShare:ensureSharedDirectory');
-function ensureSharedDirectory() {
-  if (!fs.existsSync(SHARED_BASE_DIR)) {
-    try {
-      fs.mkdirSync(SHARED_BASE_DIR, { recursive: true });
-    } catch (error: any) {
-      // 권한 오류 등은 무시 (실제 사용 시점에 다시 시도)
-      if (error.code !== 'EACCES') {
-        sharedDirLogger.warn(`Failed to create shared directory: ${error.message}`);
-      }
-    }
-  }
-}
-
 @ApiTags('files')
 @Controller('files')
 export class FileShareController {
   private readonly logger = new Logger(FileShareController.name);
+  private readonly sharedBaseDir: string;
 
-  constructor(@Inject(FileShareService) private readonly fileShareService: FileShareService) {}
+  constructor(
+    @Inject(FileShareService) private readonly fileShareService: FileShareService,
+    private readonly configService: ConfigService,
+  ) {
+    const isLocal = this.configService.get<string>('ENV')?.toUpperCase() === 'LOCAL';
+    this.sharedBaseDir = isLocal ? path.join(process.cwd(), 'shared') : '/app/shared';
+  }
+
+  private ensureSharedDirectory(): void {
+    if (!fs.existsSync(this.sharedBaseDir)) {
+      try {
+        fs.mkdirSync(this.sharedBaseDir, { recursive: true });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (error: any) {
+        if (error.code !== 'EACCES') {
+          this.logger.warn(`Failed to create shared directory: ${error.message}`);
+        }
+      }
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: '공유 가능한 파일 목록 조회' })
@@ -76,9 +79,9 @@ export class FileShareController {
     }
 
     // 디렉토리 생성 시도
-    ensureSharedDirectory();
+    this.ensureSharedDirectory();
 
-    const shareDir = path.join(SHARED_BASE_DIR, finalShareId);
+    const shareDir = path.join(this.sharedBaseDir, finalShareId);
 
     if (!fs.existsSync(shareDir)) {
       return {
@@ -154,7 +157,7 @@ export class FileShareController {
     }
 
     // 디렉토리 생성 시도
-    ensureSharedDirectory();
+    this.ensureSharedDirectory();
 
     // 경로 탐색 공격 방지
     const safeFilename = path.basename(filename);
@@ -162,7 +165,7 @@ export class FileShareController {
       throw new ForbiddenException('접근이 거부되었습니다.');
     }
 
-    const shareDir = path.join(SHARED_BASE_DIR, finalShareId);
+    const shareDir = path.join(this.sharedBaseDir, finalShareId);
     const filePath = path.join(shareDir, safeFilename);
 
     // 절대 경로로 변환하여 shareId 디렉토리 밖으로 나가는지 확인

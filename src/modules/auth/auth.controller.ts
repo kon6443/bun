@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { KakaoSignInUpDto, KakaoSignInUpResponseDto } from './auth.dto';
 
@@ -10,6 +11,7 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Post('kakao')
+  @Throttle({ short: { ttl: 1000, limit: 2 }, long: { ttl: 60000, limit: 10 } }) // 로그인: 초당 2회, 분당 10회
   @ApiOperation({ summary: '카카오 로그인 & 회원가입' })
   // @ApiResponse는 Swagger 문서화용입니다. 실제 HTTP 상태 코드를 변경하지 않습니다.
   // 실제 상태 코드는 @HttpCode() 데코레이터나 return 값으로 결정됩니다.
@@ -17,6 +19,7 @@ export class AuthController {
   @ApiResponse({ status: 400, description: '나쁜 요청' })
   @ApiResponse({ status: 401, description: '유효하지 않은 앱키나 토큰으로 요청' })
   @ApiResponse({ status: 404, description: '해당 자원을 찾을 수 없음' })
+  @ApiResponse({ status: 429, description: '요청 횟수 초과 (초당 2회 / 분당 10회)' })
   @ApiResponse({ status: 500, description: '내부 서버 오류' })
   async postKakaoSignInUp(@Body() kakaoUserSign: KakaoSignInUpDto) {
     const { userId, userName, loginType, accessToken } = await this.authService.postKakaoSignInUp({

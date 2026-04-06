@@ -54,7 +54,9 @@ export class WsExceptionFilter extends BaseWsExceptionFilter {
       }
       if (typeof error === 'object' && error !== null) {
         return {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           code: (error as any).code || 'WS_ERROR',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           message: (error as any).message || '알 수 없는 WebSocket 오류',
           timestamp,
         };

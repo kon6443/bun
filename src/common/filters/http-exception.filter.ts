@@ -57,7 +57,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message =
         typeof exceptionResponse === 'string'
           ? exceptionResponse
-          : (exceptionResponse as any).message || exception.message;
+          : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (exceptionResponse as any).message || exception.message;
     } else {
       // 알 수 없는 에러인 경우
       code = 'INTERNAL_SERVER_ERROR';
