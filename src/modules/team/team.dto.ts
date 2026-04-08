@@ -4,6 +4,7 @@
  * Following NestJS standard DTO pattern
  */
 import { ApiProperty } from '@nestjs/swagger';
+import { INVITE_MAX_EXPIRATION_MS } from '../../common/constants/app.constants';
 import {
   IsString,
   IsNotEmpty,
@@ -151,7 +152,7 @@ export class UpdateTaskCommentDto {
 export class CreateTeamInviteDto {
   @ApiProperty({
     description: '만료 시간 (현재 시간부터 최대 7일까지만 설정 가능)',
-    example: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    example: new Date(Date.now() + INVITE_MAX_EXPIRATION_MS).toISOString(),
   })
   @IsNotEmpty()
   @IsDate()

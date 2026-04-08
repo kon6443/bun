@@ -8,6 +8,8 @@ import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { ConfigService } from '@nestjs/config';
+import { GRACEFUL_SHUTDOWN_TIMEOUT_MS } from './common/constants/app.constants';
+import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
@@ -78,8 +80,7 @@ async function bootstrap() {
     // HTML 내부의 상대 경로가 잘못 해석되어
     // 정적 리소스(css/js)가 404가 나며 화면이 하얗게 보일 수 있습니다.
     // `/api/v1/docs/` -> `/api/v1/docs`로 리다이렉트하여 항상 정상 경로로 로드되게 합니다.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    app.use((req: any, res: any, next: any) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
       const originalUrl: string = req?.originalUrl ?? '';
       if (originalUrl === '/api/v1/docs/' || originalUrl.startsWith('/api/v1/docs/?')) {
         return res.redirect(originalUrl.replace('/api/v1/docs/', '/api/v1/docs'));
@@ -127,7 +128,7 @@ async function bootstrap() {
       const timer = setTimeout(() => {
         logger.error('Graceful shutdown 타임아웃, 강제 종료');
         process.exit(1);
-      }, 30_000);
+      }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
       timer.unref();
 
       try {

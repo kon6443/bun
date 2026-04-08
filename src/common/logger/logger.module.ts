@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Params, LoggerModule as PinoLoggerModule } from 'nestjs-pino';
 import { join } from 'path';
 import pino from 'pino';
+import { LOG_ROTATION_COUNT } from '../constants/app.constants';
 
 /**
  * 민감 정보를 마스킹하는 함수
@@ -122,7 +123,7 @@ function redactSensitiveData(obj: unknown): unknown {
                       file: join(process.cwd(), 'logs', 'app'),
                       frequency: 'daily',
                       mkdir: true,
-                      limit: { count: 7 },
+                      limit: { count: LOG_ROTATION_COUNT },
                     },
                     level: logLevel,
                   },

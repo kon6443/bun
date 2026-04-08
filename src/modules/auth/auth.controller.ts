@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_AUTH_SHORT, THROTTLE_AUTH_LONG } from '../../common/constants/throttle.constants';
 import { AuthService } from './auth.service';
 import { KakaoSignInUpDto, KakaoSignInUpResponseDto } from './auth.dto';
 
@@ -11,7 +12,7 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Post('kakao')
-  @Throttle({ short: { ttl: 1000, limit: 2 }, long: { ttl: 60000, limit: 10 } }) // 로그인: 초당 2회, 분당 10회
+  @Throttle({ short: THROTTLE_AUTH_SHORT, long: THROTTLE_AUTH_LONG }) // 로그인: 초당 2회, 분당 10회
   @ApiOperation({ summary: '카카오 로그인 & 회원가입' })
   // @ApiResponse는 Swagger 문서화용입니다. 실제 HTTP 상태 코드를 변경하지 않습니다.
   // 실제 상태 코드는 @HttpCode() 데코레이터나 return 값으로 결정됩니다.
