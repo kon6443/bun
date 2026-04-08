@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-04-06 (D7,D9,D11,D12,D13 완료)
+> 작성일: 2026-04-03 | 최종 수정: 2026-04-08 (D15·D16·D17 완료, D14 보류, D19~D21 추가)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -21,7 +21,7 @@
 ## 진행률
 
 ```
-완료: 22/28  |  남은: 6  |  보류: 1
+완료: 25/37  |  남은: 10  |  보류: 2
 ```
 
 ---
@@ -43,6 +43,14 @@
 | ~~19~~ | ~~D8 API Rate Limiting~~ | — | — | — | **✅ 완료** |
 | ~~20~~ | ~~D9 응답 압축~~ | — | — | — | **✅ 완료** |
 | 21 | **D10 메트릭 수집 (Prometheus+Grafana)** | 보통 | 🟢 | 높음 | 없음 (추후) |
+| 22 | **D14 ResponseInterceptor** | 보통 | 🟡 | 매우 높음 | **보류 — API별 code/message/action 커스텀 예정으로 인터셉터 불적합** |
+| ~~23~~ | ~~D15 @CurrentUser 데코레이터~~ | — | — | — | **✅ 완료** |
+| ~~24~~ | ~~D16 하드코딩 상수화~~ | — | — | — | **✅ 완료** |
+| ~~25~~ | ~~D17 as any 타입 개선~~ | — | — | — | **✅ 완료** |
+| 26 | **D18 PaginationDto 공통화** | 쉬움 | 🟢 | 보통 | 없음 (추후) |
+| 27 | **D19 파일 다운로드 StreamableFile 전환** | 보통 | 🟡 | 높음 | 없음 |
+| 28 | **D20 Swagger 리다이렉트 NestMiddleware 전환** | 쉬움 | 🟢 | 보통 | 없음 |
+| 29 | **D21 파일 다운로드 에러 응답 통일** | 쉬움 | 🟢 | 보통 | D19 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -50,15 +58,23 @@
 ```
 D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
            ──→ D6 (E2E 테스트)
-D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
+✅ D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
 D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검증만)
-D7 (매직 문자열) ──→ 독립
-D8 (Rate Limiting) ──→ 독립 (추후)
-D9 (응답 압축) ──→ 독립 (추후)
+✅ D7 (매직 문자열) ──→ 완료
+✅ D8 (Rate Limiting) ──→ 완료
+✅ D9 (응답 압축) ──→ 완료
 D10 (메트릭 수집) ──→ 독립 (추후, Docker 인프라 필요)
-D11 (ESLint) ──→ 독립 (D2 테스트 인프라 전에 하면 테스트 코드에도 lint 적용 가능)
-D12 (Express 흔적 제거) ──→ 독립
-D13 (NestJS 비정석 패턴) ──→ 독립
+✅ D11 (ESLint) ──→ 완료
+✅ D12 (Express 흔적 제거) ──→ 완료
+✅ D13 (NestJS 비정석 패턴) ──→ 완료
+D14 (ResponseInterceptor) ──→ 보류 (API별 code/message/action 커스텀 예정 → 인터셉터 불적합)
+✅ D15 (@CurrentUser) ──→ 완료
+✅ D16 (하드코딩 상수화) ──→ 완료
+✅ D17 (as any 타입 개선) ──→ 완료
+D18 (PaginationDto) ──→ 독립 (추후, 목록 API 확장 시)
+D19 (StreamableFile) ──→ 독립 (Express @Res 제거)
+D20 (Swagger NestMiddleware) ──→ 독립 (Express 인라인 미들웨어 제거)
+D21 (에러 응답 통일) ──→ D19 완료 시 자동 해결
 ```
 
 ---
@@ -121,7 +137,7 @@ export const UserEntityFactory = new Factory<User>()
 ```typescript
 export class MockNotificationAdapter {
   static build(): jest.Mocked<INotificationPort> {
-    return { sendTeamNotification: jest.fn() };
+    return { notifyTeam: jest.fn() };  // INotificationPort.notifyTeam()
   }
 }
 ```
@@ -134,7 +150,8 @@ export class MockNotificationAdapter {
 
 **7. jest.config.js 업데이트**
 - `transformIgnorePatterns`: `@faker-js/faker` ESM 모듈 변환 허용
-- `@config` path alias 추가 (현재 누락)
+- `@config` path alias 추가 (현재 누락 — tsconfig.json에는 정의됨)
+- `@/*` catch-all path alias 추가 (현재 누락 — tsconfig.json에는 정의됨)
 
 **8. 기존 테스트 파일 호환성**
 - mockUser에 `teams: []`, `teamMembers: []` relation 필드 포함 — Entity 관계 수정(A1) 후 타입 호환 확인 필요
@@ -151,7 +168,7 @@ export class MockNotificationAdapter {
 ```
 [ ] 테스트 패키지 설치
 [ ] package.json 스크립트 추가
-[ ] jest.config.js 업데이트 (transformIgnorePatterns, @config alias)
+[ ] jest.config.js 업데이트 (transformIgnorePatterns, @config + @/* alias 추가)
 [ ] test/jest-e2e.json 생성
 [ ] src/entities/__spec__/ — Entity Factory 구현 (8개)
 [ ] test/helpers/mock-repository.ts
@@ -173,13 +190,13 @@ export class MockNotificationAdapter {
 
 | 서비스 | 외부 API | fetch 위치 | Port 후보 |
 |--------|---------|:---:|----------|
-| AuthService | Kakao OAuth | :49 | `IKakaoAuthPort` |
-| TelegramService | Telegram Bot API | :113 | `ITelegramPort` |
+| AuthService | Kakao OAuth | :50 | `IKakaoAuthPort` |
+| TelegramService | Telegram Bot API | :115 | `ITelegramPort` |
 | DiscordService | Discord Webhook | :54, :117 | `IDiscordPort` |
 
 ### 영향 범위 (전수 확인 완료)
 
-- **NotificationService 주입처**: 1곳만 (`TeamService:103` — `notifyTeam()` 7곳 호출)
+- **NotificationPort 주입처**: 1곳만 (`TeamService:108` — `notifyTeam()` 7곳 호출)
 - **NotificationModule**: `@Global()` — Port 전환 후에도 유지 필요
 - **TelegramService/DiscordService**: Repository 의존성 있음 (Team, TelegramLink) — Adapter 내부에 유지
 
@@ -209,13 +226,13 @@ export class MockNotificationAdapter {
 
 | 우선순위 | 대상 | 줄 수 | 의존성 | 테스트 핵심 |
 |:---:|------|:---:|------|------|
-| 1 | **AuthService** | 168 | ConfigService, User Repo, fetch | JWT 생성/검증, 카카오 ID 검증 |
-| 2 | **TeamService** (핵심) | 1514 | 6 Repo, ConfigService, NotificationService | 팀/태스크 CRUD, 권한 검증 |
+| 1 | **AuthService** | 167 | ConfigService, User Repo, fetch | JWT 생성/검증, 카카오 ID 검증 |
+| 2 | **TeamService** (핵심) | 1520 | 6 Repo, ConfigService, NotificationPort | 팀/태스크 CRUD, 권한 검증 |
 | 3 | **OnlineUserService** | 238 | Redis | 소켓-유저 매핑, 온라인 목록 |
 | 4 | **FishingOnlineService** | 320 | Redis | 맵 참가/이탈, 위치/상태 |
-| 5 | **SchedulerService** | 109 | User Repo, TeamTask Repo | autoArchiveTasks |
-| 6 | **NotificationAdapter** | 43 | TelegramService, DiscordService | 알림 분기 |
-| 7 | **TelegramService** | 459 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
+| 5 | **SchedulerService** | 112 | User Repo, TeamTask Repo | autoArchiveTasks |
+| 6 | **NotificationAdapter** | 42 | TelegramService, DiscordService | 알림 분기 |
+| 7 | **TelegramService** | 461 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
 | 8 | **DiscordService** | 183 | Team Repo, fetch | Webhook, 연동/해제 |
 | 9 | **FileShareService** | 40 | FileShare Repo | API Key 검증 |
 | 10 | **UsersService** | 55 | User Repo | 기존 spec 보완 |
@@ -243,7 +260,8 @@ export class MockNotificationAdapter {
 | 5 | **FileShareController** | 2 | API Key 검증 |
 | 6 | **MainController** | 1 | 루트 엔드포인트 |
 | 7 | **HealthController** | 1 | terminus DB ping 응답 |
-| 8 | **UsersController** (auth/) | 1 | 닉네임 수정 |
+| 8 | **UsersController** (users/) | 2 | 유저 조회/수정 |
+| 9 | **UsersController** (auth/) | 1 | 닉네임 수정 |
 
 ### Gateway 핸들러 테스트 (8개)
 
@@ -271,7 +289,7 @@ export class MockNotificationAdapter {
 
 ### ⚠️ TeamService 테스트 주의
 
-- **1514줄, 의존성 9개** → D1 분리 전에는 핵심 메서드만
+- **1520줄, 의존성 9개** → D1 분리 전에는 핵심 메서드만
 - QueryBuilder mock 체이닝 필요: `select().where().innerJoinAndSelect().getMany()` 등
 
 ### 실행 체크리스트
@@ -301,7 +319,7 @@ Gateway (8개):
 ## D1. TeamService 분리 (Fat Service 해소)
 
 - **난이도**: 어려움 | **효과**: 높음 | **위험도**: 🟡 중간 | **선행**: D5 (테스트 안전망)
-- 1514줄 → `TaskService`, `CommentService`, `InvitationService`로 분리
+- 1520줄 → `TaskService`, `CommentService`, `InvitationService`로 분리
 - TeamService에 남는 것: 팀 CRUD, 팀원 관리
 
 ---
@@ -359,14 +377,18 @@ Gateway (8개):
 
 > **mobisell-back 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
 
-### 현재 트랜잭션 사용 (전수 확인)
+### 현재 트랜잭션 사용 (전수 확인 — 4곳)
 
-| 메서드 | 줄 | 내용 | 마이그레이션 |
-|--------|:---:|------|------------|
-| `insertTeam()` | 300-314 | Team 생성 + TeamMember 삽입 | `@Transactional()` + Repository 전환 |
-| `acceptTeamInvite()` | 1183-1233 | 초대 검증 + TeamMember + 상태 업데이트 | `@Transactional()` + Repository 전환 |
+| 파일 | 메서드 | 줄 | 내용 | 마이그레이션 |
+|------|--------|:---:|------|------------|
+| `team.service.ts` | `insertTeam()` | 306-320 | Team 생성 + TeamMember 삽입 | `@Transactional()` + Repository 전환 |
+| `team.service.ts` | `acceptTeamInvite()` | 1189-1240 | 초대 검증 + TeamMember + 상태 업데이트 | `@Transactional()` + Repository 전환 |
+| `telegram.service.ts` | 텔레그램 연동 | 336 | TelegramLink 생성 트랜잭션 | `@Transactional()` + Repository 전환 |
+| `telegram.service.ts` | 텔레그램 해제 | 435 | TelegramLink 삭제 트랜잭션 | `@Transactional()` + Repository 전환 |
 
 **마이그레이션 주의**: 현재 `manager.create()`/`manager.save()` → `@Transactional()` 후 주입된 Repository 사용으로 변경 필요
+
+> ⚠️ telegram.service.ts의 트랜잭션 2곳도 마이그레이션 대상. 누락 시 텔레그램 연동/해제 중 부분 실패 가능
 
 ### ⚠️ Oracle 호환성 위험
 
@@ -380,7 +402,8 @@ Gateway (8개):
 [ ] Oracle 호환성 수동 테스트
 [ ] main.ts에 initializeTransactionalContext()
 [ ] TypeORM 설정에 addTransactionalDataSource
-[ ] TeamService 메서드에 @Transactional()
+[ ] TeamService 메서드에 @Transactional() (insertTeam, acceptTeamInvite)
+[ ] TelegramService 메서드에 @Transactional() (연동, 해제)
 [ ] 테스트 setup에 typeorm-transactional mock
 [ ] tsc --noEmit + 앱 시작 확인
 ```
@@ -444,13 +467,13 @@ if (!MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
 
 ### 실행 체크리스트
 ```
-[ ] LoginType 타입 정의 추가
-[ ] team.service.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (3곳)
-[ ] team.controller.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (1곳)
-[ ] team.service.ts: role 할당 시 RoleKey 타입 명시 (3곳)
-[ ] auth.service.ts: loginType 타입 명시
-[ ] tsc --noEmit 통과 확인
-[ ] 프론트 영향: 없음 (API 응답 값 변경 없음, 타입만 강화)
+[✓] LoginType 타입 정의 추가
+[✓] team.service.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (3곳)
+[✓] team.controller.ts: ['MASTER','MANAGER'] → MANAGEMENT_ROLES 교체 (1곳)
+[✓] team.service.ts: role 할당 시 RoleKey 타입 명시 (3곳)
+[✓] auth.service.ts: loginType 타입 명시
+[✓] tsc --noEmit 통과 확인
+[✓] 프론트 영향: 없음 (API 응답 값 변경 없음, 타입만 강화)
 ```
 
 ---
@@ -559,11 +582,11 @@ npx husky init
 
 ### 실행 체크리스트
 ```
-[ ] ESLint 패키지 설치
-[ ] eslint.config.mjs 생성
-[ ] package.json에 lint/lint:fix 스크립트 추가
-[ ] pnpm lint 실행 → 초기 에러/경고 확인
-[ ] 에러 0건 만들기 (경고는 점진적 해결)
+[✓] ESLint 패키지 설치
+[✓] eslint.config.mjs 생성
+[✓] package.json에 lint/lint:fix 스크립트 추가
+[✓] pnpm lint 실행 → 초기 에러/경고 확인
+[✓] 에러 0건 만들기 (경고는 점진적 해결)
 [ ] (선택) husky + lint-staged 설치 → pre-commit hook
 [ ] (선택) .editorconfig 생성 (IDE 기본 설정 통일)
 ```
@@ -590,12 +613,12 @@ npx husky init
 
 ### 실행 체크리스트
 ```
-[ ] express-async-errors import/require 사용처 grep 확인
-[ ] express-async-errors 패키지 제거 (package.json)
-[ ] swagger-jsdoc @swagger 주석 사용처 grep 확인
-[ ] swagger-jsdoc 패키지 제거 (package.json)
-[ ] data-source.ts 제거 또는 주석 처리
-[ ] pnpm install + 앱 시작 확인
+[✓] express-async-errors import/require 사용처 grep 확인
+[✓] express-async-errors 패키지 제거 (package.json)
+[✓] swagger-jsdoc @swagger 주석 사용처 grep 확인
+[✓] swagger-jsdoc 패키지 제거 (package.json)
+[✓] data-source.ts 제거 또는 주석 처리
+[✓] pnpm install + 앱 시작 확인
 ```
 
 ---
@@ -628,12 +651,12 @@ npx husky init
 
 ### 실행 체크리스트
 ```
-[ ] file-share.controller.ts: process.env → ConfigService 주입 (모듈 스코프 로직 이동)
-[ ] telegram.service.ts: process.env → ConfigService 주입
-[ ] team.gateway.ts: @UseFilters(new WsExceptionFilter()) → @UseFilters(WsExceptionFilter)
-[ ] fishing.gateway.ts: 동일
-[ ] TeamModule, FishingModule에 WsExceptionFilter providers 등록
-[ ] tsc --noEmit + 앱 시작 확인
+[✓] file-share.controller.ts: process.env → ConfigService 주입 (모듈 스코프 로직 이동)
+[✓] telegram.service.ts: process.env → ConfigService 주입
+[✓] team.gateway.ts: @UseFilters(new WsExceptionFilter()) → @UseFilters(WsExceptionFilter)
+[✓] fishing.gateway.ts: 동일
+[✓] TeamModule, FishingModule에 WsExceptionFilter providers 등록
+[✓] tsc --noEmit + 앱 시작 확인
 ```
 
 ---
@@ -641,7 +664,7 @@ npx husky init
 ## D8. API Rate Limiting (추후 적용)
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 3~4파일
-- **상태**: 추후 적용 예정
+- **상태**: ✅ 완료 — 2단계 글로벌(초당5/분당60) + 로그인 엄격 + SkipThrottle 3곳
 
 ### 개념
 
@@ -710,14 +733,14 @@ ThrottlerModule.forRoot([
 ### 실행 체크리스트
 ```
 백엔드:
-  [ ] @nestjs/throttler, @nestjs/throttler-storage-redis 설치
-  [ ] ThrottlerModule.forRoot() 설정 (app.module.ts) — 2단계 (short + long)
-  [ ] ThrottlerGuard를 APP_GUARD로 글로벌 등록
-  [ ] 커스텀 ThrottlerGuard 구현 (userId 기반 — 인증 API용)
-  [ ] main.ts에 trust proxy 설정 (X-Forwarded-For)
-  [ ] @Throttle() 엔드포인트별 오버라이드 (로그인 등)
-  [ ] @SkipThrottle() 제외 대상 (health-check, /metrics)
-  [ ] tsc --noEmit + 앱 시작 확인
+  [✓] @nestjs/throttler 설치
+  [✓] ThrottlerModule.forRoot() 설정 (app.module.ts) — 2단계 (short + long)
+  [✓] ThrottlerGuard를 APP_GUARD로 글로벌 등록
+  [✓] 커스텀 ThrottlerGuard 구현 (userId 기반 — 인증 API용)
+  [ ] main.ts에 trust proxy 설정 (X-Forwarded-For) — 추후 리버스 프록시 도입 시
+  [✓] @Throttle() 엔드포인트별 오버라이드 (로그인 등)
+  [✓] @SkipThrottle() 제외 대상 (health-check, main, telegram)
+  [✓] tsc --noEmit + 앱 시작 확인
 
 프론트 (next-bun):
   [ ] FetchService.ts에 429 이벤트 발행
@@ -729,7 +752,7 @@ ThrottlerModule.forRoot([
 ## D9. 응답 압축 (Compression)
 
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
-- **상태**: ✅ 코드 완료 (pnpm install 필요)
+- **상태**: ✅ 완료
 
 ### 개념
 
@@ -764,11 +787,11 @@ app.use(compression());
 
 ### 실행 체크리스트
 ```
-[ ] compression 패키지 설치 (pnpm add compression @types/compression)
-[ ] main.ts에 app.use(compression()) 추가 (helmet() 뒤)
-[ ] 파일 다운로드 응답이 정상인지 확인
-[ ] 응답 헤더에 Content-Encoding: gzip 확인
-[ ] tsc --noEmit + 앱 시작 확인
+[✓] compression 패키지 설치 (pnpm add compression @types/compression)
+[✓] main.ts에 app.use(compression()) 추가 (helmet() 뒤)
+[✓] 파일 다운로드 응답이 정상인지 확인
+[✓] 응답 헤더에 Content-Encoding: gzip 확인
+[✓] tsc --noEmit + 앱 시작 확인
 ```
 
 ---
@@ -884,6 +907,485 @@ Step 4 — 커스텀 메트릭 (선택):
 
 ---
 
+## D14. ResponseInterceptor (응답 포맷 자동화) — ⏸ 보류
+
+- **난이도**: 보통 | **효과**: 매우 높음 | **위험도**: 🟡 중간 | **범위**: 9파일 (7 Controller + Interceptor + AppModule)
+- **상태**: ⏸ **보류** — API별 code/message/action 커스텀 예정으로 인터셉터 방식 불적합. 추후 헬퍼 함수 또는 API별 직접 반환 방식으로 대체 검토
+- **선행**: 없음
+
+### 현재 문제
+
+31개 엔드포인트에서 동일한 응답 포맷을 수동으로 반복:
+
+```typescript
+// 모든 컨트롤러에서 이렇게 반복 (31곳)
+return {
+  code: 'SUCCESS',
+  data: { ... },
+  message: '',
+};
+```
+
+### 개선 후
+
+```typescript
+// Interceptor가 자동으로 { code, data, message } 감싸줌
+// 컨트롤러는 data만 반환
+return { userId, userName, loginType, accessToken };
+```
+
+### 구현 방법
+
+```typescript
+// src/common/interceptors/response.interceptor.ts
+@Injectable()
+export class ResponseInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    return next.handle().pipe(
+      map((data) => ({
+        code: 'SUCCESS',
+        data: data ?? null,
+        message: '',
+      })),
+    );
+  }
+}
+```
+
+AppModule에 `APP_INTERCEPTOR`로 등록 후, 31개 엔드포인트에서 `{ code, data, message }` 래핑 제거.
+
+### ⚠️ 주의 사항
+
+- **프론트 영향 없음**: 응답 구조 `{ code, data, message }` 동일 유지
+- **예외 응답**: HttpExceptionFilter가 처리하는 에러 응답은 Interceptor를 타지 않음 → 충돌 없음
+- **Health Check**: `@nestjs/terminus`의 `HealthCheckResult`를 그대로 반환해야 함. NestJS에 `@SkipInterceptor()` 내장 없음 → 커스텀 데코레이터 + `Reflector` 메타데이터 방식으로 직접 구현 필요. health.controller.ts는 `{ code, data, message }` 형식을 사용하지 않음
+- **파일 스트리밍**: `file-share.controller.ts`의 `downloadFile()` 엔드포인트는 `@Res()`로 파일 스트림을 직접 전송 → Interceptor 자동 우회 (NestJS 정책)
+- **telegram.controller.ts**: `{ success, message }` 형식으로 별도 응답 구조 사용 중 — `{ code, data, message }` 형식 아님. Interceptor 적용 시 응답 구조 통일 여부 결정 필요
+- **Swagger 응답 DTO 리팩토링 필요**: 현재 모든 응답 DTO가 `ApiSuccessResponseDto`(`{ code, data, message }`)를 extends. Interceptor 도입 후 컨트롤러는 `data`만 반환하므로, Swagger DTO도 `data` 부분만 정의하도록 변경 필요. 미변경 시 Swagger 문서와 실제 응답 구조 불일치
+- **점진적 적용 권장**: 한 번에 31곳 변경보다, 모듈 단위로 순차 적용 (Main → Auth → Team)
+
+### 영향받는 파일 (전수 확인)
+
+| Controller | 엔드포인트 수 | `{ code, data, message }` 수동 반환 수 |
+|-----------|:---:|:---:|
+| `team.controller.ts` | 24 | 24 |
+| `auth.controller.ts` | 1 | 1 |
+| `users.controller.ts` | 2 | 2 |
+| `auth/users.controller.ts` | 1 | 1 |
+| `file-share.controller.ts` | 2 | 2 (+ `downloadFile()`은 @Res() 파일 스트리밍으로 별도) |
+| `main.controller.ts` | 1 | 1 |
+| `telegram.controller.ts` | 1 | 0 (`{ success, message }` 별도 형식) |
+| `health.controller.ts` | 1 | 0 (`HealthCheckResult` 형식) |
+
+### 실행 체크리스트
+```
+[ ] src/common/interceptors/response.interceptor.ts 생성
+[ ] AppModule에 APP_INTERCEPTOR 등록
+[ ] @SkipResponseInterceptor() 커스텀 데코레이터 생성 (SetMetadata + Reflector)
+[ ] Health Check에 @SkipResponseInterceptor() 적용
+[ ] 파일 스트리밍 (@Res()) 엔드포인트 자동 우회 확인
+[ ] 모듈 단위 순차 적용: Main → Auth → Users → Team → FileShare
+[ ] 각 컨트롤러에서 { code, data, message } 래핑 제거 → data만 반환 (31곳)
+[ ] telegram.controller.ts 응답 구조 통일 여부 결정 ({ success, message } → { code, data, message })
+[ ] Swagger 응답 DTO 리팩토링 — ApiSuccessResponseDto extends 제거, data 타입만 정의
+[ ] 프론트에서 응답 구조 동일한지 확인
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D15. @CurrentUser 커스텀 데코레이터
+
+- **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 5파일 (데코레이터 1 + Controller 4)
+- **선행**: 없음
+
+### 현재 문제
+
+`@Req() req` 후 `req.user` 직접 접근이 **27곳** 반복:
+
+```typescript
+// 현재 — 모든 인증 엔드포인트에서 반복
+@UseGuards(JwtAuthGuard)
+async getMyTeams(@Req() req: Request & { user: User }) {
+  const user = req.user;  // ← 매번 이 코드
+  // ...
+}
+```
+
+### 개선 후
+
+```typescript
+@UseGuards(JwtAuthGuard)
+async getMyTeams(@CurrentUser() user: User) {
+  // user를 바로 사용
+}
+```
+
+### 구현 방법
+
+```typescript
+// src/common/decorators/current-user.decorator.ts
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { User } from '../../entities/User';
+
+export const CurrentUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): User => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.user;
+  },
+);
+```
+
+### 영향받는 파일 (전수 확인)
+
+| 파일 | `req.user` 사용 수 | 변경 |
+|------|:---:|------|
+| `team.controller.ts` | 24곳 | `@Req() req` → `@CurrentUser() user: User` |
+| `users.controller.ts` | 2곳 | 동일 |
+| `auth/users.controller.ts` | 1곳 | 동일 |
+| `team.controller.ts:570` | 1곳 | `req.user?.userId` (OptionalJwtAuth) → 별도 처리 필요 |
+
+### ⚠️ 주의 사항
+
+- **OptionalJwtAuthGuard 사용 엔드포인트**: `team.controller.ts:570`에서 `req.user?.userId || null` 패턴 → `@CurrentUser()` 반환이 `undefined`일 수 있음. `User | undefined` 타입 처리 필요
+- **D14 보류됨**: D14(ResponseInterceptor) 보류로 D15는 독립 진행 가능
+- **타입 어노테이션 불일치**: 현재 team.controller.ts는 `Request & { user: User }` (인라인), users.controller.ts는 `type RequestWithUser` (type alias) 사용. @CurrentUser 적용 시 두 패턴 모두 제거되므로 자연스럽게 통일됨
+- **`@Req()` import 제거**: 교체 후 미사용 `@Req()` import 정리 필요
+
+### 실행 체크리스트
+```
+[✓] src/common/decorators/current-user.decorator.ts 생성
+[✓] team.controller.ts: @Req() req → @CurrentUser() user (23곳 + Optional 1곳)
+[✓] users.controller.ts: 동일 (2곳) + RequestWithUser 타입 제거
+[✓] auth/users.controller.ts: 동일 (1곳)
+[✓] OptionalJwtAuth 엔드포인트: @CurrentUser() user: User | undefined
+[✓] 미사용 @Req(), Request import 정리
+[✓] tsc --noEmit + pnpm lint 통과 확인
+```
+
+---
+
+## D16. 하드코딩 상수화
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 6~7파일
+- **선행**: 없음
+
+### 변경 대상 (전수 확인 — 코드 검증 완료)
+
+**기존 식별 (6곳):**
+
+| 파일:줄 | 현재 코드 | 상수화 |
+|---------|----------|--------|
+| `main.ts:130` | `30_000` (shutdown 타임아웃) | `GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000` |
+| `app.module.ts:100-101` | `ttl: 1000, limit: 5` / `ttl: 60000, limit: 60` | Config 또는 상수 파일 |
+| `auth.controller.ts:14` | `ttl: 1000, limit: 2` / `ttl: 60000, limit: 10` | 동일 상수 파일 |
+| `team.service.ts:1027` | `7 * 24 * 60 * 60 * 1000` (초대 7일) | `INVITE_MAX_EXPIRATION_MS` |
+| `team.dto.ts:154` | `7 * 24 * 60 * 60 * 1000` (Swagger 예시) | 동일 상수 |
+| `auth.service.ts:49` | `https://kapi.kakao.com/v1/user/access_token_info` | `KAKAO_TOKEN_INFO_API` (Config 또는 상수) |
+
+**추가 식별 (코드 검증으로 발견):**
+
+| 파일:줄 | 현재 코드 | 상수화 |
+|---------|----------|--------|
+| `team.service.ts:1047` | `expiresIn: 8 * 24 * 60 * 60` (초대 토큰 JWT 8일) | `INVITE_TOKEN_EXPIRY_SECONDS` |
+| `logger.module.ts:125` | `limit: { count: 7 }` (로그 로테이션 7일) | `LOG_ROTATION_COUNT` |
+
+### 구현 방법
+
+```typescript
+// src/common/constants/app.constants.ts
+export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
+export const INVITE_MAX_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+
+// src/common/constants/throttle.constants.ts
+export const THROTTLE_SHORT = { ttl: 1000, limit: 5 };
+export const THROTTLE_LONG = { ttl: 60000, limit: 60 };
+export const THROTTLE_AUTH = { short: { ttl: 1000, limit: 2 }, long: { ttl: 60000, limit: 10 } };
+
+// src/common/constants/external-api.constants.ts
+export const KAKAO_TOKEN_INFO_API = 'https://kapi.kakao.com/v1/user/access_token_info';
+
+// src/common/constants/app.constants.ts (추가)
+export const INVITE_TOKEN_EXPIRY_SECONDS = 8 * 24 * 60 * 60; // 8일
+export const LOG_ROTATION_COUNT = 7;
+```
+
+### 실행 체크리스트
+```
+[✓] src/common/constants/app.constants.ts 생성
+[✓] src/common/constants/throttle.constants.ts 생성
+[✓] src/common/constants/external-api.constants.ts 생성
+[✓] main.ts: 30_000 → GRACEFUL_SHUTDOWN_TIMEOUT_MS
+[✓] app.module.ts: throttle 값 → 상수 참조
+[✓] auth.controller.ts: throttle 값 → 상수 참조
+[✓] team.service.ts:1027 7일 → INVITE_MAX_EXPIRATION_MS
+[✓] team.service.ts:1047 8일 JWT → INVITE_TOKEN_EXPIRY_SECONDS
+[✓] auth.service.ts: Kakao URL → 상수 참조
+[✓] logger.module.ts:125 로그 로테이션 count → LOG_ROTATION_COUNT
+[✓] tsc --noEmit 통과 확인
+```
+
+---
+
+## D17. as any 타입 개선
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 5파일
+- **선행**: 없음
+
+### 개선 가능한 곳 (전수 확인, eslint-disable 포함 — 6곳)
+
+| 파일:줄 | 현재 | 개선 방법 |
+|---------|------|----------|
+| `jwt-auth.guard.ts:54` | `(request as any)?.cookies` | `type RequestWithCookies = Request & { cookies?: Record<string, string> }` 정의 후 사용 |
+| `api-error.dto.ts:15` | `(this as any).code = code` | 생성자에서 `super({ code, message }, status)` 객체 전달 방식으로 변경 |
+| `http-exception.filter.ts:61` | `(exceptionResponse as any).message` | `type ErrorResponse = { message?: string; code?: string }` 타입가드 추가 |
+| `ws-exception.filter.ts:58,60` | `(error as any).code/message` | `type WsError = { code?: string; message?: string }` 타입가드 추가 |
+| `auth.service.ts:82` | `{ kakaoId?: any; isActivated?: any }` | `FindOptionsWhere<User>` 또는 `Partial<Pick<User, 'kakaoId' \| 'isActivated'>>` |
+| `main.ts:82` | `(req: any, res: any, next: any)` | Express `Request`, `Response`, `NextFunction` 타입 사용 |
+
+### 개선 불가 (유지)
+
+| 파일:줄 | 이유 |
+|---------|------|
+| `app.module.ts:7` | `globalThis.crypto` polyfill — Node.js 타입 정의 한계 |
+| `file-share.controller.ts:42` | `catch (error: any)` — fs 에러 타입 다양 |
+| `scheduler.service.ts:50,71,104` | `catch (err: any)` — 동일 |
+
+### 실행 체크리스트
+```
+[✓] jwt-auth.guard.ts: (request as any)?.cookies → request.cookies (@types/cookie-parser 활용)
+[✓] api-error.dto.ts: abstract readonly code → readonly code, this.code = code 직접 할당
+[✓] http-exception.filter.ts: (exceptionResponse as any) → HttpExceptionBody 인터페이스
+[✓] ws-exception.filter.ts: (error as any) → WsErrorObject 인터페이스
+[✓] auth.service.ts: { kakaoId?: any } → FindOptionsWhere<User>
+[✓] main.ts:82: (req: any, res: any, next: any) → Express Request/Response/NextFunction
+[✓] eslint-disable 주석 6곳 제거
+[✓] tsc --noEmit + pnpm lint 통과 확인
+```
+
+---
+
+## D18. PaginationDto 공통화 (추후)
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
+- **상태**: 추후 — 목록 API 확장 시 적용
+- **참고**: mobisell-back에서 `PaginationQueryDto` + `PaginationMeta` 패턴 운영 중
+
+### 구현 방법
+
+```typescript
+// src/common/dto/pagination.dto.ts
+export class PaginationQueryDto {
+  @IsOptional()
+  @IsNumberString()
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumberString()
+  perPage?: number = 20;
+}
+
+export class PaginationMeta {
+  total: number;
+  page: number;
+  perPage: number;
+  lastPage: number;
+}
+```
+
+현재 페이지네이션 사용처: 없음. `notification.dto.ts:59`의 `offset`은 Telegram 메시지 엔티티의 시작 오프셋(텍스트 내 위치)이며 페이지네이션과 무관. 목록 API가 늘어나면 적용.
+
+### 실행 체크리스트
+```
+[ ] src/common/dto/pagination.dto.ts 생성
+[ ] 기존 목록 API에 PaginationQueryDto 적용
+[ ] 응답에 PaginationMeta 포함
+```
+
+---
+
+## D19. 파일 다운로드 StreamableFile 전환 (Express @Res 제거)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 1파일
+- **선행**: 없음
+
+### 현재 문제
+
+`file-share.controller.ts`의 `downloadFile()` 메서드가 Express `@Res()` + `pipe(res)` 패턴으로 파일 스트리밍:
+
+```typescript
+// 현재 — Express 레거시 패턴
+async downloadFile(
+  @Param('filename') filename: string,
+  @Res() res: Response,                          // ← Express Response 직접 사용
+  ...
+) {
+  res.setHeader('Content-Type', 'application/octet-stream');     // ← 수동 헤더
+  res.setHeader('Content-Disposition', `attachment; ...`);       // ← 수동 헤더
+  res.setHeader('Content-Length', stats.size.toString());        // ← 수동 헤더
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);                                          // ← Express 파이핑
+
+  fileStream.on('error', error => {
+    if (!res.headersSent) {
+      res.status(500).json({...});                               // ← 수동 에러 응답
+    }
+  });
+}
+```
+
+**문제점:**
+- `@Res()` 사용 시 NestJS 응답 체인(Interceptor, ExceptionFilter) 완전 우회
+- Express `Response` 타입에 직접 의존
+- 에러 응답 형식이 `HttpExceptionFilter`와 불일치 (`timestamp` 포함, `data` 필드 없음)
+
+### 개선 후
+
+```typescript
+import { StreamableFile, Header } from '@nestjs/common';
+
+async downloadFile(
+  @Param('filename') filename: string,
+  ...
+): Promise<StreamableFile> {
+  // ... 인증/검증 로직 동일 ...
+
+  const fileStream = fs.createReadStream(filePath);
+  return new StreamableFile(fileStream, {
+    type: 'application/octet-stream',
+    disposition: `attachment; filename="${encodeURIComponent(filename)}"`,
+    length: stats.size,
+  });
+}
+```
+
+**장점:**
+- NestJS가 헤더 설정 + 스트리밍 + 에러 처리 자동 관리
+- Interceptor/Filter 체인 정상 동작
+- Express `Response` import 제거 가능
+
+### ⚠️ 주의 사항
+
+- **스트림 에러 처리**: `StreamableFile`은 내부적으로 스트림 에러 발생 시 NestJS가 처리. 기존 `fileStream.on('error')` 수동 핸들러 제거 가능하나, 로깅이 필요하면 별도 처리 검토
+- **Content-Length**: `StreamableFile` 옵션의 `length`로 전달. 누락 시 chunked transfer 사용됨
+- **프론트 영향**: 응답 헤더/본문 동일 → 프론트 변경 없음
+- **에러 응답 형식 통일**: 기존 `res.status(500).json(...)` 제거 후 `HttpExceptionFilter`가 에러 처리 → 에러 응답 형식이 다른 API와 통일됨
+
+### 실행 체크리스트
+```
+[ ] file-share.controller.ts: import StreamableFile from @nestjs/common
+[ ] downloadFile(): @Res() res 파라미터 제거
+[ ] res.setHeader() 3줄 → StreamableFile 옵션으로 이동
+[ ] fileStream.pipe(res) → return new StreamableFile(fileStream, {...})
+[ ] fileStream.on('error') 수동 핸들러 제거 (NestJS가 처리)
+[ ] import { Response } from 'express' 제거
+[ ] import { Res } from '@nestjs/common' 제거
+[ ] tsc --noEmit + 앱 시작 확인
+[ ] 파일 다운로드 정상 동작 확인 (Content-Disposition, Content-Length 헤더)
+```
+
+---
+
+## D20. Swagger 리다이렉트 NestMiddleware 전환
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
+- **선행**: 없음
+
+### 현재 문제
+
+`main.ts`에 Express 인라인 미들웨어로 Swagger 리다이렉트 등록:
+
+```typescript
+// main.ts:83-89 — Express 콜백 패턴
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const originalUrl: string = req?.originalUrl ?? '';
+  if (originalUrl === '/api/v1/docs/' || originalUrl.startsWith('/api/v1/docs/?')) {
+    return res.redirect(originalUrl.replace('/api/v1/docs/', '/api/v1/docs'));
+  }
+  return next();
+});
+```
+
+**문제점:**
+- `main.ts`에 비즈니스 로직 혼재 (부트스트랩 파일은 설정만 담당해야 함)
+- Express `Request`, `Response`, `NextFunction` 타입에 직접 의존
+- 미들웨어가 NestJS DI 시스템 밖에 존재
+
+### 개선 후
+
+```typescript
+// src/common/middleware/swagger-redirect.middleware.ts
+@Injectable()
+export class SwaggerRedirectMiddleware implements NestMiddleware {
+  use(req: Request, res: Response, next: NextFunction) {
+    const originalUrl = req?.originalUrl ?? '';
+    if (originalUrl === '/api/v1/docs/' || originalUrl.startsWith('/api/v1/docs/?')) {
+      return res.redirect(originalUrl.replace('/api/v1/docs/', '/api/v1/docs'));
+    }
+    next();
+  }
+}
+
+// app.module.ts
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(SwaggerRedirectMiddleware).forRoutes('*');
+  }
+}
+```
+
+### ⚠️ 주의 사항
+
+- **Express 타입 import는 유지**: NestJS의 `NestMiddleware` 인터페이스가 Express 타입을 사용 — 이것은 NestJS 공식 패턴이므로 정상
+- **LOCAL 전용 여부**: Swagger는 LOCAL 환경에서만 활성화됨. 리다이렉트 미들웨어도 LOCAL에서만 등록할지 검토 (현재는 전 환경 등록)
+- **main.ts에서 Express 타입 import 제거 가능**: D19 완료 후 main.ts에서 `import { Request, Response, NextFunction } from 'express'` 제거 가능 (D17에서 추가한 것)
+- **프론트 영향 없음**: Swagger 문서 경로만 관련
+
+### 실행 체크리스트
+```
+[ ] src/common/middleware/swagger-redirect.middleware.ts 생성
+[ ] app.module.ts: NestModule implements + configure() 추가
+[ ] main.ts:83-89 인라인 미들웨어 제거
+[ ] main.ts에서 Express 타입 import 제거 가능 여부 확인 (D19 완료 후)
+[ ] tsc --noEmit + 앱 시작 확인
+[ ] /api/v1/docs/ → /api/v1/docs 리다이렉트 정상 확인
+```
+
+---
+
+## D21. 파일 다운로드 에러 응답 형식 통일
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: D19에 포함
+- **선행**: D19 (StreamableFile 전환)
+
+### 현재 문제
+
+`file-share.controller.ts:200`의 수동 에러 응답이 `HttpExceptionFilter`와 다른 형식:
+
+```typescript
+// 현재 — file-share.controller.ts (스트림 에러 시)
+res.status(500).json({
+  code: 'INTERNAL_SERVER_ERROR',
+  message: '파일 전송 중 오류가 발생했습니다.',
+  timestamp: new Date().toISOString(),     // ← 다른 API에는 없는 필드
+  // data 필드 없음                         // ← 다른 API 에러에는 data 필드 있을 수 있음
+});
+```
+
+### 개선
+
+D19에서 `StreamableFile` 전환 시 이 수동 에러 핸들러가 제거됨 → NestJS가 스트림 에러를 `HttpExceptionFilter`로 라우팅 → 에러 형식 자동 통일
+
+**별도 작업 불필요 — D19 완료 시 자동 해결됨.**
+
+### 실행 체크리스트
+```
+[ ] D19 완료 후 자동 해결 확인
+[ ] 파일 스트리밍 에러 시 HttpExceptionFilter 응답 형식 확인
+```
+
+---
+
 ## B3. Redis Custom Provider (보류)
 
 - **위험도**: 🔴 높음 | **상태**: 보류
@@ -912,20 +1414,28 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 남은 작업 (7개)
+Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
   [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
   [✓] D11 ESLint 설정 — Flat Config + Prettier + 경고 0건 달성
-  [✓] D9  응답 압축 — compression 미들웨어 (pnpm install 필요)
+  [✓] D9  응답 압축 — compression 미들웨어 적용 완료
   [✓] D12 Express 흔적 제거 — express-async-errors, swagger-jsdoc, data-source.ts 삭제
   [✓] D13 NestJS 비정석 수정 — process.env→ConfigService, WsExceptionFilter DI 전환
-  [ ] D5  단위 테스트 (Service 10 + Controller 8 + Guard/Filter 6 + Gateway 8)
-  [ ] D1  TeamService 분리 (1514줄 → 3~4 서비스)
+  [ ] D5  단위 테스트 (Service 10 + Controller 9 + Guard/Filter 6 + Gateway 8)
+  [ ] D1  TeamService 분리 (1520줄 → 3~4 서비스)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
   [✓] D8  API Rate Limiting — 2단계 글로벌(초당5/분당60) + 로그인 엄격 + SkipThrottle 3곳
   [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + prom-client)
+  [⏸] D14 ResponseInterceptor — 보류 (API별 code/message/action 커스텀 예정 → 인터셉터 불적합)
+  [✓] D15 @CurrentUser 데코레이터 — 27곳 @Req() req.user → @CurrentUser() user 전환
+  [✓] D16 하드코딩 상수화 — 8곳 → 상수 파일 3개 (app, throttle, external-api)
+  [✓] D17 as any 타입 개선 — 6곳 → 적절한 타입 적용, eslint-disable 제거
+  [ ] D18 PaginationDto 공통화 (추후 — 목록 API 확장 시)
+  [ ] D19 파일 다운로드 StreamableFile 전환 (Express @Res 제거)
+  [ ] D20 Swagger 리다이렉트 NestMiddleware 전환
+  [ ] D21 파일 다운로드 에러 응답 통일 (D19 완료 시 자동 해결)
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -933,8 +1443,9 @@ Phase 5 — 남은 작업 (7개)
 
 ## 프론트엔드 영향
 
-**D8(Rate Limiting)을 제외한** 모든 Phase 5 작업은 프론트엔드 수정 불필요.
-D8 적용 시 프론트(`next-bun`)에서 429 응답 처리 추가 필요 (FetchService.ts + SessionProvider.tsx, 각 4줄 이하). 배포 순서 무관.
+대부분의 Phase 5 작업은 프론트엔드 수정 불필요. 예외:
+- **D8 Rate Limiting**: 프론트에서 429 응답 처리 추가 필요 (FetchService.ts + SessionProvider.tsx, 각 4줄). 배포 순서 무관.
+- ~~**D14 ResponseInterceptor**~~: 보류됨 (API별 code/message/action 커스텀 예정)
 
 ---
 
@@ -945,7 +1456,7 @@ D8 적용 시 프론트(`next-bun`)에서 429 응답 처리 추가 필요 (Fetch
 | D2 테스트 인프라 | 🟢 낮음 | 설정/유틸 추가만, 프로덕션 무변경 |
 | D3 Port/Adapter | 🟢 낮음 | 주입처 1곳(TeamService). @Global() 유지 |
 | D5 단위 테스트 | 🟢 낮음 | 테스트 코드 추가만 |
-| D1 TeamService 분리 | 🟡 중간 | 1514줄 분리, 호출 체인 전수 확인 필요 |
+| D1 TeamService 분리 | 🟡 중간 | 1520줄 분리, 호출 체인 전수 확인 필요 |
 | D6 E2E 테스트 | 🟡 중간 | 인메모리 DB 불가 + 상용 DB 공유 → Mock 전용 |
 | D4 typeorm-transactional | 🟡 중간 | Oracle 호환성 미확인 + 테스트 DB 없음 |
 | D11 ESLint | 🟢 낮음 | 설정 추가만, 프로덕션 무변경. 초기 경고 대량 발생 가능 (점진적 해결) |
@@ -954,4 +1465,12 @@ D8 적용 시 프론트(`next-bun`)에서 429 응답 처리 추가 필요 (Fetch
 | D8 Rate Limiting | 🟢 낮음 | 추가만, IP/userId 기반 선택 필요. X-Forwarded-For 처리 주의 |
 | D9 응답 압축 | 🟢 낮음 | 1줄 추가, CPU +1~3% (OCI 4 OCPU에서 무시 가능) |
 | D10 메트릭 수집 | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 2개 추가 |
+| D14 ResponseInterceptor | ⏸ 보류 | API별 code/message/action 커스텀 예정 → 인터셉터 불적합 |
+| D15 @CurrentUser | 🟢 낮음 | 데코레이터 추가 + 27곳 시그니처 교체. 로직 무변경 |
+| D16 하드코딩 상수화 | 🟢 낮음 | 상수 파일 추가 + 8곳 참조 교체. 값 무변경 |
+| D17 as any 타입 개선 | 🟢 낮음 | 타입 정의 추가 (6곳). 런타임 무변경 |
+| D18 PaginationDto | 🟢 낮음 | 공통 DTO 추가. 추후 목록 API 확장 시 |
+| D19 StreamableFile 전환 | 🟡 중간 | Express @Res() 제거. 스트림 에러 처리 방식 변경 |
+| D20 Swagger NestMiddleware | 🟢 낮음 | 인라인 미들웨어 → 클래스. main.ts 단순화 |
+| D21 에러 응답 통일 | 🟢 낮음 | D19 완료 시 자동 해결 |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |

@@ -5,7 +5,6 @@ import {
   Patch,
   Put,
   Delete,
-  Req,
   UseGuards,
   Body,
   Param,
@@ -13,8 +12,8 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { Request } from 'express';
 import { TeamService } from './team.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TeamGateway } from './team.gateway';
 import {
   CreateTeamDto,
@@ -93,8 +92,7 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamMemberListResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async getMyTeams(@Req() req: Request & { user: User }) {
-    const user = req.user;
+  async getMyTeams(@CurrentUser() user: User) {
     const teamMembers = await this.teamService.getTeamMembersBy({
       userIds: [user.userId],
       actStatus: [ActStatus.ACTIVE],
@@ -110,8 +108,7 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS', type: CreateTeamResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async postMyTeams(@Req() req: Request & { user: User }, @Body() createTeamDto: CreateTeamDto) {
-    const user = req.user;
+  async postMyTeams(@CurrentUser() user: User, @Body() createTeamDto: CreateTeamDto) {
     createTeamDto.actStatus = ActStatus.ACTIVE;
     createTeamDto.leaderId = user.userId;
     await this.teamService.insertTeam({ createTeamDto });
@@ -129,11 +126,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTeam(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Body() updateTeamDto: UpdateTeamDto,
   ) {
-    const user = req.user;
     const team = await this.teamService.updateTeam({
       teamId,
       updateTeamDto,
@@ -168,11 +164,10 @@ export class TeamController {
   @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTeamUsers(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Query('status', new ParseIntPipe({ optional: true })) status?: number,
   ) {
-    const user = req.user;
     const users = await this.teamService.getTeamUsers(teamId, user.userId, status as 0 | 1 | undefined);
     return { code: 'SUCCESS', data: users, message: '' };
   }
@@ -192,11 +187,10 @@ export class TeamController {
   @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTasks(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Query('actStatus', new ParseIntPipe({ optional: true })) actStatus?: number,
   ) {
-    const user = req.user;
     const actStatusFilter = actStatus !== undefined ? [actStatus] : undefined;
     const { team, tasks } = await this.teamService.getTasksByTeamId(teamId, user.userId, actStatusFilter);
     return {
@@ -228,11 +222,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTaskDetail(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
   ) {
-    const user = req.user;
     const { task, comments } = await this.teamService.getTaskWithComments(teamId, taskId, user.userId);
     return {
       code: 'SUCCESS',
@@ -254,11 +247,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTask(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Body() createTaskDto: CreateTeamTaskDto,
   ) {
-    const user = req.user;
     const task = await this.teamService.createTask({
       teamId,
       createTaskDto,
@@ -294,12 +286,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTask(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Body() updateTaskDto: UpdateTeamTaskDto,
   ) {
-    const user = req.user;
     const task = await this.teamService.updateTask({
       teamId,
       taskId,
@@ -335,12 +326,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTaskStatus(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Body() updateStatusDto: UpdateTaskStatusDto,
   ) {
-    const user = req.user;
     const newStatus = updateStatusDto.taskStatus;
 
     const task = await this.teamService.updateTaskStatus({
@@ -377,12 +367,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTaskActiveStatus(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Body() updateActiveStatusDto: UpdateTaskActiveStatusDto,
   ) {
-    const user = req.user;
     const newActStatus = updateActiveStatusDto.actStatus;
 
     const task = await this.teamService.updateTaskActiveStatus({
@@ -417,12 +406,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTaskComment(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Body() createCommentDto: CreateTaskCommentDto,
   ) {
-    const user = req.user;
     const comment = await this.teamService.createTaskComment({
       teamId,
       taskId,
@@ -458,13 +446,12 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTaskComment(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Param('commentId', ParseIntPipe) commentId: number,
     @Body() updateCommentDto: UpdateTaskCommentDto,
   ) {
-    const user = req.user;
     const comment = await this.teamService.updateTaskComment({
       teamId,
       taskId,
@@ -499,12 +486,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async deleteTaskComment(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('taskId', ParseIntPipe) taskId: number,
     @Param('commentId', ParseIntPipe) commentId: number,
   ) {
-    const user = req.user;
     await this.teamService.deleteTaskComment({
       teamId,
       taskId,
@@ -534,11 +520,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTeamInvite(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Body() createInviteDto: CreateTeamInviteDto,
   ) {
-    const user = req.user;
     const result = await this.teamService.createTeamInvite({
       teamId,
       createInviteDto,
@@ -564,10 +549,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async acceptTeamInvite(
-    @Req() req: Request & { user?: User },
+    @CurrentUser() user: User | undefined,
     @Body() acceptInviteDto: AcceptTeamInviteDto,
   ) {
-    const userId = req.user?.userId || null;
+    const userId = user?.userId || null;
     const result = await this.teamService.acceptTeamInvite({
       token: acceptInviteDto.token,
       userId,
@@ -588,8 +573,7 @@ export class TeamController {
   @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.' })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
-  async getTeamInvites(@Req() req: Request & { user: User }, @Param('teamId', ParseIntPipe) teamId: number) {
-    const user = req.user;
+  async getTeamInvites(@CurrentUser() user: User, @Param('teamId', ParseIntPipe) teamId: number) {
     const invites = await this.teamService.getTeamInvites(teamId, user.userId);
     return {
       code: 'SUCCESS',
@@ -610,10 +594,9 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async createTelegramLink(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    const user = req.user;
     await this.requireManagerAccess(teamId, user.userId);
 
     const result = await this.telegramService.generateLinkToken(teamId);
@@ -634,10 +617,9 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getTelegramStatus(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    const user = req.user;
     // 팀 멤버 확인
     await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
 
@@ -659,10 +641,9 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async deleteTelegramLink(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    const user = req.user;
     await this.requireManagerAccess(teamId, user.userId);
 
     await this.telegramService.unlinkTeam(teamId);
@@ -683,11 +664,10 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async saveDiscordWebhook(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Body() dto: SaveDiscordWebhookDto,
   ) {
-    const user = req.user;
     await this.requireManagerAccess(teamId, user.userId);
 
     // Webhook URL 유효성 검증
@@ -710,10 +690,9 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async getDiscordStatus(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    const user = req.user;
     await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
 
     const status = await this.discordService.getLinkStatus(teamId);
@@ -734,10 +713,9 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async deleteDiscordWebhook(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    const user = req.user;
     await this.requireManagerAccess(teamId, user.userId);
 
     await this.discordService.unlinkTeam(teamId);
@@ -759,12 +737,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateMemberRole(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('userId', ParseIntPipe) targetUserId: number,
     @Body() updateRoleDto: UpdateMemberRoleDto,
   ) {
-    const user = req.user;
     const result = await this.teamService.updateMemberRole({
       teamId,
       targetUserId,
@@ -808,12 +785,11 @@ export class TeamController {
   @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateMemberStatus(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
     @Param('userId', ParseIntPipe) targetUserId: number,
     @Body() updateStatusDto: UpdateMemberStatusDto,
   ) {
-    const user = req.user;
     const result = await this.teamService.updateMemberStatus({
       teamId,
       targetUserId,
