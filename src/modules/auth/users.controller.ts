@@ -1,10 +1,10 @@
-import { Controller, Put, Req, Body, UseGuards } from '@nestjs/common';
+import { Controller, Put, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
-import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { UpdateUserNameDto, UpdateUserNameResponseDto } from './auth.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../entities/User';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -19,10 +19,9 @@ export class UsersController {
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateMyName(
-    @Req() req: Request & { user: User },
+    @CurrentUser() user: User,
     @Body() dto: UpdateUserNameDto,
   ) {
-    const user = req.user;
     const result = await this.authService.updateUserName(user.userId, dto.userName);
     return { code: 'SUCCESS', data: result, message: '' };
   }
