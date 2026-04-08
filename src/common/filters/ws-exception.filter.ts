@@ -2,6 +2,11 @@ import { Catch, ArgumentsHost, Logger } from '@nestjs/common';
 import { BaseWsExceptionFilter, WsException } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 
+interface WsErrorObject {
+  code?: string;
+  message?: string;
+}
+
 /**
  * WebSocket 예외 응답 타입
  */
@@ -54,10 +59,8 @@ export class WsExceptionFilter extends BaseWsExceptionFilter {
       }
       if (typeof error === 'object' && error !== null) {
         return {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          code: (error as any).code || 'WS_ERROR',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          message: (error as any).message || '알 수 없는 WebSocket 오류',
+          code: (error as WsErrorObject).code || 'WS_ERROR',
+          message: (error as WsErrorObject).message || '알 수 없는 WebSocket 오류',
           timestamp,
         };
       }

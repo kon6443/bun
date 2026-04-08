@@ -50,8 +50,7 @@ export class JwtAuthGuard implements CanActivate {
    * Cookie(`access_token`) 우선 → Authorization Bearer 헤더 보조
    */
   protected extractToken(request: Request): string | null {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cookieToken = (request as any)?.cookies?.access_token;
+    const cookieToken = request.cookies?.access_token;
     if (cookieToken && typeof cookieToken === 'string') {
       return cookieToken;
     }

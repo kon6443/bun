@@ -8,6 +8,7 @@ if (typeof globalThis.crypto === 'undefined') {
 }
 
 import { Module, ValidationPipe } from '@nestjs/common';
+import { THROTTLE_SHORT, THROTTLE_LONG } from './common/constants/throttle.constants';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
@@ -97,8 +98,8 @@ const logger = new Logger('AppModule');
       inject: [ConfigService],
     }),
     ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 5 },     // 초당 5회 (순간 폭발 방지)
-      { name: 'long', ttl: 60000, limit: 60 },     // 분당 60회 (지속 남용 방지)
+      { name: 'short', ...THROTTLE_SHORT },     // 초당 5회 (순간 폭발 방지)
+      { name: 'long', ...THROTTLE_LONG },       // 분당 60회 (지속 남용 방지)
     ]),
     ScheduleModule.forRoot(),
     LoggerModule,
