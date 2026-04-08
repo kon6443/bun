@@ -6,13 +6,12 @@ import { ApiProperty } from '@nestjs/swagger';
  * HttpException을 상속하여 NestJS 예외 처리 흐름 유지
  */
 export abstract class ApiErrorResponseDto extends HttpException {
-  abstract readonly code: string;
+  readonly code: string;
 
   constructor(status: number, message: string, code: string) {
     // 문자열만 전달하여 Swagger 분석 시 순환 참조 방지
     super(message, status);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this as any).code = code;
+    this.code = code;
   }
 
   getErrorCode(): string {

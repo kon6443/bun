@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { User } from '../../entities/User';
 import { LoginType } from '../../common/enums/login-type.enum';
+import { KAKAO_TOKEN_INFO_API } from '../../common/constants/external-api.constants';
 import { sign, type SignOptions } from 'jsonwebtoken';
 import {
   AuthUnauthorizedErrorResponseDto,
@@ -46,7 +47,7 @@ export class AuthService {
       throw new AuthUnauthorizedErrorResponseDto('카카오 액세스 토큰이 필요합니다.');
     }
 
-    const kakaoAPI = `https://kapi.kakao.com/v1/user/access_token_info`;
+    const kakaoAPI = KAKAO_TOKEN_INFO_API;
     const kakaoRes = await fetch(kakaoAPI, {
       method: 'get',
       headers: {
@@ -78,8 +79,7 @@ export class AuthService {
     kakaoIds?: number[];
     isActivateds?: (0 | 1)[];
   }): Promise<User[]> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: { kakaoId?: any; isActivated?: any } = {};
+    const where: FindOptionsWhere<User> = {};
 
     if (kakaoIds?.length) {
       where.kakaoId = In(kakaoIds);

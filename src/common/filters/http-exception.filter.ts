@@ -9,6 +9,10 @@ import {
 import { Request, Response } from 'express';
 import { ApiErrorResponseDto } from '../dto/api-error.dto';
 
+interface HttpExceptionBody {
+  message?: string;
+}
+
 /**
  * HTTP 상태 코드를 기본 에러 코드로 매핑
  */
@@ -57,8 +61,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message =
         typeof exceptionResponse === 'string'
           ? exceptionResponse
-          : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (exceptionResponse as any).message || exception.message;
+          : (exceptionResponse as HttpExceptionBody).message || exception.message;
     } else {
       // 알 수 없는 에러인 경우
       code = 'INTERNAL_SERVER_ERROR';

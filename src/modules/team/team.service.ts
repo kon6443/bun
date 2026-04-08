@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { INVITE_MAX_EXPIRATION_MS, INVITE_TOKEN_EXPIRY_SECONDS } from '../../common/constants/app.constants';
 import { sign, verify, JwtPayload } from 'jsonwebtoken';
 import { TeamMember } from '../../entities/TeamMember';
 import { Team } from '../../entities/Team';
@@ -1024,7 +1025,7 @@ export class TeamService {
       throw new TeamInviteExpiredErrorResponseDto('만료 시간은 현재 시간보다 이후여야 합니다.');
     }
     // 최대 7일 제한
-    const maxEndAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7일 후
+    const maxEndAt = new Date(now.getTime() + INVITE_MAX_EXPIRATION_MS);
     if (endAt > maxEndAt) {
       throw new TeamInviteExpiredErrorResponseDto('만료 시간은 현재 시간부터 최대 7일까지만 설정 가능합니다.');
     }
@@ -1044,7 +1045,7 @@ export class TeamService {
     // DB의 endAt은 최대 7일까지만 설정 가능하므로, JWT는 항상 DB보다 길게 유지됨
     // 실제 만료 검증은 DB의 endAt으로 수행
     const token = sign(tokenPayload, secret, {
-      expiresIn: 8 * 24 * 60 * 60, // 8일 (691200초) 고정
+      expiresIn: INVITE_TOKEN_EXPIRY_SECONDS,
     });
 
     // 5. TeamInvitation 엔티티 저장
