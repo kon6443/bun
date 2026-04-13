@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-04-08 (D15·D16·D17 완료, D14 보류, D19~D21 추가)
+> 작성일: 2026-04-03 | 최종 수정: 2026-04-13 (D10 보강: node_exporter + 팀별 접속자 메트릭)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -42,7 +42,7 @@
 | ~~18~~ | ~~D13 NestJS 비정석 패턴 수정~~ | — | — | — | **✅ 완료** |
 | ~~19~~ | ~~D8 API Rate Limiting~~ | — | — | — | **✅ 완료** |
 | ~~20~~ | ~~D9 응답 압축~~ | — | — | — | **✅ 완료** |
-| 21 | **D10 메트릭 수집 (Prometheus+Grafana)** | 보통 | 🟢 | 높음 | 없음 (추후) |
+| 21 | **D10 메트릭 수집 (Prometheus+Grafana+node_exporter)** | 보통 | 🟢 | 높음 | 없음 (추후) |
 | 22 | **D14 ResponseInterceptor** | 보통 | 🟡 | 매우 높음 | **보류 — API별 code/message/action 커스텀 예정으로 인터셉터 불적합** |
 | ~~23~~ | ~~D15 @CurrentUser 데코레이터~~ | — | — | — | **✅ 완료** |
 | ~~24~~ | ~~D16 하드코딩 상수화~~ | — | — | — | **✅ 완료** |
@@ -823,16 +823,40 @@ app.use(compression());
 | `@willsoto/nestjs-prometheus` | NestJS 통합 모듈 | NestJS 앱 (npm) |
 | Prometheus | 메트릭 수집·저장 서버 | Docker 컨테이너 |
 | Grafana | 대시보드 시각화 | Docker 컨테이너 |
+| **node_exporter** | **노드(OS) 메트릭 — CPU/RAM/디스크/네트워크** | **Docker 컨테이너 (Swarm global mode, 모든 노드)** |
 
 ### 수집할 메트릭
 
+**1) prom-client (NestJS 앱 자동)**
+
 | 메트릭 | 타입 | 용도 |
 |--------|------|------|
-| `http_request_duration_seconds` | Histogram | API 응답 시간 분포 |
-| `http_requests_total` | Counter | 총 요청 수 (method, status별) |
-| `nodejs_heap_used_bytes` | Gauge | 메모리 사용량 |
-| `ws_connections_active` | Gauge | WebSocket 접속자 수 (커스텀) |
-| `redis_connection_status` | Gauge | Redis 연결 상태 (커스텀) |
+| `http_request_duration_seconds` | Histogram | API 응답 시간 분포 (p50/p95/p99) |
+| `http_requests_total` | Counter | 총 요청 수 (method, status, route별) |
+| `nodejs_heap_used_bytes` | Gauge | Node.js 힙 메모리 |
+| `nodejs_eventloop_lag_seconds` | Gauge | 이벤트루프 지연 |
+| `process_cpu_seconds_total` | Counter | 프로세스 CPU 사용 |
+
+**2) node_exporter (노드 OS 자동)**
+
+| 카테고리 | 대표 메트릭 | 용도 |
+|---------|-----------|------|
+| CPU | `node_cpu_seconds_total`, `node_load1/5/15` | 코어별 CPU, load average |
+| 메모리 | `node_memory_MemAvailable_bytes`, `node_memory_MemTotal_bytes` | 가용/사용 메모리 |
+| 디스크 | `node_filesystem_avail_bytes`, `node_disk_io_time_seconds_total` | 파티션 사용량, I/O |
+| 네트워크 | `node_network_receive_bytes_total`, `node_network_transmit_bytes_total` | RX/TX |
+| 파일시스템 | `node_filesystem_files_free` | inode 사용률 |
+
+**3) 커스텀 메트릭 (Socket.IO + Redis + 팀 비즈니스)**
+
+| 메트릭 | 타입 | 용도 | 구현 위치 |
+|--------|------|------|----------|
+| `ws_connections_active` | Gauge | WebSocket 접속자 수 | TeamGateway connect/disconnect |
+| `ws_team_online_users` | Gauge (labels: `team_id`) | **팀별 현재 접속자 수** | OnlineUserService.getOnlineUsersCount() 주기적 갱신 |
+| `ws_events_total` | Counter (labels: `event`) | WS 이벤트 발생 수 (taskCreated, commentCreated 등) | 각 gateway handler |
+| `ws_event_duration_seconds` | Histogram (labels: `event`) | WS 이벤트 처리 시간 | gateway handler |
+| `redis_connection_status` | Gauge | Redis 연결 상태 (0/1) | RedisIoAdapter |
+| `redis_pubsub_messages_total` | Counter | Pub/Sub 메시지 수 | RedisIoAdapter (선택) |
 
 ### 서버 부하
 
@@ -840,17 +864,21 @@ app.use(compression());
 |------|------|
 | prom-client CPU | 거의 0 (메트릭 기록은 원자적 카운터 연산) |
 | /metrics 엔드포인트 | 호출당 ~5ms (15초 간격이므로 무시 가능) |
-| Prometheus 컨테이너 | CPU ~0.5%, RAM ~200MB (소규모 환경) |
+| Prometheus 컨테이너 | CPU ~0.5%, RAM ~200MB, 디스크 ~200MB/월 (7일 보관) |
 | Grafana 컨테이너 | CPU ~0.5%, RAM ~150MB (대시보드 열 때만) |
+| **node_exporter (노드당)** | **CPU ~0%, RAM ~10MB** |
+| **모니터링 스택 합계** | **RAM ~360MB, CPU ~1%** |
 | **현재 서버 (4 OCPU, 24GB RAM)** | **전혀 문제 없음** |
 
 ### ⚠️ 주의 사항
 
 - **/metrics 엔드포인트 보안**: 외부에서 접근 불가하도록 설정 필요 (내부 네트워크만 허용하거나 IP 제한)
-- **Prometheus 저장소**: 기본 15일 보관. 장기 보관 필요 시 디스크 용량 계획
+- **Prometheus 저장소**: 기본 15일 보관 → **7일로 축소 권장** (`--storage.tsdb.retention.time=7d`). 자동 삭제됨
 - **Grafana 초기 설정**: 대시보드 JSON export/import로 관리 (Infrastructure as Code)
 - **커스텀 메트릭**: ws_connections_active 등은 Gateway에서 직접 카운터 증감 필요
-- **Docker Swarm 연동**: Prometheus가 각 레플리카의 /metrics를 개별 수집해야 함 → service discovery 설정
+- **Docker Swarm 연동**: Prometheus가 각 레플리카의 /metrics를 개별 수집해야 함 → Swarm DNS(`tasks.<service>`) 기반 service discovery 설정
+- **node_exporter 배포 모드**: Swarm `global` mode로 등록 → 모든 노드에 자동 1개씩 배포됨 (레플리카 수와 무관)
+- **팀별 접속자 Gauge 갱신 전략**: OnlineUserService는 Redis 조회 → 매 요청마다 호출하면 부하. **주기적 갱신(30s~1m) 또는 joinTeam/leaveTeam 이벤트 시점 갱신** 권장
 
 ### 구현 단계
 
@@ -861,21 +889,26 @@ Step 1: NestJS 앱에 prom-client 적용 (30분)
   - /metrics 엔드포인트 자동 생성
   - 기본 메트릭 (HTTP 요청, Node.js 런타임) 자동 수집
 
-Step 2: Prometheus Docker 컨테이너 (1시간)
-  - docker-compose에 prometheus 서비스 추가
-  - prometheus.yml 설정 (scrape target: NestJS /metrics)
-  - 데이터 볼륨 마운트
+Step 2: Prometheus + node_exporter Docker 서비스 추가
+  - Prometheus: infra/docker-stack.yml (또는 별도 monitoring stack)
+  - prometheus.yml 설정 (scrape target: NestJS /metrics + node_exporter)
+  - node_exporter: Swarm global mode (모든 노드에 자동 배포)
+  - 데이터 볼륨 마운트 (prometheus-data)
+  - retention 7일 설정
 
-Step 3: Grafana Docker 컨테이너 (2시간)
-  - docker-compose에 grafana 서비스 추가
+Step 3: Grafana Docker 서비스 추가
+  - infra/docker-stack.yml에 grafana 추가
   - Prometheus 데이터소스 연결
   - Node.js 대시보드 import (Grafana ID: 11159)
-  - 커스텀 대시보드 구성 (WS 접속자, 에러율 등)
+  - Node Exporter 대시보드 import (Grafana ID: 1860)
+  - 커스텀 대시보드 구성 (WS 접속자, 팀별 접속자, Redis 상태)
 
-Step 4: 커스텀 메트릭 추가 (선택)
-  - WebSocket 접속자 수 Gauge
-  - Redis 연결 상태 Gauge
-  - 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+Step 4: 커스텀 메트릭 추가
+  - ws_connections_active (TeamGateway)
+  - ws_team_online_users (OnlineUserService 주기 갱신, 팀별)
+  - ws_events_total / ws_event_duration_seconds (각 gateway handler)
+  - redis_connection_status (RedisIoAdapter)
+  - (선택) 비즈니스 메트릭: 팀 생성 수, 태스크 완료율 등
 ```
 
 ### 실행 체크리스트
@@ -887,22 +920,28 @@ Step 1 — NestJS 앱:
   [ ] 기본 메트릭 (HTTP, Node.js) 수집 확인
   [ ] /metrics 보안 설정 (IP 제한 또는 Guard)
 
-Step 2 — Prometheus:
-  [ ] docker-compose에 prometheus 서비스 추가
-  [ ] prometheus.yml 작성 (scrape config)
-  [ ] Prometheus UI 접근 확인 (http://localhost:9090)
-  [ ] NestJS 타겟 메트릭 수집 확인
+Step 2 — Prometheus + node_exporter:
+  [ ] infra/prometheus/prometheus.yml 작성 (scrape config)
+  [ ] docker-stack.yml에 prometheus 서비스 추가 (retention 7일, volume)
+  [ ] docker-stack.yml에 node_exporter 서비스 추가 (mode: global)
+  [ ] Swarm DNS(tasks.<service>) 기반 service discovery 확인
+  [ ] Prometheus UI 접근 확인 (http://localhost:9090/targets → 모든 타겟 UP)
+  [ ] NestJS 레플리카 2개 + node_exporter (노드당 1개) 메트릭 수집 확인
 
 Step 3 — Grafana:
-  [ ] docker-compose에 grafana 서비스 추가
+  [ ] docker-stack.yml에 grafana 서비스 추가 (volume)
+  [ ] Grafana 접근 보안 설정 (포트 제한 또는 SSH 터널)
   [ ] Prometheus 데이터소스 연결
-  [ ] Node.js 기본 대시보드 import
-  [ ] 커스텀 대시보드 구성
+  [ ] Node.js 기본 대시보드 import (ID: 11159)
+  [ ] Node Exporter 대시보드 import (ID: 1860)
+  [ ] 커스텀 대시보드: 팀별 접속자, WS 이벤트, Redis 상태
 
-Step 4 — 커스텀 메트릭 (선택):
-  [ ] ws_connections_active (Gateway)
+Step 4 — 커스텀 메트릭:
+  [ ] ws_connections_active (TeamGateway 연결/해제 시 증감)
+  [ ] ws_team_online_users (OnlineUserService 주기 갱신, 팀별 labels)
+  [ ] ws_events_total / ws_event_duration_seconds (gateway handlers)
   [ ] redis_connection_status (RedisIoAdapter)
-  [ ] 비즈니스 메트릭
+  [ ] (선택) 비즈니스 메트릭
 ```
 
 ---
@@ -1427,7 +1466,7 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
   [✓] D8  API Rate Limiting — 2단계 글로벌(초당5/분당60) + 로그인 엄격 + SkipThrottle 3곳
-  [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + prom-client)
+  [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + node_exporter + prom-client, 팀별 접속자 등 커스텀 메트릭 포함)
   [⏸] D14 ResponseInterceptor — 보류 (API별 code/message/action 커스텀 예정 → 인터셉터 불적합)
   [✓] D15 @CurrentUser 데코레이터 — 27곳 @Req() req.user → @CurrentUser() user 전환
   [✓] D16 하드코딩 상수화 — 8곳 → 상수 파일 3개 (app, throttle, external-api)
@@ -1464,7 +1503,7 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
 | D13 NestJS 비정석 패턴 | 🟢 낮음 | process.env→ConfigService, WsExceptionFilter DI 전환 |
 | D8 Rate Limiting | 🟢 낮음 | 추가만, IP/userId 기반 선택 필요. X-Forwarded-For 처리 주의 |
 | D9 응답 압축 | 🟢 낮음 | 1줄 추가, CPU +1~3% (OCI 4 OCPU에서 무시 가능) |
-| D10 메트릭 수집 | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 2개 추가 |
+| D10 메트릭 수집 | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 3개 추가 (Prometheus + Grafana + node_exporter global). RAM ~360MB |
 | D14 ResponseInterceptor | ⏸ 보류 | API별 code/message/action 커스텀 예정 → 인터셉터 불적합 |
 | D15 @CurrentUser | 🟢 낮음 | 데코레이터 추가 + 27곳 시그니처 교체. 로직 무변경 |
 | D16 하드코딩 상수화 | 🟢 낮음 | 상수 파일 추가 + 8곳 참조 교체. 값 무변경 |
