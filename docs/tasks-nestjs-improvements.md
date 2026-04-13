@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-04-13 (D10 보강: node_exporter + 팀별 접속자 메트릭)
+> 작성일: 2026-04-03 | 최종 수정: 2026-04-13 (D10 보강: node_exporter + 팀별 접속자 메트릭; D22/D23 신규 + D24~D31 재번호 추가)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -21,7 +21,7 @@
 ## 진행률
 
 ```
-완료: 25/37  |  남은: 10  |  보류: 2
+완료: 25/47  |  남은: 20  |  보류: 2
 ```
 
 ---
@@ -51,6 +51,16 @@
 | 27 | **D19 파일 다운로드 StreamableFile 전환** | 보통 | 🟡 | 높음 | 없음 |
 | 28 | **D20 Swagger 리다이렉트 NestMiddleware 전환** | 쉬움 | 🟢 | 보통 | 없음 |
 | 29 | **D21 파일 다운로드 에러 응답 통일** | 쉬움 | 🟢 | 보통 | D19 |
+| 30 | **D22 TelegramService 비관적 락** | 쉬움 | 🟢 | 높음 | 없음 |
+| 31 | **D23 TeamInvitation 토큰 Unique Index** | 쉬움 | 🟡 | 높음 | DB DDL |
+| 32 | **D24 하드코딩 설정값 → ConfigService** | 쉬움 | 🟢 | 보통 | 없음 |
+| 33 | **D25 DTO 검증 누락 보완** | 쉬움 | 🟢 | 보통 | 없음 |
+| 34 | **D26 중복 Controller 클래스명 수정** | 쉬움 | 🟢 | 낮음 | 없음 |
+| 35 | **D27 TaskComment PK 자동 생성** | 보통 | 🟡 | 보통 | DB 작업 |
+| 36 | **D28 N+1 쿼리 최적화** | 쉬움 | 🟢 | 보통 | 없음 |
+| 37 | **D29 QueryBuilder Raw 매핑 타입 안전성** | 보통 | 🟢 | 보통 | 없음 |
+| 38 | **D30 LOW 품질 개선 모음** | 쉬움~보통 | 🟢 | 낮음~보통 | 없음 |
+| 39 | **D31 환경 검증 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -75,6 +85,16 @@ D18 (PaginationDto) ──→ 독립 (추후, 목록 API 확장 시)
 D19 (StreamableFile) ──→ 독립 (Express @Res 제거)
 D20 (Swagger NestMiddleware) ──→ 독립 (Express 인라인 미들웨어 제거)
 D21 (에러 응답 통일) ──→ D19 완료 시 자동 해결
+D22 (Telegram 비관적 락) ──→ 독립 (trigger: acceptTeamInvite 동일 패턴)
+D23 (토큰 Unique Index) ──→ 독립 (DB DDL 수동)
+D24 (하드코딩 설정값 ConfigService) ──→ 독립 (.env 추가)
+D25 (DTO 검증 보완) ──→ 독립
+D26 (Controller 클래스명) ──→ 독립
+D27 (TaskComment PK) ──→ 독립 (Entity만 변경, DB Sequence 기존 존재)
+D28 (N+1 쿼리) ──→ 독립 (프론트 응답 형식 확인 필수)
+D29 (QueryBuilder Raw 매핑) ──→ 독립
+D30 (LOW 품질 개선) ──→ 독립 (서브항목 30-1 ~ 30-7)
+D31 (환경 검증) ──→ D24 (CORS_ORIGINS 등 D24 신규 변수 검증 포함)
 ```
 
 ---
@@ -321,6 +341,49 @@ Gateway (8개):
 - **난이도**: 어려움 | **효과**: 높음 | **위험도**: 🟡 중간 | **선행**: D5 (테스트 안전망)
 - 1520줄 → `TaskService`, `CommentService`, `InvitationService`로 분리
 - TeamService에 남는 것: 팀 CRUD, 팀원 관리
+
+### 왜 분리하는가
+
+현재 TeamService는 5가지 도메인(팀, 태스크, 댓글, 초대, 알림)을 하나의 클래스에서 처리.
+- **한 서비스가 300~500줄** 이내가 현업 기준 건강한 상태. 1,500줄은 기술 부채.
+- 새 기능 추가 시 관련 없는 코드를 모두 읽어야 하고, 테스트 작성도 어려움.
+- 한 도메인 변경이 다른 도메인에 의도치 않은 영향을 줄 수 있음.
+
+### 분리 원칙
+
+- **쪼개는 단위 = 테이블이 아니라 "도메인 책임"**
+- 분리된 서비스도 필요한 Repository를 직접 주입받아 JOIN 그대로 사용
+- 서비스 간 호출이 필요하면 DI로 주입 (예: InvitationService → TeamService)
+- DB 왕복 횟수는 변하지 않음 — 쿼리 로직은 동일하고 담는 클래스만 달라짐
+
+### 분리 계획
+
+| 새 서비스 | 책임 | TeamService에서 이동할 메서드 | 의존성 |
+|-----------|------|------------------------------|--------|
+| **TaskService** | 태스크 CRUD | `createTask`, `updateTask`, `updateTaskStatus`, `updateTaskActiveStatus`, `getTasksByTeamId`, `getTeamTasksBy` | TeamTaskRepo, TeamRepo, UserRepo, NotificationPort |
+| **CommentService** | 댓글 CRUD | `createTaskComment`, `getCommentsByTaskId`, `updateTaskComment`, `deleteTaskComment` | TaskCommentRepo, TeamTaskRepo |
+| **InvitationService** | 초대 관리 | `createTeamInvite`, `verifyTeamInviteToken`, `acceptTeamInvite` | TeamInvitationRepo, TeamMemberRepo, TeamRepo |
+| **TeamService** (유지) | 팀 CRUD + 팀원 | 나머지 전부 | TeamRepo, TeamMemberRepo, UserRepo |
+
+### ⚠️ 실행 전 확인 필수
+
+- 분리 전 D5(단위 테스트)로 기존 동작을 먼저 보호해야 안전
+- TeamController, TeamGateway에서 새 서비스 주입으로 변경 필요
+- **프론트엔드 영향 없음** — API 엔드포인트/응답 형식 변경 없음 (내부 구조만 변경)
+
+### 실행 체크리스트
+```
+[ ] 분리 대상 메서드 목록 최종 확정 (grep으로 호출처 전수 파악)
+[ ] TaskService 생성 + 메서드 이동
+[ ] CommentService 생성 + 메서드 이동
+[ ] InvitationService 생성 + 메서드 이동
+[ ] TeamModule에 새 서비스 providers 등록
+[ ] TeamController에서 새 서비스 주입으로 변경
+[ ] TeamGateway에서 새 서비스 주입으로 변경
+[ ] 순환 의존성 확인 (forwardRef 필요 여부)
+[ ] tsc --noEmit + 앱 시작 확인
+[ ] 기존 API 동작 수동 테스트
+```
 
 ---
 
@@ -1453,7 +1516,7 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
+Phase 5 — 작업 목록 (완료 10 + 미완료 20 + 보류 2)
   [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
@@ -1475,6 +1538,16 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
   [ ] D19 파일 다운로드 StreamableFile 전환 (Express @Res 제거)
   [ ] D20 Swagger 리다이렉트 NestMiddleware 전환
   [ ] D21 파일 다운로드 에러 응답 통일 (D19 완료 시 자동 해결)
+  [ ] D22 TelegramService 비관적 락 (verifyAndLinkTeam에 pessimistic_write 추가)
+  [ ] D23 TeamInvitation/TelegramLink 토큰 Unique Index (DB DDL + Entity)
+  [ ] D24 하드코딩 설정값 → ConfigService (online-user, scheduler, cors)
+  [ ] D25 DTO 검증 누락 보완 (5개 DTO)
+  [ ] D26 중복 Controller 클래스명 수정 (auth/UsersController → AuthUsersController)
+  [ ] D27 TaskComment PK 자동 생성 (⚡ 우선도 높음 — Entity/DB 불일치)
+  [ ] D28 N+1 쿼리 최적화 (getTasksByTeamId 중복 쿼리 제거)
+  [ ] D29 QueryBuilder Raw 매핑 타입 안전성 (.getRawMany → .getMany)
+  [ ] D30 LOW 품질 개선 모음 (as any, WS throttle, Helmet, Dockerfile, .env.example)
+  [ ] D31 환경 검증 보완 (JWT_SECRET MinLength 등)
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -1485,6 +1558,477 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
 대부분의 Phase 5 작업은 프론트엔드 수정 불필요. 예외:
 - **D8 Rate Limiting**: 프론트에서 429 응답 처리 추가 필요 (FetchService.ts + SessionProvider.tsx, 각 4줄). 배포 순서 무관.
 - ~~**D14 ResponseInterceptor**~~: 보류됨 (API별 code/message/action 커스텀 예정)
+
+---
+
+## D22. TelegramService 비관적 락 적용
+
+- **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 1파일
+
+### 현재 문제 (`telegram.service.ts:296-345`)
+
+토큰 검증(`findOne`) → 트랜잭션(`update`) 사이에 비관적 락이 없어서, 동일 토큰으로 동시 요청 시 두 그룹 모두 연동될 수 있음.
+
+```typescript
+// 현재: 락 없음 → 두 요청이 동시에 유효한 토큰을 읽을 수 있음
+const telegramLink = await this.telegramLinkRepository.findOne({ where: { token, ... } });
+// ... 검증 ...
+await this.dataSource.transaction(async (manager) => { ... });
+```
+
+### 수정 방법
+
+`acceptTeamInvite()`와 동일한 패턴 적용:
+
+```typescript
+await this.dataSource.transaction(async (manager) => {
+  const telegramLink = await manager.findOne(TelegramLink, {
+    where: { token, actStatus: ActStatus.ACTIVE, endAt: MoreThan(new Date()) },
+    lock: { mode: 'pessimistic_write' },  // 🔒 추가
+  });
+
+  if (!telegramLink) return { success: false, message: '유효하지 않거나 만료된 토큰' };
+
+  // ... 팀 조회, 검증 ...
+  await manager.update(Team, ...);
+  await manager.update(TelegramLink, ...);
+});
+```
+
+### ⚠️ 주의
+
+- 비관적 락은 트랜잭션 안에서만 동작 → `findOne`을 트랜잭션 내부로 이동
+- Oracle은 `SELECT ... FOR UPDATE` 지원 확인 필요 (일반적으로 지원)
+- 같은 패턴이 `acceptTeamInvite()`에서 이미 동작 중이므로 안전
+
+### 실행 체크리스트
+```
+[ ] verifyAndLinkTeam(): findOne을 트랜잭션 내부로 이동
+[ ] lock: { mode: 'pessimistic_write' } 추가
+[ ] 팀 조회 + 검증 로직도 트랜잭션 내부로 이동
+[ ] tsc --noEmit + 앱 시작 확인
+[ ] 수동 테스트: 텔레그램 연동 정상 동작 확인
+```
+
+---
+
+## D23. TeamInvitation 토큰 Unique Index 활성화
+
+- **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 1파일 + DB DDL
+
+### 현재 문제 (`TeamInvitation.ts:19`)
+
+```typescript
+// @Index('IDX_INVITE_TOKEN', { unique: true })  ← 주석 처리됨!
+```
+
+초대 토큰에 DB 레벨 유니크 제약이 없어서:
+- `randomBytes(32).toString('hex')` 충돌 시 중복 INSERT 성공
+- 공격자가 토큰을 알아내면 같은 토큰으로 다른 초대 생성 가능
+
+### 왜 DB 레벨에서 해야 하는가
+
+애플리케이션 레벨 검증만으로는 **동시 요청** 시 두 요청 모두 "중복 없음"으로 판단할 수 있음.
+DB 유니크 인덱스는 INSERT 시점에 원자적으로 검증하므로 100% 안전.
+
+### 수정
+
+**1단계 — DB에 인덱스 생성** (`synchronize: false`이므로 직접 실행):
+```sql
+-- 먼저 기존 중복 토큰 확인
+SELECT TOKEN, COUNT(*) FROM TEAM_INVITATIONS GROUP BY TOKEN HAVING COUNT(*) > 1;
+
+-- 중복 없으면 인덱스 생성
+CREATE UNIQUE INDEX IDX_INVITE_TOKEN ON TEAM_INVITATIONS(TOKEN);
+```
+
+**2단계 — Entity 주석 해제**:
+```typescript
+@Index('IDX_INVITE_TOKEN', { unique: true })  // 주석 해제
+```
+
+### ⚠️ 주의
+
+- 기존 데이터에 중복 토큰이 있으면 인덱스 생성 실패 → 먼저 중복 확인 필수
+- `TelegramLink.ts`의 `TOKEN` 컬럼에도 동일한 유니크 인덱스 필요 (확인 후 함께 적용)
+
+### 실행 체크리스트
+```
+[ ] DB에서 TEAM_INVITATIONS.TOKEN 중복 확인
+[ ] DB에서 TEAM_TELEGRAM_LINKS.TOKEN 중복 확인
+[ ] 중복 없으면 유니크 인덱스 생성 (두 테이블)
+[ ] TeamInvitation.ts: @Index 주석 해제
+[ ] TelegramLink.ts: @Index 추가 (없으면)
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D24. 하드코딩 설정값 → ConfigService 이관
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 5파일
+
+### 현재 문제
+
+코드에 설정값이 직접 하드코딩되어 있어, 환경별(LOCAL/QA/PROD) 조정이 불가능하고 변경 시 배포가 필요함.
+
+### 변경 대상
+
+| 파일:줄 | 현재 코드 | 변경 후 |
+|---------|----------|--------|
+| `auth.service.ts:38` | `'30d'` (JWT 만료) | `configService.get('JWT_ACCESS_TOKEN_EXPIRES_IN') ?? '30d'` **(이미 반영됨, .env 추가만 필요)** |
+| `online-user.service.ts:12` | `SOCKET_KEY_TTL = 3600` | `configService.get('REDIS_SOCKET_TTL') ?? 3600` |
+| `online-user.service.ts:13` | `TEAM_ONLINE_KEY_TTL = 7200` | `configService.get('REDIS_ONLINE_TTL') ?? 7200` |
+| `scheduler.service.ts:11` | `AUTO_ARCHIVE_DAYS = 14` | `configService.get('AUTO_ARCHIVE_DAYS') ?? 14` |
+| `cors.constants.ts` | 도메인 하드코딩 | `configService.get('CORS_ORIGINS')?.split(',')` 또는 환경별 상수 |
+
+### .env 추가 항목
+
+```env
+# JWT
+JWT_ACCESS_TOKEN_EXPIRES_IN=30d
+
+# Redis TTL (초)
+REDIS_SOCKET_TTL=3600
+REDIS_ONLINE_TTL=7200
+
+# 스케줄러
+AUTO_ARCHIVE_DAYS=14
+
+# CORS (콤마 구분)
+CORS_ORIGINS=http://localhost:3000,https://fivesouth.duckdns.org
+```
+
+### 실행 체크리스트
+```
+[ ] .env, .env.example에 새 변수 추가
+[ ] online-user.service.ts: ConfigService 주입 + TTL 값 교체
+[ ] scheduler.service.ts: ConfigService 주입 + AUTO_ARCHIVE_DAYS 교체
+[ ] cors.constants.ts → 환경별 분리 또는 ConfigService 기반으로 변경
+[ ] env.validation.ts에 새 변수 검증 추가 (선택)
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D25. DTO 검증 누락 보완
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 5파일
+
+### 변경 대상
+
+| DTO | 파일 | 필드 | 현재 | 추가할 검증 |
+|-----|------|------|------|------------|
+| `CreateTeamDto` | `team.dto.ts:27-42` | `actStatus`, `leaderId` | 데코레이터 없음 | 서버에서만 설정하는 필드면 `@Exclude()` 처리, 아니면 `@IsNumber()` 추가 |
+| `KakaoSignInUpDto` | `auth.dto.ts:7-17` | `kakaoNickname` | `@IsString @IsOptional` | `@MaxLength(50)` 추가 |
+| `CreateTeamInviteDto` | `team.dto.ts:150-164` | `endAt` | `@IsDate` | `@Type(() => Date)` 변환 추가 (JSON→Date) |
+| `FishingStateDto` | `fishing.gateway.dto.ts:31-39` | `pointId` | `@IsString @IsOptional` | `@MaxLength(50)` 추가 |
+| `ChatMessageDto` | `fishing.gateway.dto.ts:41-46` | `message` | `@MaxLength(200)` | `@Matches(/\S/)` 추가 (공백만 방지) |
+| File Share | `file-share.controller.ts` | query params | DTO 없음 | `FileAccessDto` 생성 + `@IsString @IsNotEmpty` |
+
+### 실행 체크리스트
+```
+[ ] CreateTeamDto: actStatus/leaderId → @Exclude() 또는 @IsNumber()
+[ ] KakaoSignInUpDto: kakaoNickname → @MaxLength(50)
+[ ] CreateTeamInviteDto: endAt → @Type(() => Date) 추가
+[ ] FishingStateDto: pointId → @MaxLength(50)
+[ ] ChatMessageDto: message → 공백만 방지 검증
+[ ] FileAccessDto 생성 + file-share.controller.ts 적용
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D26. 중복 Controller 클래스명 수정
+
+- **난이도**: 쉬움 | **효과**: 낮음 | **위험도**: 🟢 낮음 | **범위**: 1파일
+
+### 현재 문제
+
+두 개의 서로 다른 파일에 동일한 클래스명 `UsersController`가 존재:
+
+| 파일 | 역할 | 라우트 |
+|------|------|--------|
+| `src/modules/auth/users.controller.ts` | 인증 기반 사용자 관리 (닉네임 수정) | `/api/v1/auth/...` |
+| `src/modules/users/users.controller.ts` | 사용자 프로필 조회 | `/api/v1/users/...` |
+
+NestJS DI는 모듈 단위라 런타임 충돌은 없지만, 디버깅 시 스택트레이스에서 어느 `UsersController`인지 구분 불가.
+
+### 변경
+
+- `src/modules/auth/users.controller.ts` → 클래스명 `AuthUsersController`로 변경
+- auth.module.ts의 controllers 배열도 함께 수정
+
+### 실행 체크리스트
+```
+[ ] auth/users.controller.ts: UsersController → AuthUsersController
+[ ] auth.module.ts: controllers 배열 업데이트
+[ ] tsc --noEmit 확인
+```
+
+---
+
+## D27. TaskComment PK 자동 생성 전환
+
+- **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 2~3파일
+- **⚡ 우선도 높음**: 동시 요청 시 ID 충돌로 댓글 생성 실패 가능 — 사용자가 늘어나면 바로 문제됨
+
+### 현재 문제
+
+`TaskComment` 엔티티의 `COMMENT_ID`가 `@PrimaryColumn`으로 정의되어 있어 **자동 증가하지 않음**.
+
+**코드 확인 결과** (`team.service.ts:586-594`):
+```typescript
+const newComment = this.taskCommentRepository.create({
+  teamId, taskId, userId,
+  commentContent: createCommentDto.commentContent,
+  status: ActStatus.ACTIVE,
+  // ← commentId 미할당!
+});
+const comment = await this.taskCommentRepository.save(newComment);
+```
+
+`commentId`를 할당하지 않고 `save()` 호출. **댓글 생성은 정상 동작 확인됨** → DB에 Sequence+Trigger가 이미 존재하여 자동 생성 중. 그러나 Entity 정의(`@PrimaryColumn`)와 DB 실제 구조가 불일치.
+
+- Entity 정의가 DB 실제 구조와 불일치 → 코드 읽는 사람이 "수동 ID 관리"로 오해
+- TypeORM이 의도와 다르게 동작할 가능성 (INSERT 시 NULL 전달 등)
+
+### 변경
+
+```typescript
+// Before (수동)
+@PrimaryColumn({ name: 'COMMENT_ID', type: 'number' })
+commentId: number;
+
+// After (자동 — Oracle Sequence 활용)
+@PrimaryGeneratedColumn({ name: 'COMMENT_ID', type: 'number' })
+commentId: number;
+```
+
+### ⚠️ 주의
+
+- DB에 Sequence+Trigger **이미 존재** (댓글 생성 정상 동작 확인됨)
+- Entity 변경만 필요 — DB 작업 불필요
+- `@PrimaryGeneratedColumn` 변경 후 TypeORM이 INSERT 시 ID 컬럼을 생략하는지 확인 필요
+
+### 실행 체크리스트
+```
+[ ] TaskComment.ts: @PrimaryColumn → @PrimaryGeneratedColumn
+[ ] tsc --noEmit + 앱 시작 확인
+[ ] 댓글 생성 수동 테스트 (ID 자동 생성 확인)
+```
+
+---
+
+## D28. N+1 쿼리 최적화
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 1파일
+
+### 현재 문제 (`team.service.ts:750-790`)
+
+```typescript
+// 쿼리 1: 팀 조회
+const team = await this.teamRepository.findOne({ where: { teamId } });
+
+// 쿼리 2: 태스크 조회 (내부에서 Team을 다시 JOIN)
+const tasks = await this.getTeamTasksBy({ teamIds: [teamId], ... });
+```
+
+같은 팀 정보를 2번 조회함. `getTeamTasksBy()` 내부 QueryBuilder가 이미 Team을 innerJoin하므로, 한 번의 쿼리로 팀 + 태스크를 함께 가져올 수 있음.
+
+### 해결 방법
+
+**방법 A (권장)**: `getTeamTasksBy()` 결과에서 team 정보 추출
+```typescript
+const tasks = await this.getTeamTasksBy({ teamIds: [teamId], ... });
+// team 정보는 tasks 쿼리의 JOIN 결과에서 추출 (별도 쿼리 제거)
+```
+
+**방법 B**: team 조회를 `verifyTeamMemberAccess()` 내부에서 처리 (이미 팀 존재 검증 포함)
+
+**참고**: 이 이슈는 `Promise.all()`로 병렬화하는 것이 아님. 중복 쿼리를 제거하는 것이 핵심.
+
+### ⚠️ 실행 전 반드시 확인
+
+**문제 핵심**: 현재 `getTasksByTeamId()`는 `{ team, tasks }` 형태로 반환. team 별도 조회를 제거하면 **반환 타입이 달라질 수 있음**.
+- `getTeamTasksBy()` 결과에 team 정보가 포함되는지 반드시 확인
+- 프론트엔드에서 이 API의 `team` 필드를 어떻게 사용하는지 grep 확인
+- Controller 응답 형식이 변경되면 프론트 깨짐
+
+**확인 순서**:
+1. `getTeamTasksBy()` 내부 QueryBuilder의 JOIN/select 확인 → team 필드 반환 여부
+2. 프론트(`next-bun`)에서 해당 API 응답의 `team` 객체 사용처 전수 확인
+3. 동일한 응답 형식 유지 가능한지 판단 후 진행
+
+### 실행 체크리스트
+```
+[ ] ⚠️ getTeamTasksBy() 반환값에 team 정보 포함 여부 확인
+[ ] ⚠️ 프론트엔드에서 team 필드 사용처 전수 grep
+[ ] getTasksByTeamId()에서 불필요한 teamRepository.findOne() 제거
+[ ] team 정보를 getTeamTasksBy() 결과에서 추출하도록 변경
+[ ] 응답 형식 변경 없이 동일한 결과 반환 확인
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D29. QueryBuilder Raw 매핑 타입 안전성
+
+- **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 1파일
+
+### 현재 문제 (`team.service.ts` — `getTeamUsers()` 메서드, 958-970줄)
+
+> 참고: `getTeamMembersBy()`는 `getMany()` + 객체 매핑을 사용하여 문제 없음. 문제는 `getTeamUsers()` 메서드.
+
+```typescript
+const rawResults = await queryBuilder.getRawMany();
+return rawResults.map(raw => ({
+  userId: raw.user_USER_ID,        // 매직 스트링 — 오타나면 런타임 undefined
+  userName: raw.user_USER_NAME,    // TypeScript가 검사 불가
+}));
+```
+
+**왜 문제인가 — 쉬운 설명**:
+
+`.getRawMany()`는 SQL 결과를 **그대로** 돌려줌. 키 이름이 `테이블alias_DB컬럼명`으로 자동 생성됨.
+→ `raw.user_USER_ID`는 그냥 문자열 키. 오타(`raw.user_UESR_ID`)를 쳐도 TypeScript는 모름.
+→ 런타임에서 `undefined`가 반환되고, 프론트에서 "userId가 없다"는 버그가 발생.
+
+반면 `.getMany()`는 TypeORM 엔티티 객체를 반환:
+→ `tm.user.userId`는 TypeScript가 타입 검사. 오타나면 **컴파일 에러로 즉시 발견**.
+
+**비유**: `.getRawMany()`는 종이에 손글씨로 주소 쓰는 것 (오타 가능), `.getMany()`는 주소록에서 자동완성으로 선택하는 것 (오타 불가).
+
+### 해결 방법
+
+**방법 A (권장)**: `.getMany()` + 엔티티 관계 사용
+```typescript
+const results = await queryBuilder.getMany();
+return results.map(tm => ({
+  userId: tm.user.userId,     // 타입 안전
+  userName: tm.user.userName,
+}));
+```
+
+**방법 B**: Raw 결과 인터페이스 정의
+```typescript
+interface TeamUserRawResult {
+  user_USER_ID: number;
+  user_USER_NAME: string | null;
+  // ...
+}
+const rawResults = await queryBuilder.getRawMany<TeamUserRawResult>();
+```
+
+### 실행 체크리스트
+```
+[ ] getTeamUsers() 메서드: .getRawMany() → .getMany() 전환 (또는 타입 인터페이스 추가)
+[ ] 반환 타입 호환성 확인
+[ ] 프론트엔드 API 응답 형식 변경 여부 확인
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D30. LOW 품질 개선 모음
+
+- **난이도**: 쉬움~보통 | **효과**: 낮음~보통 | **위험도**: 🟢 낮음
+
+### 30-1. `as any` 제거
+
+| 파일:줄 | 현재 | 변경 |
+|---------|------|------|
+| `jwt-auth.guard.ts:52` | `(request as any)?.cookies?.access_token` | `(request as Request & { cookies?: Record<string, string> })` |
+| `auth.service.ts:81-82` | `{ kakaoId?: any; isActivated?: any }` | `{ kakaoId?: FindOperator<number>; isActivated?: FindOperator<number> }` |
+
+### 30-2. 에러코드 네이밍 통일
+
+현재 불일치: `AUTH_UNAUTHORIZED`, `TEAM_FORBIDDEN`, `TEAM_TASK_NOT_FOUND`
+
+통일 패턴: `[MODULE]_[ENTITY]_[STATUS]` 또는 `[MODULE]_[STATUS]`
+- `AUTH_UNAUTHORIZED` → 유지
+- `TEAM_FORBIDDEN` → 유지
+- `TEAM_TASK_NOT_FOUND` → `TEAM_TASK_NOT_FOUND` (이미 적절)
+
+### 30-3. WS 메시지 Rate Limit
+
+fishing.gateway.ts의 `move` 이벤트는 고빈도(100ms 간격)로 발생 가능.
+악의적 클라이언트가 1ms 간격으로 보내면 Redis 부하 + 브로드캐스트 폭발.
+
+추가할 것: 메시지 간 최소 간격 체크 (예: 50ms)
+```typescript
+const now = Date.now();
+if (now - client.data.lastMoveTime < 50) return; // throttle
+client.data.lastMoveTime = now;
+```
+
+### 30-4. FishingWsGuard 게스트 ID 충돌
+
+현재: socketId 문자열을 단순 해시 → 음수로 변환.
+문제: 해시 충돌 가능 (32비트 정수 범위).
+변경: `Date.now() * -1 - Math.random() * 10000` 또는 UUID 해시.
+
+### 30-5. Helmet 보안 헤더 명시 설정
+
+현재: `app.use(helmet())` — 기본값만 적용.
+추가: CSP, HSTS 등 명시 설정.
+```typescript
+app.use(helmet({
+  contentSecurityPolicy: { directives: { defaultSrc: ["'self'"] } },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+}));
+```
+
+### 30-6. Dockerfile 비루트 사용자
+
+현재: root로 실행됨 (보안 취약).
+추가: `USER node` 디렉티브.
+
+### 30-7. .env.example 생성
+
+신규 개발자 온보딩용 환경변수 템플릿 파일 생성.
+실제 값 대신 플레이스홀더 사용.
+
+### 실행 체크리스트
+```
+[ ] 30-1: as any 제거 (2곳)
+[ ] 30-2: 에러코드 네이밍 감사 + 불일치 수정
+[ ] 30-3: fishing.gateway.ts move 이벤트 throttle 추가
+[ ] 30-4: FishingWsGuard 게스트 ID 생성 개선
+[ ] 30-5: Helmet 보안 헤더 명시 설정
+[ ] 30-6: Dockerfile에 USER node 추가
+[ ] 30-7: .env.example 생성
+[ ] tsc --noEmit + 앱 시작 확인
+```
+
+---
+
+## D31. 환경 검증 보완
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 1파일
+
+### 현재 누락 (`env.validation.ts`)
+
+현재 검증되는 변수: `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `JWT_SECRET`, `NEXT_PUBLIC_DOMAIN`, `EXPRESS_PORT`, `ENV`, `LOG_LEVEL`, `REDIS_PORT`
+
+추가 필요:
+
+| 변수 | 검증 | 이유 |
+|------|------|------|
+| `JWT_SECRET` | `@MinLength(32)` | 현재 11자 허용됨, HS256 최소 32자 필요 |
+| `REDIS_HOST` | `@IsString @IsOptional` | 기본값 localhost, 프로덕션에서 다를 수 있음 |
+| `BOT_TOKEN_TELEGRAM` | `@IsString @IsOptional` | 포맷: `숫자:문자열` |
+| `BOT_USERNAME_TELEGRAM` | `@IsString @IsOptional` | 텔레그램 봇 username |
+| `DISCORD_BOT_TOKEN` | `@IsString @IsOptional` | 디스코드 봇 토큰 |
+| `CORS_ORIGINS` | `@IsString @IsOptional` | D24에서 추가되는 변수 |
+
+### 실행 체크리스트
+```
+[ ] JWT_SECRET에 @MinLength(32) 추가
+[ ] 나머지 선택 변수 검증 추가
+[ ] 기존 .env 파일의 JWT_SECRET 32자 이상으로 변경
+[ ] tsc --noEmit + 앱 시작 확인
+```
 
 ---
 
@@ -1512,4 +2056,14 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 10 + 보류 2)
 | D19 StreamableFile 전환 | 🟡 중간 | Express @Res() 제거. 스트림 에러 처리 방식 변경 |
 | D20 Swagger NestMiddleware | 🟢 낮음 | 인라인 미들웨어 → 클래스. main.ts 단순화 |
 | D21 에러 응답 통일 | 🟢 낮음 | D19 완료 시 자동 해결 |
+| D22 Telegram 비관적 락 | 🟢 낮음 | 기존 acceptTeamInvite 동일 패턴. 트랜잭션 내부로 이동 |
+| D23 토큰 Unique Index | 🟡 중간 | 기존 데이터 중복 확인 필수. DB DDL 수동 실행 |
+| D24 하드코딩 설정값 | 🟢 낮음 | ConfigService 이관 + .env 추가. 기본값 유지로 안전 |
+| D25 DTO 검증 보완 | 🟢 낮음 | 검증 추가만, 기존 동작 변경 없음 |
+| D26 Controller 클래스명 | 🟢 낮음 | 1파일 rename, 런타임 영향 없음 |
+| D27 TaskComment PK | 🟡 중간 | DB Sequence 생성 필요, 기존 데이터 확인 필수 |
+| D28 N+1 쿼리 | 🟢 낮음 | 중복 쿼리 제거, 응답 형식 변경 없음 |
+| D29 Raw 매핑 타입 | 🟢 낮음 | 타입 안전성 추가, 동작 변경 없음 |
+| D30 LOW 품질 개선 | 🟢 낮음 | 소규모 개선 모음 |
+| D31 환경 검증 | 🟢 낮음 | 검증 추가만, 기존 .env 통과 필요 |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |
