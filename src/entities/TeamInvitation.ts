@@ -28,10 +28,10 @@ export class TeamInvitation {
   @Column({ name: 'ACT_STATUS', type: 'number', default: ActStatus.ACTIVE, nullable: false })
   actStatus: ActStatus;
 
-  @Column({ name: 'END_AT', type: 'timestamp', nullable: false })
+  @Column({ name: 'END_AT', type: 'timestamp with time zone', nullable: false })
   endAt: Date;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', nullable: false })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP', nullable: false })
   crtdAt: Date;
 
   // 관계

@@ -9,6 +9,8 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 ## Conventions
 - Auth: Kakao OAuth + JWT — HTTP: cookie `access_token` 우선 → Bearer 헤더 | WS: `handshake.auth.token` → Bearer 헤더
 - ValidationPipe: `transform: true`, `enableImplicitConversion: true`
+- 날짜: UTC 저장, 로컬 표시 — DB 컬럼 전부 `TIMESTAMP WITH TIME ZONE`, ORA_SDTZ 설정 금지 (oracledb가 로컬 TZ 기반으로 Date 저장하므로 세션 TZ는 자동 일치시켜야 함)
+- Oracle `FROM_TZ()` 사용 시 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`) 사용 (ORA-01805 방지)
 - 프론트엔드 프로젝트: `../next-bun` (Next.js 15 App Router + Bun)
 
 ## Rules

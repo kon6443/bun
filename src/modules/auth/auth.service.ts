@@ -49,9 +49,8 @@ export class AuthService {
 
     const kakaoAPI = KAKAO_TOKEN_INFO_API;
     const kakaoRes = await fetch(kakaoAPI, {
-      method: 'get',
+      method: 'GET',
       headers: {
-        'Content-Type': 'Content-type: application/x-www-form-urlencoded;charset=utf-8',
         Authorization: `Bearer ${accessToken}`,
       },
     });

@@ -22,7 +22,7 @@ export class User {
   @Column({ name: "KAKAO_EMAIL", nullable: true, type: "varchar2" })
   kakaoEmail: string | null;
 
-  @Column({ name: "CREATED_DATE", type: "timestamp" })
+  @Column({ name: "CREATED_DATE", type: "timestamp with time zone" })
   createdDate: Date;
 
   @Column({ name: "IS_ACTIVATED", type: "number", default: 1 })
