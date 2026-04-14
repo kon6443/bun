@@ -32,17 +32,17 @@ export class TeamTask {
   @Column({ name: 'ACT_STATUS', type: 'number' })
   actStatus: ActStatus; // ActStatus.INACTIVE(0): 비활성, ActStatus.ACTIVE(1): 활성(노출)
 
-  @Column({ name: 'START_AT', type: 'timestamp', nullable: true })
+  @Column({ name: 'START_AT', type: 'timestamp with time zone', nullable: true })
   startAt: Date | null;
 
-  @Column({ name: 'END_AT', type: 'timestamp', nullable: true })
+  @Column({ name: 'END_AT', type: 'timestamp with time zone', nullable: true })
   endAt: Date | null;
 
   // 완료/취소 시각 (자동 아카이브 기준 — COMPLETED/CANCELLED 상태 진입 시 기록, 다른 상태로 변경 시 null)
-  @Column({ name: 'COMPLETED_AT', type: 'timestamp', nullable: true })
+  @Column({ name: 'COMPLETED_AT', type: 'timestamp with time zone', nullable: true })
   completedAt: Date | null;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   crtdAt: Date;
 
   @Column({ name: 'CRTD_BY', type: 'number' })

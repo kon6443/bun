@@ -133,9 +133,11 @@ UPDATE TEAM_TASKS SET END_AT = END_AT - INTERVAL '9' HOUR
 WHERE END_AT IS NOT NULL AND EXTRACT(TIMEZONE_HOUR FROM END_AT) = 0;
 ```
 
-#### 1-C. ORA_SDTZ=UTC 유지
+#### 1-C. ORA_SDTZ 설정 금지
 
-`app.module.ts`의 `process.env.ORA_SDTZ = 'UTC'` — `CURRENT_TIMESTAMP` default가 UTC를 반환하도록 보장.
+~~`app.module.ts`의 `process.env.ORA_SDTZ = 'UTC'`~~ — **삭제됨**.
+oracledb 드라이버가 JS Date를 저장할 때 로컬 시간 메서드(`getHours()` 등)를 사용하므로,
+세션 타임존은 반드시 로컬 TZ와 일치해야 함. ORA_SDTZ를 설정하지 않으면 자동으로 일치.
 
 ### Phase 2: TypeORM 엔티티 타입 통일
 
@@ -314,10 +316,12 @@ Docker TZ=UTC에서는 현재도 정상 동작하므로 선택사항.
 - [x] 상용/로컬 환경별 차이 원인 확정
 - [x] 백엔드 CRUD 전수조사 (new Date 14곳 + CURRENT_TIMESTAMP 6곳)
 - [x] 프론트엔드 CRUD 전수조사 (변경 30곳 + 불필요 5곳)
-- [ ] Phase 1: DB 컬럼 마이그레이션 (7개 타입 변경 + startAt/endAt 99건 보정)
-- [ ] Phase 2: TypeORM 엔티티 타입 통일 (7개 파일 14개 컬럼, 런타임 무영향)
-- [ ] Phase 3: 프론트 로컬 표시 전환 (dateUtils 10함수 + taskUtils 9함수 + 컴포넌트 11곳)
-- [ ] Phase 4: CLAUDE.md 컨벤션 업데이트 (프론트/백 모두)
-- [ ] Phase 5: 백엔드 알림 포맷 업데이트
+- [x] Phase 1: DB 컬럼 마이그레이션 (7개 타입 변경 + startAt/endAt 99건 보정)
+- [x] Phase 1 hotfix: FROM_TZ 'UTC' 리전 → '+00:00' 오프셋 변환 (ORA-01805 해결)
+- [x] Phase 1 hotfix2: ORA_SDTZ 제거 (oracledb가 로컬 TZ 기반 Date 저장 → 세션 TZ 불일치 해결)
+- [x] Phase 2: TypeORM 엔티티 타입 통일 (7개 파일 14개 컬럼)
+- [x] Phase 3: 프론트 로컬 표시 전환 (dateUtils 10함수 + taskUtils 9함수 + 컴포넌트 11곳)
+- [x] Phase 4: CLAUDE.md 컨벤션 업데이트 (프론트/백 모두)
+- [x] Phase 5: 백엔드 알림 포맷 업데이트
 - [ ] Phase 6: 백엔드 안전성 개선 (선택)
 - [ ] 상용 배포 후 시간 표시 정상 확인

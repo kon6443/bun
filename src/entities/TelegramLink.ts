@@ -20,15 +20,15 @@ export class TelegramLink {
   actStatus: ActStatus;
 
   // 텔레그램 연동 토큰 만료 시간
-  @Column({ name: 'END_AT', type: 'timestamp', nullable: false })
+  @Column({ name: 'END_AT', type: 'timestamp with time zone', nullable: false })
   endAt: Date;
 
   // 텔레그램 연동 토큰 사용 시간
-  @Column({ name: 'USED_AT', type: 'timestamp', nullable: true })
+  @Column({ name: 'USED_AT', type: 'timestamp with time zone', nullable: true })
   usedAt: Date | null;
 
   // 텔레그램 연동 토큰 생성 시간
-  @Column({ name: 'CRTD_AT', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', nullable: false })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP', nullable: false })
   crtdAt: Date;
 
   @ManyToOne(() => Team, team => team.teamId)

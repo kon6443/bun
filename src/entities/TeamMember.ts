@@ -11,7 +11,7 @@ export class TeamMember {
   @PrimaryColumn({ name: "USER_ID", type: "number" })
   userId: number;
 
-  @Column({ name: "JOINED_AT", type: "timestamp" })
+  @Column({ name: "JOINED_AT", type: "timestamp with time zone" })
   joinedAt: Date;
 
   @Column({ name: "ROLE", type: "varchar2" })
