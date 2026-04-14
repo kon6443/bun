@@ -24,7 +24,7 @@ export class Team {
   @Column({ name: 'LEADER_ID', type: 'number' })
   leaderId: number;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp' })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone' })
   crtdAt: Date;
 
   @Column({ name: 'ACT_STATUS', type: 'number' })

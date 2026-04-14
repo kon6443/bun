@@ -31,10 +31,10 @@ export class TaskComment {
   @Column({ name: 'STATUS', type: 'number', default: 1 })
   status: number; // 0: 비활성, 1: 활성(노출)
 
-  @Column({ name: 'MDFD_AT', type: 'timestamp', nullable: true })
+  @Column({ name: 'MDFD_AT', type: 'timestamp with time zone', nullable: true })
   mdfdAt: Date | null;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   crtdAt: Date;
 
   // 관계

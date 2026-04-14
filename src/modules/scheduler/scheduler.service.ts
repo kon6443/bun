@@ -38,6 +38,11 @@ export class SchedulerService {
     return !this.schedulerEnvs.includes(this.env) || this.TASK_SLOT !== 1;
   }
 
+  /**
+   * OCI A1 무료 인스턴스 최소 사용량 보장용 더미 태스크 (DB I/O)
+   * OCI Always Free 정책상 일정 사용량 미달 시 인스턴스 회수 가능 → 주기적 DB 쿼리로 활성 상태 유지
+   * 30초마다 USER 테이블 count 쿼리 실행 (경량 I/O)
+   */
   @Cron('0/30 * * * * *', {
     name: 'doTrash',
   })
@@ -52,6 +57,11 @@ export class SchedulerService {
     }
   }
 
+  /**
+   * OCI A1 무료 인스턴스 최소 사용량 보장용 더미 태스크 (CPU)
+   * OCI Always Free 정책상 CPU 사용량이 지나치게 낮으면 "유휴 인스턴스"로 판정될 수 있음
+   * 30초마다 수학 연산 500만회 반복으로 최소 CPU 사용량 확보
+   */
   @Cron('0/30 * * * * *', {
     name: 'runCpuIntensiveLoop',
   })
