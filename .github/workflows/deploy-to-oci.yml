@@ -1,9 +1,19 @@
-name: Deploy Nest.js to Docker Swarm
+name: Deploy NestJS to Docker Swarm
 
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'infra/docker-stack.yml'
+      - 'infra/docker-stack.monitoring.*.yml'
+      - 'infra/prometheus/**'
+      - 'infra/alertmanager/**'
+      - 'infra/grafana/**'
+      - 'infra/loki/**'
+      - 'infra/promtail/**'
+      - 'docs/**'
+      - '*.md'
 
 jobs:
   deploy:
@@ -23,25 +33,41 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Build and Push multi-arch image
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            -t ${{ secrets.REGISTRY_URL }}/sys_express:latest \
+            -t ${{ secrets.REGISTRY_URL }}/prod_nest:${{ steps.sha.outputs.short }} \
             --provenance=false \
             --sbom=false \
             --push \
             .
 
-      - name: Deploy via SSH to Docker Swarm
+      - name: Rsync stack YAML to Swarm manager
+        run: |
+          echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          rsync -avz \
+            -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
+            infra/docker-stack.app.yml \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/
+          rm /tmp/ssh_key
+
+      - name: Deploy stack via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            ENV_PATH="/home/ubuntu/desktop/deploy/sys/config/env/.env"
-            docker service update \
-            --with-registry-auth \
-            $(grep -vE '^#|^$' $ENV_PATH | awk '{print "--env-add", $0}') \
-            --image ${{ secrets.REGISTRY_URL }}/sys_express:latest sys_express
+            export REGISTRY_URL=${{ secrets.REGISTRY_URL }}
+            export IMAGE_TAG=${{ steps.sha.outputs.short }}
+            docker stack deploy \
+              -c /home/ubuntu/desktop/deploy/infra/docker-stack.app.yml \
+              --with-registry-auth \
+              prod_nest
+            docker stack services prod_nest
