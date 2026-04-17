@@ -54,7 +54,7 @@ jobs:
           rsync -avz \
             -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
             infra/docker-stack.app.yml \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/prod_nest.yml
           rm /tmp/ssh_key
 
       - name: Deploy stack via SSH
@@ -67,7 +67,7 @@ jobs:
             export REGISTRY_URL=${{ secrets.REGISTRY_URL }}
             export IMAGE_TAG=${{ steps.sha.outputs.short }}
             docker stack deploy \
-              -c /home/ubuntu/desktop/deploy/infra/docker-stack.app.yml \
+              -c /home/ubuntu/desktop/deploy/infra/prod_nest.yml \
               --with-registry-auth \
               prod_nest
             docker stack services prod_nest
