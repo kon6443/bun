@@ -1,0 +1,47 @@
+version: '3.9'
+
+services:
+  app:
+    image: ${REGISTRY_URL}/prod_nest:${IMAGE_TAG}
+    networks:
+      - sys_default
+    env_file:
+      - /home/ubuntu/desktop/deploy/sys/config/env/.env
+    environment:
+      TASK_SLOT: "{{.Task.Slot}}"
+    ports:
+      - target: 3500
+        published: 23500
+        mode: ingress
+    volumes:
+      - /home/ubuntu/desktop/deploy/sys/config/oracle:/opt/oracle
+      - /home/ubuntu/desktop/deploy/sys/shared:/app/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3500/api/v1/health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.prod_nest == 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 10s
+        max_failure_ratio: 0
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 5s
+        max_failure_ratio: 0
+      restart_policy:
+        condition: on-failure
+
+networks:
+  sys_default:
+    external: true

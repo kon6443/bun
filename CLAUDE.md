@@ -27,3 +27,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - 아키텍처 & 주요 파일: `docs/architecture.md`
 - Redis Pub/Sub PRD: `docs/prd-redis-pubsub.md`
 - Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md`
+- NestJS 고도화 Tasks: `docs/tasks-nestjs-improvements.md`
+- 모니터링(Prometheus+Grafana+node_exporter) Tasks: `docs/tasks-monitoring.md`
+- 로그 중앙 수집(Loki+Promtail) Tasks: `docs/tasks-logging.md`
+- Swarm 스택 마이그레이션 Tasks: `docs/tasks-swarm-stack-migration.md` (**모니터링 선행 작업**)
