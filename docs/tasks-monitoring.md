@@ -97,7 +97,7 @@ Always Free tier AMD VM.Standard.E2.1.Micro (1 OCPU / 1GB RAM) 2대 활용. **fs
 
 **⚠️ 현재 실측 baseline (2026-04-16 측정):**
 ```
-fs-02: Used 451Mi, Available 505Mi, Swap 111Mi  (sys_registry 포함)
+fs-02: Used 451Mi, Available 505Mi, Swap 111Mi  (infra_registry 포함, 당시엔 sys_registry)
 fs-03: Used 455Mi, Available 501Mi, Swap 127Mi  (서비스 없음, OS+Docker만)
 ```
 → OS + Docker baseline이 **300MB가 아닌 실측 ~450MB**. 예상보다 150MB 더 높음. 이미 스왑 ~120MB 사용 중.
@@ -106,7 +106,7 @@ fs-03: Used 455Mi, Available 501Mi, Swap 127Mi  (서비스 없음, OS+Docker만)
 
 | 상태 | RAM 사용량 | 여유 | 스왑 사용 |
 |------|-----------|------|----------|
-| **현재 baseline** (sys_registry 포함) | ~451MB | 505MB | 111MB |
+| **현재 baseline** (infra_registry 포함) | ~451MB | 505MB | 111MB |
 | + 정상 운영 (prometheus + alertmanager + 에이전트 아이들) | ~705MB | 250MB | 100~200MB |
 | + 스파이크 (쿼리 + 컴팩션 동시) | ~850MB | ~100MB | 200~400MB |
 | + 이상 스파이크 (장기 쿼리 + GC) | ~950MB+ | ~0MB | 400~600MB |

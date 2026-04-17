@@ -1,25 +1,48 @@
 # Task Tracker: Swarm 서비스 정비 — 스택 관리 + 이름 변경 + CI/CD
 
 > 생성일: 2026-04-16
-> 최종 수정: 2026-04-17 (Step 1~1.5 완료, Step 2 시작 직전)
-> 브랜치: `feat-onam`
+> 완료일: **2026-04-18** ✅
+> 브랜치: `feat-onam` → main merged
 > 선행: 이 작업 완료 후 → 모니터링 스택(`tasks-monitoring.md`) 진행 (서비스 DNS 이름 의존)
 > 연관 문서: [`tasks-monitoring.md`](./tasks-monitoring.md), [`deploy.md`](./deploy.md)
 
 ---
 
-## 🚦 현재 진행 상태 (2026-04-17)
+## 🎉 최종 결과 (2026-04-18)
 
 ```
-Phase A — Swarm 서비스 정비
-├─ Step 1   사전 준비 (inspect 캡처)          [✅ 완료]
-├─ Step 1.3 공통 설정 (log rotation/swap/NTP) [✅ 완료]
-├─ Step 1.5 신 라벨 병행 추가                  [✅ 완료]
-├─ Step 2   YAML/CI/CD 파일 작성               [⏳ 다음 시작]  ← 여기부터
-├─ Step 3   마이그레이션 실행 (Phase 0~7)       [⏸️ 유지보수 시간대]
-├─ Step 4   검증                                [⏸️ 대기]
-└─ Step 5   문서 정비                           [⏸️ 대기]
+Phase A — Swarm 서비스 정비: ✅ 완료
+├─ Step 1   사전 준비 (inspect 캡처)          [✅]
+├─ Step 1.3 공통 설정 (log rotation/swap/NTP) [✅]
+├─ Step 1.5 신 라벨 병행 추가                  [✅]
+├─ Step 2   YAML/CI/CD 파일 작성               [✅]
+├─ Step 3   마이그레이션 실행 (Phase 0~7)       [✅]
+├─ Step 4   검증                                [✅]
+└─ Step 5   문서 정비                           [✅]
 ```
+
+### 최종 스택 구성
+
+| 스택 | 서비스 | 배치 노드 | DNS |
+|------|--------|---------|-----|
+| `infra` | `infra_caddy` (2) | fs-01 | `infra_caddy:80/443` |
+| `infra` | `infra_redis` (1) | fs-01 (Manager) | `infra_redis:6379` |
+| `infra` | `infra_registry` (1) | fs-02 | `infra_registry:5000` (영속 bind) |
+| `prod_nest` | `prod_nest_app` (3) | fs-01 | `prod_nest_app:3500` |
+| `prod_next` | `prod_next_app` (20) | fs-01 | `prod_next_app:3000` |
+
+### 작업 중 발견 + 해결 이슈
+
+- **sys_registry manifest 손상**: Docker 재시작 시 컨테이너 writable layer 재생성으로 registry 데이터 일부 소실됨. CI/CD 재실행으로 복구 + Phase 5-0의 영속 bind mount 도입으로 근본 해결.
+- **prod_next 20/20 → 0/20 고착**: Next.js standalone이 `process.env.HOSTNAME`에 bind해서 loopback(127.0.0.1)에 listen 안 됨 → Swarm healthcheck 실패 → 전체 shutdown. `environment: HOSTNAME: 0.0.0.0` 추가로 해결.
+- **Bun healthcheck 명령 Promise chain 타이밍 이슈**: top-level `await` 방식으로 개선.
+- **CI/CD 비동기 배포**: `docker stack deploy` 후 task converge 대기 안 함. `--detach=false` 옵션으로 동기 대기 추가.
+- **YAML 파일 서버 저장명 충돌**: bun/next-bun 둘 다 `docker-stack.app.yml` → 서버에서 `prod_nest.yml`/`prod_next.yml`로 rename.
+
+### Phase 3 트래픽 전환 검증 방법
+- Caddy 로그에서 `config reloaded` 메시지
+- 백엔드 로그에 `via: 2.0 Caddy` 헤더가 찍히는지 확인 (기존 sys_* 에는 loopback healthcheck만 남음)
+- `docker stats` NetIO 증가분 비교
 
 ### ✅ 완료 사항 요약
 
