@@ -1,0 +1,42 @@
+name: Deploy Infra Stack
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/docker-stack.yml'
+      - '.github/workflows/deploy-infra.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rsync infra stack YAML to Swarm manager
+        run: |
+          echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          rsync -avz \
+            -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
+            infra/docker-stack.yml \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/
+          rm /tmp/ssh_key
+
+      - name: Deploy infra stack via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_SERVER }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          script: |
+            docker stack deploy \
+              -c /home/ubuntu/desktop/deploy/infra/docker-stack.yml \
+              --with-registry-auth \
+              infra
+            docker stack services infra
