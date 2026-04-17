@@ -57,45 +57,17 @@ jobs:
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/prod_nest.yml
           rm /tmp/ssh_key
 
-      - name: Deploy stack + wait for converge via SSH
+      - name: Deploy stack via SSH (converge 동기 대기)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
           script: |
-            set -e
             export REGISTRY_URL=${{ secrets.REGISTRY_URL }}
             export IMAGE_TAG=${{ steps.sha.outputs.short }}
-
-            docker stack deploy \
+            docker stack deploy --detach=false \
               -c /home/ubuntu/desktop/deploy/infra/prod_nest.yml \
               --with-registry-auth \
               prod_nest
-
-            SERVICE=prod_nest_app
-            TIMEOUT=300
-            echo "Waiting for $SERVICE to converge (timeout ${TIMEOUT}s)..."
-            SECONDS=0
-            while [ $SECONDS -lt $TIMEOUT ]; do
-              REPLICAS=$(docker service ls --filter name=$SERVICE --format "{{.Replicas}}" | head -1)
-              RUNNING=$(echo "$REPLICAS" | cut -d/ -f1)
-              DESIRED=$(echo "$REPLICAS" | cut -d/ -f2)
-              if [ "$RUNNING" = "$DESIRED" ] && [ "$RUNNING" != "0" ]; then
-                echo "Converged at ${SECONDS}s: $REPLICAS"
-                break
-              fi
-              echo "  ${SECONDS}s: $REPLICAS"
-              sleep 5
-            done
-
-            FINAL=$(docker service ls --filter name=$SERVICE --format "{{.Replicas}}")
-            RUNNING=$(echo "$FINAL" | cut -d/ -f1)
-            DESIRED=$(echo "$FINAL" | cut -d/ -f2)
-            if [ "$RUNNING" != "$DESIRED" ] || [ "$RUNNING" = "0" ]; then
-              echo "Deploy failed: $FINAL"
-              docker service ps $SERVICE --no-trunc | head -20
-              exit 1
-            fi
-
             docker stack services prod_nest
