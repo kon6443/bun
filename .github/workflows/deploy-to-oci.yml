@@ -57,7 +57,7 @@ jobs:
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/infra/prod_nest.yml
           rm /tmp/ssh_key
 
-      - name: Deploy stack via SSH
+      - name: Deploy stack via SSH (converge 동기 대기)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
@@ -66,7 +66,7 @@ jobs:
           script: |
             export REGISTRY_URL=${{ secrets.REGISTRY_URL }}
             export IMAGE_TAG=${{ steps.sha.outputs.short }}
-            docker stack deploy \
+            docker stack deploy --detach=false \
               -c /home/ubuntu/desktop/deploy/infra/prod_nest.yml \
               --with-registry-auth \
               prod_nest
