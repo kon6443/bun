@@ -56,17 +56,17 @@
   ```
 
 ### 코드 배포
-- [ ] **git push** → GitHub Actions CI/CD가 `sys_express` 이미지 빌드 & 배포
-- [ ] **배포 후 로그 확인**: `docker service logs sys_express` → Redis 연결 로그 확인
+- [ ] **git push** → GitHub Actions CI/CD가 `prod_nest` 이미지 빌드 & 배포
+- [ ] **배포 후 로그 확인**: `docker service logs prod_nest_app` → Redis 연결 로그 확인
 - [ ] **기능 테스트**: 프론트에서 팀 입장/태스크 조작 → 정상 동작 확인
 
 ### 스케일 업 (Redis + 코드 배포 완료 후)
-- [ ] **레플리카 2로 확장**: `docker service scale sys_express=2`
+- [ ] **레플리카 조정**: `infra/docker-stack.app.yml` 의 `deploy.replicas` 수정 → merge (현재 3)
 - [ ] **멀티 레플리카 테스트**:
   - 브라우저 2개 탭에서 같은 팀 입장
   - 한 탭에서 태스크 생성 → 다른 탭에서 실시간 수신 확인
   - 한 탭 닫기 → 다른 탭에서 `userLeft` 수신 확인
-- [ ] **Redis 장애 테스트**: `docker service scale sys_redis=0` → 앱 크래시 없이 HTTP 정상 작동 확인 → `docker service scale sys_redis=1`로 복구
+- [ ] **Redis 장애 테스트**: `docker service scale infra_redis=0` → 앱 크래시 없이 HTTP 정상 작동 확인 → `docker service scale infra_redis=1`로 복구
 
 ## 참고
 

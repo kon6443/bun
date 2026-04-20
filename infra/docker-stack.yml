@@ -16,7 +16,7 @@ services:
       replicas: 2
       placement:
         constraints:
-          - node.labels.sys_caddy == 1
+          - node.labels.infra_caddy == 1
       update_config:
         parallelism: 1
         delay: 5s

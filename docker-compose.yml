@@ -1,37 +1,11 @@
-version: "3.8"
-
-services:
-  express-server:
-    image: 10.64.213.236:5000/express-server:latest
-    # build: .
-    deploy:
-      replicas: 2
-      restart_policy:
-        condition: unless-stopped
-    # restart: unless-stopped
-    ports:
-      # - "3500:3500" # Use the variable from .env
-      - "${EXPRESS_PORT}:${EXPRESS_PORT}" # Use the variable from .env
-    env_file:
-      - ./.env # Load environment variables from .env file
-  # d-registry:
-  #   image: registry:2
-  #   deploy:
-  #     replicas: 2
-  #     placement:
-  #       constraints:
-  #         - node.labels.d-registry == true
-  #   ports:
-  #     - "5000:5000"
-  #   volumes:
-  #     - /mnt/registry-data:/var/lib/registry
-#####################
-
-# docker service d-registry 관련
-# docker service create \
-#   --name d-registry \
-#   --publish 5000:5000 \
-#   --replicas 1 \
-#   --constraint 'node.labels.d-registry == true' \
-#   --mount type=bind,source=/mnt/registry-data,target=/var/lib/registry \
-#   registry:2
+# DEPRECATED (2026-04-18)
+#
+# 로컬 개발: `pnpm dev` 사용.
+# 프로덕션 배포: Docker Swarm (`infra/docker-stack.app.yml`, CI/CD 자동화).
+# 상세: docs/deploy.md
+#
+# 이 파일은 레거시 단독 docker-compose 배포 시절의 산물입니다.
+# 로컬에서 이미지 빌드만 테스트하려면 아래 참조:
+#
+# docker build -t prod_nest:local .
+# docker run --rm -p 3500:3500 --env-file .env prod_nest:local

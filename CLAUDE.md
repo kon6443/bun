@@ -19,15 +19,24 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - 코드에 있는 그대로 보고 판단 (추론/추측 금지)
 - **검증 시 grep 전수 확인 필수**: 변경된 함수/API 이름으로 프로젝트 전체 grep 후 호출 위치 전수 파악. 파일 부분 읽기(offset/limit)로 "전체 정상" 판단 금지. 특히 중복 API 호출, useEffect 간 중복 패턴 교차 비교
 
-## Active Work — Redis Pub/Sub 멀티 레플리카
-- **구현 완료**, 테스트·배포 TODO → `docs/tasks-redis-pubsub.md` 체크리스트 순서대로 진행
+## Deployment (Docker Swarm)
+- **스택**: `infra` (caddy + redis + registry), `prod_nest` (NestJS 3 replicas), `prod_next` (Next.js 20 replicas)
+- **배포 방식**: `docker stack deploy` 통일 (CI/CD가 자동 rsync + deploy)
+- **이미지 태그**: git SHA 7자 (예: `prod_nest:a53eb5c`). `latest` 없음.
+- **DNS 이름**: 백엔드 = `prod_nest_app:3500`, 프론트 = `prod_next_app:3000`, Registry = `infra_registry:5000`, Redis = `infra_redis:6379`
+- **배포 서버**: fs-01 (ARM64, Manager). 추가 노드: fs-02 (infra_registry), fs-03 (모니터링 예약)
+- **Caddyfile**: 서버 직접 관리 (공개 레포 보안 정책, Git 커밋 안 함)
+
+## Active Work
+- **Swarm 스택 마이그레이션**: ✅ 완료 (2026-04-18) — 세부사항 `docs/tasks-swarm-stack-migration.md`
+- **다음**: 모니터링 스택 (`docs/tasks-monitoring.md`) → 로그 중앙 수집 (`docs/tasks-logging.md`)
 
 ## Docs
 - 배포 & 인프라: `docs/deploy.md`
 - 아키텍처 & 주요 파일: `docs/architecture.md`
 - Redis Pub/Sub PRD: `docs/prd-redis-pubsub.md`
-- Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md`
+- Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md` (구현 완료)
 - NestJS 고도화 Tasks: `docs/tasks-nestjs-improvements.md`
+- Swarm 스택 마이그레이션 Tasks: `docs/tasks-swarm-stack-migration.md` (✅ 완료)
 - 모니터링(Prometheus+Grafana+node_exporter) Tasks: `docs/tasks-monitoring.md`
 - 로그 중앙 수집(Loki+Promtail) Tasks: `docs/tasks-logging.md`
-- Swarm 스택 마이그레이션 Tasks: `docs/tasks-swarm-stack-migration.md` (**모니터링 선행 작업**)
