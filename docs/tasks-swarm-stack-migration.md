@@ -44,6 +44,94 @@ Phase A — Swarm 서비스 정비: ✅ 완료
 - 백엔드 로그에 `via: 2.0 Caddy` 헤더가 찍히는지 확인 (기존 sys_* 에는 loopback healthcheck만 남음)
 - `docker stats` NetIO 증가분 비교
 
+---
+
+## 🟡 잔여 작업 (미실행, 언제든 진행 가능)
+
+Phase A 완료 후에도 남아있는 사소한 정리 작업. **현재 운영에는 영향 없음**. 시간 있을 때 진행.
+
+### [잔여-1] sys_caddy 라벨 rename → infra_caddy — 🟠 진행 중
+
+**배경**: fs-01에 아직 `sys_caddy=1` 라벨 잔존. caddy만 `infra_*` 패턴 이탈.
+
+**현재 상태** (2026-04-20):
+- ✅ fs-01에 `infra_caddy=1` 라벨 추가됨 (sys_caddy 병행 유지 중)
+- ✅ `infra/docker-stack.yml`의 caddy constraint `infra_caddy == 1`로 수정 + 로컬 커밋 `16a23ad`
+- ✅ 관련 docs 수정 (`deploy.md`, `tasks-monitoring.md`, `tasks-logging.md`)
+- ⏳ **push + merge 대기** — merge 시 CI/CD가 infra 스택 재배포, caddy 여전히 fs-01에 유지 (재배치 없음)
+- ⏳ merge 완료 후 `sys_caddy` 라벨 제거
+
+**남은 순서**:
+
+```bash
+# 1. push (커밋 16a23ad + docs 업데이트 포함)
+cd /Users/onamkwon/Desktop/Desktop/source_code/node/bun
+git push origin feat-onam
+
+# 2. PR merge → deploy-infra.yml 자동 실행 → infra 스택 재배포
+#    - constraint가 `infra_caddy == 1`로 바뀌지만 fs-01에 이미 해당 라벨 있어 재배치 없음
+
+# 3. 재배포 완료 확인
+docker service ps infra_caddy   # 2/2 Running on fs-01
+
+# 4. 구 라벨 제거
+docker node update --label-rm sys_caddy fs-01
+docker node inspect --format '{{.Spec.Labels}}' fs-01
+#   최종: [infra_caddy:1 infra_redis:1 prod_nest:1 prod_next:1]
+```
+
+### [잔여-2] Registry 쓰레기 태그/이미지 정리
+
+**배경**: Phase 1 임시 태그 `:migrate`, 구 `sys_express:latest`, `sys_next:latest` 아직 registry에 남음 (~수백 MB 낭비).
+
+**영향 범위**: 
+- 현재 운영 중 이미지는 **SHA digest로 pin**되어 fs-01 로컬 캐시에 있음 → 태그 삭제해도 실행 영향 없음
+- **절대 삭제 금지**: `prod_nest:{현재sha}`, `prod_next:{현재sha}` (운영 중, 재배포 시 pull 필요할 수 있음)
+
+**안전 삭제 대상**:
+- `sys_express` 레포 전체
+- `sys_next` 레포 전체
+- `prod_nest:migrate` 태그
+- `prod_next:migrate` 태그
+
+**실행 (fs-02 SSH)**:
+
+```bash
+# 사전 확인: 현재 운영 중 이미지 태그 (이건 건드리지 않음)
+# fs-01에서:
+docker service inspect prod_nest_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+docker service inspect prod_next_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+
+# fs-02로 이동해서 실제 삭제
+REGISTRY_DATA=/home/ubuntu/desktop/deploy/sys/registry/data/docker/registry/v2/repositories
+
+echo "정리 전 크기: $(sudo du -sh $REGISTRY_DATA/)"
+
+sudo rm -rf $REGISTRY_DATA/sys_express
+sudo rm -rf $REGISTRY_DATA/sys_next
+sudo rm -rf $REGISTRY_DATA/prod_nest/_manifests/tags/migrate
+sudo rm -rf $REGISTRY_DATA/prod_next/_manifests/tags/migrate
+
+echo "정리 후 크기: $(sudo du -sh $REGISTRY_DATA/)"
+sudo ls $REGISTRY_DATA/
+sudo ls $REGISTRY_DATA/prod_nest/_manifests/tags/   # migrate 없어야 함, SHA 태그 유지
+sudo ls $REGISTRY_DATA/prod_next/_manifests/tags/
+```
+
+**검증 (fs-01)**:
+```bash
+# 운영 이미지 pull 정상
+docker pull fivesouth.duckdns.org/prod_nest:<현재sha>   # "Image is up to date"
+# 삭제한 이미지 pull 실패 (예상)
+docker pull fivesouth.duckdns.org/prod_nest:migrate     # manifest not found
+```
+
+**참고**: manifest/tag 삭제만 하고 blob은 남음 (디스크 공간 완전 회수 안 됨). 완전 회수 원하면 registry에 `REGISTRY_STORAGE_DELETE_ENABLED=true` 환경변수 추가 후 `registry garbage-collect` 실행. 현재는 생략 권장 (운영 무해).
+
+### [잔여-3] docker-compose.yml 완전 삭제 여부 결정
+
+현재 `DEPRECATED` 헤더만 남김. 실제 사용 없으면 `git rm docker-compose.yml` 고려.
+
 ### ✅ 완료 사항 요약
 
 **서버 상태 확인 완료:**

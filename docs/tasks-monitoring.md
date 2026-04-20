@@ -62,7 +62,7 @@
 - **클라우드**: OCI (Oracle Cloud Infrastructure)
 - **오케스트레이션**: Docker Swarm
 - **앱 배포 방식**: **`docker stack deploy`** (스택 per 서비스 — `prod_nest`, `prod_next` 각 1 service)
-- **리버스 프록시**: **Caddy** (infra 스택, 포트 80/443, `sys_caddy` 라벨 노드 고정, replicas 2)
+- **리버스 프록시**: **Caddy** (infra 스택, 포트 80/443, `infra_caddy` 라벨 노드 고정, replicas 2)
 - **앱 서비스 DNS**: `prod_nest_app` (NestJS, globalPrefix `/api/v1`, 포트 3500), `prod_next_app` (Next.js, 3000)
 - **Redis**: `infra_redis` (infra 스택, 128mb maxmemory)
 - **Registry**: `infra_registry` (infra 스택)

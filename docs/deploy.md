@@ -16,7 +16,7 @@
 
 | 노드 | 역할 | 스펙 | 라벨 |
 |------|------|------|------|
-| fs-01 | Manager (Reachable), 앱 배치 | ARM64, 4 OCPU / 24GB | `sys_caddy`, `infra_redis`, `prod_nest`, `prod_next` |
+| fs-01 | Manager (Reachable), 앱 배치 | ARM64, 4 OCPU / 24GB | `infra_caddy`, `infra_redis`, `prod_nest`, `prod_next` |
 | fs-02 | Manager (Reachable), 레지스트리 | AMD64, 1 OCPU / 1GB | `infra_registry` |
 | fs-03 | Manager (Leader), 모니터링 예약 | AMD64, 1 OCPU / 1GB | (모니터링 도입 시 추가) |
 

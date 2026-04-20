@@ -99,7 +99,7 @@ Loki는 레이블만 인덱싱. 고카디널리티 레이블은 금지.
 
 | 레이블 | 값 예시 | 카디널리티 |
 |--------|---------|-----------|
-| `service` | `prod_nest_app`, `sys_redis`, `sys_caddy` | ~5 |
+| `service` | `prod_nest_app`, `sys_redis`, `infra_caddy` | ~5 |
 | `env` | `prod` | 1 |
 | `cluster` | `oci-swarm` | 1 |
 | `level` | `info`, `warn`, `error`, `debug` | 4 |
@@ -159,7 +159,7 @@ scrape_configs:
       # ⚠️ container_name은 레이블로 승격하지 않음 (Swarm 재시작마다 ID 변경 → 고카디널리티)
       # 필요 시 LogQL로 __meta_docker_container_name 검색 (line 필터)
 
-      # Swarm 서비스 이름 (prod_nest_app, sys_redis, sys_caddy 등 — 저카디널리티)
+      # Swarm 서비스 이름 (prod_nest_app, sys_redis, infra_caddy 등 — 저카디널리티)
       - source_labels: ['__meta_docker_container_label_com_docker_swarm_service_name']
         target_label: 'service'
 
