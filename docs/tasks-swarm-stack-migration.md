@@ -1,25 +1,136 @@
 # Task Tracker: Swarm 서비스 정비 — 스택 관리 + 이름 변경 + CI/CD
 
 > 생성일: 2026-04-16
-> 최종 수정: 2026-04-17 (Step 1~1.5 완료, Step 2 시작 직전)
-> 브랜치: `feat-onam`
+> 완료일: **2026-04-18** ✅
+> 브랜치: `feat-onam` → main merged
 > 선행: 이 작업 완료 후 → 모니터링 스택(`tasks-monitoring.md`) 진행 (서비스 DNS 이름 의존)
 > 연관 문서: [`tasks-monitoring.md`](./tasks-monitoring.md), [`deploy.md`](./deploy.md)
 
 ---
 
-## 🚦 현재 진행 상태 (2026-04-17)
+## 🎉 최종 결과 (2026-04-18)
 
 ```
-Phase A — Swarm 서비스 정비
-├─ Step 1   사전 준비 (inspect 캡처)          [✅ 완료]
-├─ Step 1.3 공통 설정 (log rotation/swap/NTP) [✅ 완료]
-├─ Step 1.5 신 라벨 병행 추가                  [✅ 완료]
-├─ Step 2   YAML/CI/CD 파일 작성               [⏳ 다음 시작]  ← 여기부터
-├─ Step 3   마이그레이션 실행 (Phase 0~7)       [⏸️ 유지보수 시간대]
-├─ Step 4   검증                                [⏸️ 대기]
-└─ Step 5   문서 정비                           [⏸️ 대기]
+Phase A — Swarm 서비스 정비: ✅ 완료
+├─ Step 1   사전 준비 (inspect 캡처)          [✅]
+├─ Step 1.3 공통 설정 (log rotation/swap/NTP) [✅]
+├─ Step 1.5 신 라벨 병행 추가                  [✅]
+├─ Step 2   YAML/CI/CD 파일 작성               [✅]
+├─ Step 3   마이그레이션 실행 (Phase 0~7)       [✅]
+├─ Step 4   검증                                [✅]
+└─ Step 5   문서 정비                           [✅]
 ```
+
+### 최종 스택 구성
+
+| 스택 | 서비스 | 배치 노드 | DNS |
+|------|--------|---------|-----|
+| `infra` | `infra_caddy` (2) | fs-01 | `infra_caddy:80/443` |
+| `infra` | `infra_redis` (1) | fs-01 (Manager) | `infra_redis:6379` |
+| `infra` | `infra_registry` (1) | fs-02 | `infra_registry:5000` (영속 bind) |
+| `prod_nest` | `prod_nest_app` (3) | fs-01 | `prod_nest_app:3500` |
+| `prod_next` | `prod_next_app` (20) | fs-01 | `prod_next_app:3000` |
+
+### 작업 중 발견 + 해결 이슈
+
+- **sys_registry manifest 손상**: Docker 재시작 시 컨테이너 writable layer 재생성으로 registry 데이터 일부 소실됨. CI/CD 재실행으로 복구 + Phase 5-0의 영속 bind mount 도입으로 근본 해결.
+- **prod_next 20/20 → 0/20 고착**: Next.js standalone이 `process.env.HOSTNAME`에 bind해서 loopback(127.0.0.1)에 listen 안 됨 → Swarm healthcheck 실패 → 전체 shutdown. `environment: HOSTNAME: 0.0.0.0` 추가로 해결.
+- **Bun healthcheck 명령 Promise chain 타이밍 이슈**: top-level `await` 방식으로 개선.
+- **CI/CD 비동기 배포**: `docker stack deploy` 후 task converge 대기 안 함. `--detach=false` 옵션으로 동기 대기 추가.
+- **YAML 파일 서버 저장명 충돌**: bun/next-bun 둘 다 `docker-stack.app.yml` → 서버에서 `prod_nest.yml`/`prod_next.yml`로 rename.
+
+### Phase 3 트래픽 전환 검증 방법
+- Caddy 로그에서 `config reloaded` 메시지
+- 백엔드 로그에 `via: 2.0 Caddy` 헤더가 찍히는지 확인 (기존 sys_* 에는 loopback healthcheck만 남음)
+- `docker stats` NetIO 증가분 비교
+
+---
+
+## 🟡 잔여 작업 (미실행, 언제든 진행 가능)
+
+Phase A 완료 후에도 남아있는 사소한 정리 작업. **현재 운영에는 영향 없음**. 시간 있을 때 진행.
+
+### [잔여-1] sys_caddy 라벨 rename → infra_caddy — 🟠 진행 중
+
+**배경**: fs-01에 아직 `sys_caddy=1` 라벨 잔존. caddy만 `infra_*` 패턴 이탈.
+
+**현재 상태** (2026-04-20):
+- ✅ fs-01에 `infra_caddy=1` 라벨 추가됨 (sys_caddy 병행 유지 중)
+- ✅ `infra/docker-stack.yml`의 caddy constraint `infra_caddy == 1`로 수정 + 로컬 커밋 `16a23ad`
+- ✅ 관련 docs 수정 (`deploy.md`, `tasks-monitoring.md`, `tasks-logging.md`)
+- ⏳ **push + merge 대기** — merge 시 CI/CD가 infra 스택 재배포, caddy 여전히 fs-01에 유지 (재배치 없음)
+- ⏳ merge 완료 후 `sys_caddy` 라벨 제거
+
+**남은 순서**:
+
+```bash
+# 1. push (커밋 16a23ad + docs 업데이트 포함)
+cd /Users/onamkwon/Desktop/Desktop/source_code/node/bun
+git push origin feat-onam
+
+# 2. PR merge → deploy-infra.yml 자동 실행 → infra 스택 재배포
+#    - constraint가 `infra_caddy == 1`로 바뀌지만 fs-01에 이미 해당 라벨 있어 재배치 없음
+
+# 3. 재배포 완료 확인
+docker service ps infra_caddy   # 2/2 Running on fs-01
+
+# 4. 구 라벨 제거
+docker node update --label-rm sys_caddy fs-01
+docker node inspect --format '{{.Spec.Labels}}' fs-01
+#   최종: [infra_caddy:1 infra_redis:1 prod_nest:1 prod_next:1]
+```
+
+### [잔여-2] Registry 쓰레기 태그/이미지 정리
+
+**배경**: Phase 1 임시 태그 `:migrate`, 구 `sys_express:latest`, `sys_next:latest` 아직 registry에 남음 (~수백 MB 낭비).
+
+**영향 범위**: 
+- 현재 운영 중 이미지는 **SHA digest로 pin**되어 fs-01 로컬 캐시에 있음 → 태그 삭제해도 실행 영향 없음
+- **절대 삭제 금지**: `prod_nest:{현재sha}`, `prod_next:{현재sha}` (운영 중, 재배포 시 pull 필요할 수 있음)
+
+**안전 삭제 대상**:
+- `sys_express` 레포 전체
+- `sys_next` 레포 전체
+- `prod_nest:migrate` 태그
+- `prod_next:migrate` 태그
+
+**실행 (fs-02 SSH)**:
+
+```bash
+# 사전 확인: 현재 운영 중 이미지 태그 (이건 건드리지 않음)
+# fs-01에서:
+docker service inspect prod_nest_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+docker service inspect prod_next_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+
+# fs-02로 이동해서 실제 삭제
+REGISTRY_DATA=/home/ubuntu/desktop/deploy/sys/registry/data/docker/registry/v2/repositories
+
+echo "정리 전 크기: $(sudo du -sh $REGISTRY_DATA/)"
+
+sudo rm -rf $REGISTRY_DATA/sys_express
+sudo rm -rf $REGISTRY_DATA/sys_next
+sudo rm -rf $REGISTRY_DATA/prod_nest/_manifests/tags/migrate
+sudo rm -rf $REGISTRY_DATA/prod_next/_manifests/tags/migrate
+
+echo "정리 후 크기: $(sudo du -sh $REGISTRY_DATA/)"
+sudo ls $REGISTRY_DATA/
+sudo ls $REGISTRY_DATA/prod_nest/_manifests/tags/   # migrate 없어야 함, SHA 태그 유지
+sudo ls $REGISTRY_DATA/prod_next/_manifests/tags/
+```
+
+**검증 (fs-01)**:
+```bash
+# 운영 이미지 pull 정상
+docker pull fivesouth.duckdns.org/prod_nest:<현재sha>   # "Image is up to date"
+# 삭제한 이미지 pull 실패 (예상)
+docker pull fivesouth.duckdns.org/prod_nest:migrate     # manifest not found
+```
+
+**참고**: manifest/tag 삭제만 하고 blob은 남음 (디스크 공간 완전 회수 안 됨). 완전 회수 원하면 registry에 `REGISTRY_STORAGE_DELETE_ENABLED=true` 환경변수 추가 후 `registry garbage-collect` 실행. 현재는 생략 권장 (운영 무해).
+
+### [잔여-3] docker-compose.yml 완전 삭제 여부 결정
+
+현재 `DEPRECATED` 헤더만 남김. 실제 사용 없으면 `git rm docker-compose.yml` 고려.
 
 ### ✅ 완료 사항 요약
 
