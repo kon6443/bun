@@ -7,7 +7,13 @@ if (typeof globalThis.crypto === 'undefined') {
   } as any;
 }
 
-import { Module, ValidationPipe } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+  ValidationPipe,
+} from '@nestjs/common';
 import { THROTTLE_SHORT, THROTTLE_LONG } from './common/constants/throttle.constants';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -16,6 +22,7 @@ import { ApiValidationErrorResponseDto } from './common/dto/api-error.dto';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { MainModule } from './modules/main/main.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TeamModule } from './modules/team/team.module';
@@ -25,6 +32,7 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { UsersModule } from './modules/users/users.module';
 import { FishingModule } from './modules/fishing/fishing.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { MetricsAccessMiddleware } from './common/middleware/metrics-access.middleware';
 import databaseConfig from './config/database.config';
 import oracleConfig from './config/oracle.config';
 import { validateEnv } from './config/env.validation';
@@ -102,6 +110,11 @@ const logger = new Logger('AppModule');
       { name: 'long', ...THROTTLE_LONG },       // 분당 60회 (지속 남용 방지)
     ]),
     ScheduleModule.forRoot(),
+    PrometheusModule.register({
+      // globalPrefix가 api/v1 이므로 실제 노출 경로는 /api/v1/metrics
+      path: 'metrics',
+      defaultMetrics: { enabled: true },
+    }),
     LoggerModule,
     MainModule,
     AuthModule,
@@ -113,5 +126,12 @@ const logger = new Logger('AppModule');
     FishingModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // /api/v1/metrics 접근 제한 (Caddy 차단 보조 방어 — XFF + overlay IP 검증)
+    consumer
+      .apply(MetricsAccessMiddleware)
+      .forRoutes({ path: 'metrics', method: RequestMethod.GET });
+  }
+}
 
