@@ -13,12 +13,11 @@ on:
       - 'infra/docker-stack.monitoring.yml'
       - 'infra/docker-stack.monitoring.shared.yml'
       - '.github/workflows/deploy-monitoring.yml'
-  workflow_dispatch:   # 수동 실행 지원
+  workflow_dispatch:
 
 jobs:
   # ============================================
   # 1단계: shared 스택 (node_exporter — global 모든 노드)
-  #   Prometheus가 scrape 하려면 node_exporter가 먼저 떠 있어야 함
   # ============================================
   deploy-monitoring-shared:
     runs-on: ubuntu-latest
@@ -30,6 +29,7 @@ jobs:
 
       - name: Rsync shared stack files to Swarm manager
         run: |
+          set -euo pipefail
           echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
           chmod 600 /tmp/ssh_key
           rsync -avz --relative \
@@ -44,16 +44,21 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          script_stop: true   # 중간 명령 실패 시 즉시 job 실패 (silent failure 방지)
           script: |
+            set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
+
+            echo "=== [shared 1/2] Stack deploy ==="
             docker stack deploy --detach=false \
               -c infra/docker-stack.monitoring.shared.yml \
               monitor_shared
+
+            echo "=== [shared 2/2] Services status ==="
             docker stack services monitor_shared
 
   # ============================================
-  # 2단계: prod 스택 (Prometheus — Step 3/6에서 Grafana/Alertmanager/Loki 추가 예정)
-  #   sha256 config 해시로 무중단 rolling update
+  # 2단계: prod 스택 (Prometheus — Grafana/Alertmanager/Loki는 Step 3/6에서 추가)
   # ============================================
   deploy-monitoring-prod:
     needs: deploy-monitoring-shared
@@ -66,6 +71,7 @@ jobs:
 
       - name: Rsync prod stack files to Swarm manager
         run: |
+          set -euo pipefail
           echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
           chmod 600 /tmp/ssh_key
           rsync -avz --relative \
@@ -81,20 +87,33 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          script_stop: true
           script: |
+            set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
 
-            # sha256 해시 계산 (config name에 포함 — 변경 시 새 config 자동 생성)
-            export PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | head -c 12)
-            echo "PROM_CFG_HASH=$PROM_CFG_HASH"
+            echo "=== [prod 1/5] Files check ==="
+            ls -la infra/prometheus/prometheus.yml
+            ls -la infra/docker-stack.monitoring.yml
 
+            echo "=== [prod 2/5] Hash calc ==="
+            PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | awk '{print $1}' | cut -c1-12)
+            export PROM_CFG_HASH
+            echo "PROM_CFG_HASH=$PROM_CFG_HASH"
+            test -n "$PROM_CFG_HASH"
+
+            echo "=== [prod 3/5] Stack deploy ==="
             docker stack deploy --detach=false \
               -c infra/docker-stack.monitoring.yml \
               prod_monitor
+
+            echo "=== [prod 4/5] Services status ==="
             docker stack services prod_monitor
 
-            # 미사용 config 정리 (현재 서비스가 참조하지 않는 구 버전만 제거됨)
-            echo "--- Cleaning up orphaned configs ---"
-            docker config ls --filter "name=prod_monitor_" --format "{{.Name}}" | while read cfg; do
-              docker config rm "$cfg" 2>/dev/null && echo "  removed: $cfg" || true
+            echo "=== [prod 5/5] Cleanup orphaned configs ==="
+            for cfg in $(docker config ls --filter "name=prod_monitor_" --format "{{.Name}}"); do
+              if docker config rm "$cfg" 2>/dev/null; then
+                echo "removed orphan: $cfg"
+              fi
             done
+            echo "cleanup done"

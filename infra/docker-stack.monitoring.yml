@@ -41,9 +41,11 @@ services:
         mode: host  # SSH 터널 접근 전용 (OCI VCN이 외부 9090 차단)
 
 configs:
+  # file: 경로는 compose 파일(infra/docker-stack.monitoring.yml)의 디렉토리 기준 상대경로.
+  # → 실제 해석: /home/ubuntu/desktop/deploy/infra/prometheus/prometheus.yml
   prod_monitor_prometheus_yml:
     name: prod_monitor_prometheus_yml_${PROM_CFG_HASH:-latest}
-    file: ./infra/prometheus/prometheus.yml
+    file: ./prometheus/prometheus.yml
 
 volumes:
   prometheus-data:
