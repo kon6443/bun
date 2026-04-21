@@ -1,0 +1,53 @@
+version: '3.9'
+
+# prod 스택 — 환경별 메트릭 저장·시각화 서비스 (Step 2에서는 Prometheus만,
+# Grafana/Alertmanager/Loki는 Step 3/6/logging에서 순차 추가).
+#
+# 배포:
+#   export PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | head -c 12)
+#   docker stack deploy --detach=false -c infra/docker-stack.monitoring.yml prod_monitor
+#
+# Config 이름에 sha256 12자 해시 포함 → 파일 변경 시 새 config 자동 생성으로
+# rolling update 무중단. 미사용 config은 CI에서 주기적으로 정리.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'  # POST /-/reload 지원 (향후 config 핫리로드용)
+    configs:
+      - source: prod_monitor_prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus-data:/prometheus
+    networks:
+      - sys_default
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.prod_monitor_metrics == 1
+      resources:
+        limits:
+          memory: 400M
+      restart_policy:
+        condition: on-failure
+    ports:
+      - target: 9090
+        published: 9090
+        mode: host  # SSH 터널 접근 전용 (OCI VCN이 외부 9090 차단)
+
+configs:
+  prod_monitor_prometheus_yml:
+    name: prod_monitor_prometheus_yml_${PROM_CFG_HASH:-latest}
+    file: ./infra/prometheus/prometheus.yml
+
+volumes:
+  prometheus-data:
+
+networks:
+  sys_default:
+    external: true

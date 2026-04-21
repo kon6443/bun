@@ -4,7 +4,7 @@
 > 최종 수정: 2026-04-16 (mobisell-back 패턴 비교 분석 반영 — sha256 config, shared 스택 분리, XFF 방어, QA 준비)
 > 브랜치: `feat-onam`
 > 상태: **추후 적용 예정** (미진행)
-> **선행 작업**: [`tasks-swarm-stack-migration.md`](./tasks-swarm-stack-migration.md) — 서비스 이름 변경 (`prod_nest_app` → `prod_nest_app`, 스택 per 서비스 패턴) 완료 후 진행.
+> **선행 작업**: [`tasks-swarm-stack-migration.md`](./tasks-swarm-stack-migration.md) — 서비스 이름 변경 (`sys_express` → `prod_nest_app`, 스택 per 서비스 패턴) 완료 후 진행.
 > 본 문서는 마이그레이션 완료 후 상태 기준으로 작성됨 (서비스 DNS: `prod_nest_app`, `prod_next_app`).
 > 연관 문서: 로그 수집은 [`tasks-logging.md`](./tasks-logging.md) (Loki + Promtail)
 
@@ -40,6 +40,7 @@
 | Grafana/Loki 볼륨 | `user:` 지시어로 uid 고정 (Grafana 472, Loki 10001) | 볼륨 권한 일관성 |
 | CI/CD | **`deploy-monitoring.yml` 분리** + 앱 워크플로우에 `paths-ignore` | 앱/모니터링 배포 라이프사이클 독립 |
 | CI/CD 배포 순서 | **shared 스택 → prod 스택** (needs 의존성) | node_exporter/promtail이 먼저 떠야 prometheus scrape + loki push 가능 |
+| CI/CD 배포 명령 | **`docker stack deploy --detach=false`** (앱 워크플로우와 동일) | converge 동기 대기 → GitHub Actions 단계에서 배포 성공/실패 즉시 확인, 실패 알림이 actions UI에서 바로 노출 |
 | 롤백 순서 | **prod 스택 → shared 스택 → 앱 스택 순서로 내림** | external 네트워크 의존성 방지 |
 
 ---
@@ -70,7 +71,7 @@
 - **기본 서버**: 4 OCPU / 24GB RAM (Always Free **ARM** A1.Flex → **arm64**)
 - **모니터링 전용 인스턴스**: `fs-02`, `fs-03` (각 1 OCPU / 1GB RAM / 스왑 2GB — Always Free **AMD** E2.1.Micro → **amd64**)
 - ⚠️ **아키텍처 혼합 환경**: 모든 이미지 multi-arch 필수. 본 문서에 사용된 공식 이미지(prometheus, grafana, alertmanager, loki, node-exporter, promtail)는 모두 multi-arch 지원
-- **배포**: `main` push → GitHub Actions → `docker stack deploy -c docker-stack.app.yml prod_nest`
+- **배포**: `main` push → GitHub Actions → `docker stack deploy --detach=false -c docker-stack.app.yml prod_nest` (converge 동기 대기)
 - **서버 env 파일**: `/home/ubuntu/desktop/deploy/sys/config/env/.env` (평문, `.env` → `--env-add`)
 - **Caddyfile 위치** (서버): `/home/ubuntu/desktop/deploy/infra/caddy/config/Caddyfile`
 - **Caddy 리로드**: `--watch` 플래그로 파일 변경 자동 감지 (caddy reload 명령 불필요)
@@ -886,8 +887,8 @@ jobs:
             # sha256 config 해시 계산 (shared 스택용)
             export PROMTAIL_CFG_HASH=$(sha256sum infra/promtail/promtail-config.yml | head -c 12)
 
-            docker stack deploy -c infra/docker-stack.monitoring.shared.yml monitor_shared
-            docker service ls | grep monitor_shared
+            docker stack deploy --detach=false -c infra/docker-stack.monitoring.shared.yml monitor_shared
+            docker stack services monitor_shared
 
   # 2단계: prod 스택 (prometheus + grafana + alertmanager + loki)
   deploy-monitoring-prod:
@@ -917,8 +918,8 @@ jobs:
             export GRAFANA_DASH_CFG_HASH=$(sha256sum infra/grafana/provisioning/dashboards/dashboards.yml | head -c 12)
             export LOKI_CFG_HASH=$(sha256sum infra/loki/loki-config.yml | head -c 12)
 
-            docker stack deploy -c infra/docker-stack.monitoring.yml prod_monitor
-            docker service ls | grep prod_monitor
+            docker stack deploy --detach=false -c infra/docker-stack.monitoring.yml prod_monitor
+            docker stack services prod_monitor
 
             # 미사용 config 정리 (현재 서비스가 참조하지 않는 구 버전 제거)
             echo "--- Cleaning up old configs ---"
@@ -1148,39 +1149,42 @@ Step 0 — 인프라 준비:
     [ ] docker node update --label-add prod_monitor_metrics=1 --label-add prod_monitor_view=1 <node>
         (한 노드에 공존 배치하는 경우)
   [ ] 옵션 B (fs-02/fs-03 분리) — Step 0-B 수행
-    [x] OCI Always Free AMD VM 2대 프로비저닝 (1 OCPU / 1GB) — 완료
-    [x] 각 인스턴스 스왑 2GB 적용 — 완료 (fs-02, fs-03)
-    [ ] vm.swappiness=10 설정 (RAM 우선 사용, swap thrashing 방지)
-    [ ] VCN ingress rule: private IP 통신 허용
-    [ ] Swarm worker로 join (fs-02, fs-03)
-    [ ] docker node update --label-add prod_monitor_metrics=1 fs-02
-    [ ] docker node update --label-add prod_monitor_view=1 fs-03
+    [x] OCI Always Free AMD VM 2대 프로비저닝 (1 OCPU / 1GB) — 완료 (fs-02, fs-03 x86_64)
+    [x] 각 인스턴스 스왑 2GB 적용 — 완료 (/swapfile 2G, 2026-04-20 확인)
+    [x] vm.swappiness=10 설정 — 완료 (런타임 + /etc/sysctl.conf 영구, 2026-04-20 확인)
+    [x] VCN ingress rule: private IP 통신 — 완료 (Swarm overlay 정상 동작으로 간접 검증)
+    [x] Swarm join (fs-02, fs-03) — 완료. ⚠️ worker 전제였으나 실제는 **manager로 join** (fs-02 Leader, fs-01/fs-03 Reachable). Raft quorum 3노드 구성 — 가용성 측면 상위 호환이므로 그대로 유지
+    [x] docker node update --label-add prod_monitor_metrics=1 fs-02 — 완료 (2026-04-20)
+    [x] docker node update --label-add prod_monitor_view=1 fs-03 — 완료 (2026-04-20)
 
 Step 1 — NestJS 앱:
-  [ ] pnpm add prom-client @willsoto/nestjs-prometheus
-  [ ] PrometheusModule.register() in app.module.ts (path: 'metrics')
-  [ ] MetricsAccessMiddleware 작성 (XFF 1차 차단 + IP 2차 검증, ALLOWED_IP_REGEX 상수 + JSDoc)
-  [ ] MetricsAccessMiddleware 단위 테스트 20+ 케이스 (it.each + buildRequest)
-      - XFF/X-Real-IP 존재 시 차단 (overlay IP여도)
+  [x] pnpm add prom-client @willsoto/nestjs-prometheus — 완료
+  [x] pnpm add -D jest @types/jest ts-jest @nestjs/testing (test 인프라 도입) — 완료
+  [x] PrometheusModule.register() in app.module.ts (path: 'metrics') — 완료
+  [x] MetricsAccessMiddleware 작성 (XFF 1차 차단 + IP 2차 검증, ALLOWED_IP_REGEX 엄격 매칭 + JSDoc) — 완료
+  [x] MetricsAccessMiddleware 단위 테스트 (it.each + buildRequest) — 완료 (25/25 PASS)
+      - XFF/X-Real-IP/배열 헤더 존재 시 차단 (overlay IP여도)
       - XFF 없음 + overlay IP (10.x) → 허용
       - XFF 없음 + localhost (127.x, ::1) → 허용
-      - XFF 없음 + 비허용 IP → 차단
+      - XFF 없음 + 비허용 IP (172.x, 192.168.x, 공인 IPv4/IPv6) → 차단
       - IPv4-mapped IPv6 (::ffff:10.x, ::ffff:127.x) → 허용
-  [ ] AppModule implements NestModule + configure() + MiddlewareConsumer.apply().forRoutes()
-  [ ] /api/v1/metrics 로컬 접근 확인
-  [ ] pnpm test (단위 테스트 PASS)
+      - ::1 prefix 다른 IPv6 (::1234:abcd) → 차단 (엄격 매칭 검증)
+      - XFF 빈 문자열 → 헤더 없는 것으로 취급
+  [x] AppModule implements NestModule + configure() + MiddlewareConsumer.apply().forRoutes() — 완료
+  [x] pnpm run build (TypeScript strict 통과) — 완료
+  [ ] /api/v1/metrics 로컬 접근 확인 (dev 서버 기동 후 curl)
 
 Step 2 — Caddy 차단 + Prometheus + node_exporter:
-  [ ] Caddyfile에 /api/v1/metrics 차단 규칙 추가 (respond 404)
-  [ ] Caddy 자동 reload 확인 (--watch)
-  [ ] infra/prometheus/prometheus.yml 작성 (external_labels, shared 스택 DNS 참조)
-  [ ] infra/docker-stack.monitoring.shared.yml 작성 (node_exporter global)
-  [ ] infra/docker-stack.monitoring.yml 작성 (Prometheus, sha256 config naming)
-  [ ] placement.constraints 확인 (옵션 A/B 공통 — node.labels 라벨이 스택 재배포 전 반드시 부여되어 있어야 함)
-  [ ] docker stack deploy -c docker-stack.monitoring.shared.yml monitor_shared (1번째)
-  [ ] docker stack deploy -c docker-stack.monitoring.yml prod_monitor (2번째)
+  [x] Caddyfile에 /api/v1/metrics 차단 규칙 추가 (named matcher @metrics + handle @metrics { respond 404 }) — 완료 (2026-04-21)
+  [x] Caddy reload 반영 확인 — 완료 (--watch가 atomic-write 편집을 놓쳐서 `docker service update --force` 또는 `caddy reload` 수동 실행 필요). 검증: curl /api/v1/metrics → 404 + server: Caddy + content-length: 0
+  [x] infra/prometheus/prometheus.yml 작성 — 완료 (external_labels env:prod, cluster:oci-swarm)
+  [x] infra/docker-stack.monitoring.shared.yml 작성 — 완료 (node_exporter global + memory 50M)
+  [x] infra/docker-stack.monitoring.yml 작성 — 완료 (Prometheus, sha256 config naming, mode:host 9090)
+  [x] placement.constraints 확인 — 완료 (fs-02 prod_monitor_metrics=1, fs-03 prod_monitor_view=1 부여됨)
+  [x] .github/workflows/deploy-monitoring.yml 작성 — 완료 (main push 자동 배포, shared→prod needs 의존성)
+  [ ] main 머지 → GitHub Actions 자동 배포 (수동 rsync 불필요)
   [ ] Prometheus UI 접근 (SSH 터널 9090) → Targets 모두 UP
-  [ ] NestJS 레플리카 개별 scrape 확인 (tasks.prod_nest_app DNS)
+  [ ] NestJS 레플리카 개별 scrape 확인 (tasks.prod_nest_app DNS) — Step 1 배포 선행 필요
   [ ] node_exporter 각 노드 확인 (tasks.monitor_shared_node_exporter DNS)
 
 Step 3 — Grafana (.env + Provisioning + Caddy 노출):
@@ -1252,14 +1256,14 @@ docker stack rm prod_monitor
 docker stack rm monitor_shared
 # 이전 이미지 SHA 태그로 재배포
 export IMAGE_TAG=prev_sha
-docker stack deploy -c infra/docker-stack.app.yml prod_nest
+docker stack deploy --detach=false -c infra/docker-stack.app.yml prod_nest
 
 # 3) config 재배포 (sha256 버전 관리 — docker config rm 불필요)
 #    해시 계산 후 스택 재배포하면 새 config 자동 생성
 export PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | head -c 12)
 # ... (나머지 해시 계산)
-docker stack deploy -c infra/docker-stack.monitoring.shared.yml monitor_shared
-docker stack deploy -c infra/docker-stack.monitoring.yml prod_monitor
+docker stack deploy --detach=false -c infra/docker-stack.monitoring.shared.yml monitor_shared
+docker stack deploy --detach=false -c infra/docker-stack.monitoring.yml prod_monitor
 
 # 4) 미사용 config 정리 (선택)
 docker config ls --filter "name=prod_monitor_" --format "{{.Name}}" | while read cfg; do

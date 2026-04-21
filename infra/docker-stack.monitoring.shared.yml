@@ -1,0 +1,31 @@
+version: '3.9'
+
+# shared 스택 — 모든 노드에서 global 실행되는 모니터링 에이전트.
+# node_exporter: OS/HW 메트릭 수집. Promtail은 tasks-logging.md 단계에서 추가.
+#
+# 배포:
+#   docker stack deploy --detach=false -c infra/docker-stack.monitoring.shared.yml monitor_shared
+#
+# 스택명이 monitor_shared이므로 overlay DNS는 tasks.monitor_shared_node_exporter:9100
+
+services:
+  node_exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+    networks:
+      - sys_default
+    deploy:
+      mode: global
+      resources:
+        limits:
+          memory: 50M
+      restart_policy:
+        condition: on-failure
+    # ports 없음 → overlay 내부에서만 접근 (Prometheus가 DNS로 scrape)
+
+networks:
+  sys_default:
+    external: true

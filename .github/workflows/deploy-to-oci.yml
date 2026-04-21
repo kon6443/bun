@@ -12,6 +12,8 @@ on:
       - 'infra/grafana/**'
       - 'infra/loki/**'
       - 'infra/promtail/**'
+      - '.github/workflows/deploy-infra.yml'
+      - '.github/workflows/deploy-monitoring.yml'
       - 'docs/**'
       - '*.md'
 
