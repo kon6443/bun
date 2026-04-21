@@ -28,7 +28,8 @@
 | 외부 노출 (Prometheus/Alertmanager) | **SSH 터널로만 접근** (외부 노출 X) | 운영자 전용, 공격면 최소화 |
 | 비밀번호 관리 | **기존 `.env` 주입 방식 그대로** (`.env` → `--env-add`) | GitHub Actions 워크플로우 재사용 |
 | Grafana 외부 노출 경로 | **Caddy subpath `/grafana/`** (기존 도메인 `fivesouth.duckdns.org` 재사용) | duckdns는 서브도메인 확장 불가 → subpath 방식. DNS 추가 불필요. Caddy `handle /grafana/*` 블록만 추가 |
-| Grafana 환경변수 | `GRAFANA_ADMIN_USER/PASSWORD`, `GRAFANA_ALLOWED_IPS` (.env 추가) | subpath 서빙을 위해 `GF_SERVER_SERVE_FROM_SUB_PATH=true` + `GF_SERVER_ROOT_URL=https://host/grafana/` 설정 필요 |
+| Grafana IP 화이트리스트 | **Caddyfile에 IP 직접 작성** (`@grafana_allowed { remote_ip ... }`) | 환경변수 치환(`{$GRAFANA_ALLOWED_IPS}`) 방식 대신 단순성 우선. IP 변경 시 Caddyfile만 수정 + reload |
+| Grafana 환경변수 | `GRAFANA_ADMIN_USER/PASSWORD` (.env 2개) | subpath 서빙을 위해 `GF_SERVER_SERVE_FROM_SUB_PATH=true` + `GF_SERVER_ROOT_URL=https://host/grafana/` 설정 필요. `GRAFANA_ALLOWED_IPS`는 Caddyfile 직접 관리이므로 env 불필요 |
 | 배치 (선택 A) | 기존 앱 노드에 공존 (4 OCPU / 24GB, 여유 충분) | 운영 단순성 |
 | 배치 (선택 B) | **OCI Always Free 1GB × 2 분리 배치** (fs-02, fs-03 / 스왑 2GB 적용 완료) | 앱 리소스 격리 (후술) |
 | Prometheus retention | **7일 (QA·PROD 동일)** (`--storage.tsdb.retention.time=7d`) | 디스크 ~200MB/월. QA 도입 시에도 동일 유지 (단순성 + 디스크 예산 고정) |
@@ -333,13 +334,18 @@ route {
 
 ### 1차-b: Grafana subpath 노출 + IP 화이트리스트
 
-같은 site 블록 내부에 `handle /grafana/*` 추가. **IP 화이트리스트 통과 시만 reverse_proxy**, 아니면 404로 존재 자체 은닉:
+같은 site 블록 내부에 `handle /grafana/*` 추가. **IP 화이트리스트 통과 시만 reverse_proxy**, 아니면 404로 존재 자체 은닉. 허용 IP는 **Caddyfile에 직접 작성** (환경변수 치환 미사용 — 단순성 우선):
 
 ```caddyfile
 # site 블록 최상단에 named matcher 정의
 @metrics       path /api/v1/metrics /api/v1/metrics/*
 @grafana_path  path /grafana /grafana/*
-@grafana_allowed remote_ip {$GRAFANA_ALLOWED_IPS}
+@grafana_allowed {
+    # 운영자 IP 직접 작성. IP 변경 시 이 리스트 수정 + caddy reload.
+    remote_ip 203.0.113.5/32        # 재택 (예시 — 실제 값으로 교체)
+    remote_ip 203.0.113.6/32        # 사무실
+    # remote_ip 10.0.0.0/8          # (선택) VPN 대역 등
+}
 
 route {
     handle /v2/* {
@@ -374,10 +380,10 @@ route {
 }
 ```
 
-- `{$GRAFANA_ALLOWED_IPS}` — Caddy는 환경변수 치환 지원. 공백 구분 IP/CIDR (예: `203.0.113.5/32 10.0.0.0/8`)
 - **overlay DNS 사용** (`tasks.prod_monitor_grafana:3000`) — Grafana 컨테이너는 `ports` 섹션 없음
 - 허용되지 않은 IP → 404 (403 대신 — 존재 자체 은닉)
 - Grafana 자체는 `GF_SERVER_SERVE_FROM_SUB_PATH=true` + `GF_SERVER_ROOT_URL=https://fivesouth.duckdns.org/grafana/` 설정으로 subpath 정상 서빙
+- **IP 추가·제거 절차**: Caddyfile의 `@grafana_allowed` 블록에 `remote_ip <IP/CIDR>` 줄 직접 편집 → `docker exec <caddy-container> caddy reload --config /config/Caddyfile` 또는 `docker service update --force infra_caddy`
 
 ### Prometheus / Alertmanager — Caddy 경유 X
 
@@ -389,23 +395,17 @@ ssh -L 9090:localhost:9090 ubuntu@<fs-02>
 ssh -L 9093:localhost:9093 ubuntu@<fs-02>
 ```
 
-### ⚠️ Caddy 컨테이너에 환경변수 전달 필수
+### Caddy 재배포 — IP 변경 시 절차
 
-`{$GRAFANA_ALLOWED_IPS}` 치환은 Caddy 프로세스의 env에서 읽어옴. 기존 `infra/docker-stack.yml`의 `caddy` 서비스에 environment 추가:
+IP 목록은 Caddyfile에 직접 작성하므로 **Caddy 컨테이너 환경변수 주입 불필요**. Caddyfile 변경 시 `--watch` 자동 감지가 실패하는 경우가 있어(atomic-write 편집 이슈) 아래 중 하나로 수동 reload:
 
-```yaml
-# infra/docker-stack.yml (기존 파일 수정)
-services:
-  caddy:
-    # ... 기존 설정 ...
-    environment:
-      GRAFANA_ALLOWED_IPS: ${GRAFANA_ALLOWED_IPS}
-```
-
-배포 시 `.env` → `--env-add` 주입 대상에 자동 포함 (기존 워크플로우 활용).
-
-**주의**: Caddyfile 변경은 `--watch`로 자동 적용되지만 **env 변경은 Caddy 컨테이너 재시작** 필요:
 ```bash
+# 방법 1: caddy reload (무중단, 가벼움 — 권장)
+for cid in $(docker ps -q -f name=infra_caddy); do
+  docker exec $cid caddy reload --config /config/Caddyfile --adapter caddyfile
+done
+
+# 방법 2: 서비스 강제 재시작 (TLS 연결 일시 끊김 — 급할 때만)
 docker service update --force infra_caddy
 ```
 
@@ -761,10 +761,9 @@ volumes:
 
 - 배포 시 `.env` → `--env-add` 패턴으로 주입 (기존 앱 배포와 동일)
 - **Caddy가 HTTPS terminate** 후 overlay 내부(`tasks.prod_monitor_grafana:3000`)로 reverse_proxy
-- 추가 서버 `.env` 값 (GRAFANA_HOSTNAME은 subpath 방식이라 불필요):
+- 추가 서버 `.env` 값 (2개만 — subpath 방식이라 `GRAFANA_HOSTNAME` 불필요, IP는 Caddyfile 직접 작성이라 `GRAFANA_ALLOWED_IPS`도 불필요):
   - `GRAFANA_ADMIN_USER=admin`
-  - `GRAFANA_ADMIN_PASSWORD=<강한 비밀번호>`
-  - `GRAFANA_ALLOWED_IPS=203.0.113.5/32 10.0.0.0/8` (공백 구분, CIDR 지원)
+  - `GRAFANA_ADMIN_PASSWORD=<32자 이상 강한 비밀번호>`
 
 **3-2. Grafana Provisioning (IaC)** ⭐
 수동 UI 설정 대신 파일로 관리 — 서버 이전/재배포 시에도 동일 상태 재현.
@@ -1214,18 +1213,26 @@ Step 2 — Caddy 차단 + Prometheus + node_exporter:
   [ ] node_exporter 각 노드 확인 (tasks.monitor_shared_node_exporter DNS)
 
 Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출):
-  [ ] 서버 .env에 GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD 추가
-  [ ] 서버 .env에 GRAFANA_ALLOWED_IPS (운영자 IP/CIDR, 공백 구분) 추가
-      (GRAFANA_HOSTNAME은 불필요 — 도메인 fivesouth.duckdns.org 고정)
-  [ ] Caddyfile에 @grafana_path + @grafana_allowed matcher + handle /grafana/* 블록 추가
-      (IP 화이트리스트 통과 시만 reverse_proxy tasks.prod_monitor_grafana:3000, 아니면 404)
-  [ ] infra/docker-stack.yml의 caddy 서비스에 environment: GRAFANA_ALLOWED_IPS 추가
-  [ ] infra_caddy 서비스 재배포 (env 변경 반영 — docker service update --force infra_caddy)
-  [ ] docker-stack.monitoring.yml에 grafana 서비스 추가:
-      - GF_SERVER_ROOT_URL=https://fivesouth.duckdns.org/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      - GF_SERVER_DOMAIN=fivesouth.duckdns.org
-      - ports 섹션 없음 (overlay 노출만)
+
+  [A] Grafana 컨테이너가 읽는 env (docker-stack.monitoring.yml 의 grafana 서비스 environment):
+    [x] 서버 .env에 GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD 추가 — 완료
+        ※ GRAFANA_HOSTNAME / GRAFANA_ALLOWED_IPS 는 추가 안 함 (각각 subpath 방식 · Caddyfile 직접 작성 방식이라 불필요).
+
+  [B] Caddyfile 수정 (서버 /home/ubuntu/desktop/deploy/infra/caddy/config/Caddyfile):
+    [ ] @grafana_path (path matcher) + @grafana_allowed (remote_ip matcher — IP 직접 작성) + handle /grafana/* 블록 추가
+        (IP 화이트리스트 통과 시만 reverse_proxy tasks.prod_monitor_grafana:3000, 아니면 404)
+    [ ] caddy reload 실행: for cid in $(docker ps -q -f name=infra_caddy); do docker exec $cid caddy reload --config /config/Caddyfile --adapter caddyfile; done
+        (Caddy env 주입이 필요 없으므로 infra_caddy 서비스 재배포는 불필요)
+
+  [C] docker-stack.monitoring.yml 의 grafana 서비스 정의:
+    [ ] grafana 서비스 추가 (fs-03 배치, memory 350M, user 472:472)
+        - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+        - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+        - GF_SERVER_ROOT_URL=https://fivesouth.duckdns.org/grafana/
+        - GF_SERVER_SERVE_FROM_SUB_PATH=true
+        - GF_SERVER_DOMAIN=fivesouth.duckdns.org
+        - GF_USERS_ALLOW_SIGN_UP=false, GF_AUTH_ANONYMOUS_ENABLED=false
+        - ports 섹션 없음 (overlay 노출만)
   [ ] infra/grafana/provisioning/datasources/datasources.yml 작성 (Prometheus uid: prometheus 고정)
   [ ] infra/grafana/provisioning/dashboards/dashboards.yml 작성 (discovery 설정)
   [ ] datasources.yml/dashboards.yml → Swarm configs 주입 (sha256 해시 name)
@@ -1594,13 +1601,13 @@ networks:
 **기존 파일 수정**:
 - Caddyfile (서버: `/home/ubuntu/desktop/deploy/infra/caddy/config/Caddyfile`):
   - `@metrics` matcher + `handle @metrics { respond 404 }` (Step 2 — 적용 완료)
-  - `@grafana_path` + `@grafana_allowed remote_ip` matcher + `handle /grafana/*` 서브블록 (Step 3 — IP 화이트리스트 통과 시 reverse_proxy, 아니면 404)
-- `infra/docker-stack.yml` (infra 스택):
-  - `caddy.environment`에 `GRAFANA_ALLOWED_IPS: ${GRAFANA_ALLOWED_IPS}` 추가
+  - `@grafana_path` (path matcher) + `@grafana_allowed` (remote_ip 매처, **IP 직접 작성**) + `handle /grafana/*` 서브블록 (Step 3 — IP 통과 시 reverse_proxy, 아니면 404)
+- `infra/docker-stack.yml` (infra 스택): **Caddy env 추가 불필요** (IP는 Caddyfile 직접 작성 — 환경변수 치환 미사용)
 - 서버 `.env` 추가 항목:
-  - `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_ALLOWED_IPS`
+  - `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` (Step 3 — 완료)
   - `TELEGRAM_ALERT_CHAT_ID` (Step 6)
   - ※ `GRAFANA_HOSTNAME` 불필요 (subpath 방식으로 도메인 코드에 고정)
+  - ※ `GRAFANA_ALLOWED_IPS` 불필요 (Caddyfile 직접 작성)
 - DNS: 추가 불필요 (기존 `fivesouth.duckdns.org` 재사용)
 - `.github/workflows/deploy-monitoring.yml` (완료 — 2 job: shared → prod, sha256 config, concurrency group, script_stop + set -euxo)
 - `.github/workflows/deploy-to-oci.yml` (완료 — paths whitelist 전환)

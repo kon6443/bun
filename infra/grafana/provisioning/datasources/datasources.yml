@@ -1,0 +1,16 @@
+apiVersion: 1
+
+# Grafana 기동 시 자동 등록되는 데이터소스.
+# uid 는 대시보드 JSON 에서 참조하는 식별자 — 배포마다 바뀌지 않도록 고정.
+
+datasources:
+  - name: Prometheus
+    uid: prometheus                 # 대시보드 JSON 에서 참조 (변경 금지)
+    type: prometheus
+    access: proxy
+    url: http://tasks.prod_monitor_prometheus:9090
+    isDefault: true
+    editable: false                 # UI 에서 수정 불가 (Provisioning IaC 단일 소스)
+    jsonData:
+      timeInterval: "15s"           # Prometheus scrape_interval 과 일치
+      httpMethod: POST              # 긴 쿼리에서 URL 길이 초과 방지
