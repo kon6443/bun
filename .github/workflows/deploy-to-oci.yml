@@ -4,18 +4,16 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - 'infra/docker-stack.yml'
-      - 'infra/docker-stack.monitoring.*.yml'
-      - 'infra/prometheus/**'
-      - 'infra/alertmanager/**'
-      - 'infra/grafana/**'
-      - 'infra/loki/**'
-      - 'infra/promtail/**'
-      - '.github/workflows/deploy-infra.yml'
-      - '.github/workflows/deploy-monitoring.yml'
-      - 'docs/**'
-      - '*.md'
+    # paths (whitelist) — 앱 빌드·배포에 직접 영향 주는 파일만 명시.
+    # paths-ignore 는 merge commit 평가 시 예측이 어려워 의도 외 트리거가 발생함.
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - 'infra/docker-stack.app.yml'
+      - '.github/workflows/deploy-to-oci.yml'
 
 jobs:
   deploy:

@@ -23,6 +23,9 @@ services:
         target: /etc/prometheus/prometheus.yml
     volumes:
       - prometheus-data:/prometheus
+      # Swarm API 조회용 (노드 hostname 을 instance label 로 주입 — prometheus.yml 참조)
+      # manager 노드 필수 → placement constraint(prod_monitor_metrics=1) 및 fs-02 manager 구성으로 충족
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - sys_default
     deploy:
@@ -40,15 +43,62 @@ services:
         published: 9090
         mode: host  # SSH 터널 접근 전용 (OCI VCN이 외부 9090 차단)
 
+  grafana:
+    image: grafana/grafana:12.1.0
+    user: "472:472"   # Grafana 기본 uid/gid (볼륨 권한 일관성)
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Caddy subpath 서빙 — https://fivesouth.duckdns.org/grafana/
+      GF_SERVER_ROOT_URL: "https://fivesouth.duckdns.org/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_DOMAIN: "fivesouth.duckdns.org"
+      # 리소스 보호 (1GB 노드 — 쿼리 부하 완화)
+      GF_DATAPROXY_TIMEOUT: "30"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "30s"
+    configs:
+      - source: prod_monitor_grafana_datasources_yml
+        target: /etc/grafana/provisioning/datasources/datasources.yml
+      - source: prod_monitor_grafana_dashboards_yml
+        target: /etc/grafana/provisioning/dashboards/dashboards.yml
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # 대시보드 JSON 은 디렉터리 단위 관리 → bind mount (read-only)
+      # 서버에서 미리 디렉터리 생성 필요: mkdir -p /home/ubuntu/desktop/deploy/infra/grafana/provisioning/dashboards/json
+      - /home/ubuntu/desktop/deploy/infra/grafana/provisioning/dashboards/json:/etc/grafana/provisioning/dashboards/json:ro
+    networks:
+      - sys_default
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.prod_monitor_view == 1   # fs-03
+      resources:
+        limits:
+          memory: 350M
+      restart_policy:
+        condition: on-failure
+    # ports 섹션 없음 → overlay 내부만 (Caddy가 tasks.prod_monitor_grafana:3000 으로 reverse_proxy)
+
 configs:
   # file: 경로는 compose 파일(infra/docker-stack.monitoring.yml)의 디렉토리 기준 상대경로.
-  # → 실제 해석: /home/ubuntu/desktop/deploy/infra/prometheus/prometheus.yml
+  # → 실제 해석: /home/ubuntu/desktop/deploy/infra/<relative>
   prod_monitor_prometheus_yml:
     name: prod_monitor_prometheus_yml_${PROM_CFG_HASH:-latest}
     file: ./prometheus/prometheus.yml
+  prod_monitor_grafana_datasources_yml:
+    name: prod_monitor_grafana_datasources_yml_${GRAFANA_DS_CFG_HASH:-latest}
+    file: ./grafana/provisioning/datasources/datasources.yml
+  prod_monitor_grafana_dashboards_yml:
+    name: prod_monitor_grafana_dashboards_yml_${GRAFANA_DASH_CFG_HASH:-latest}
+    file: ./grafana/provisioning/dashboards/dashboards.yml
 
 volumes:
   prometheus-data:
+  grafana-data:
 
 networks:
   sys_default:

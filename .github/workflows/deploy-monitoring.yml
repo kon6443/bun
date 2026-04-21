@@ -15,6 +15,12 @@ on:
       - '.github/workflows/deploy-monitoring.yml'
   workflow_dispatch:
 
+# 같은 브랜치 동시 배포 충돌 방지 (mobisell-back 패턴 차용).
+# cancel-in-progress: false → 이미 진행 중인 배포는 완료까지 대기 (중간 취소 X)
+concurrency:
+  group: deploy-monitoring-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   # ============================================
   # 1단계: shared 스택 (node_exporter — global 모든 노드)
@@ -77,6 +83,7 @@ jobs:
           rsync -avz --relative \
             -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
             infra/prometheus \
+            infra/grafana \
             infra/docker-stack.monitoring.yml \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/
           rm /tmp/ssh_key
@@ -94,13 +101,19 @@ jobs:
 
             echo "=== [prod 1/5] Files check ==="
             ls -la infra/prometheus/prometheus.yml
+            ls -la infra/grafana/provisioning/datasources/datasources.yml
+            ls -la infra/grafana/provisioning/dashboards/dashboards.yml
             ls -la infra/docker-stack.monitoring.yml
 
             echo "=== [prod 2/5] Hash calc ==="
             PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | awk '{print $1}' | cut -c1-12)
-            export PROM_CFG_HASH
+            GRAFANA_DS_CFG_HASH=$(sha256sum infra/grafana/provisioning/datasources/datasources.yml | awk '{print $1}' | cut -c1-12)
+            GRAFANA_DASH_CFG_HASH=$(sha256sum infra/grafana/provisioning/dashboards/dashboards.yml | awk '{print $1}' | cut -c1-12)
+            export PROM_CFG_HASH GRAFANA_DS_CFG_HASH GRAFANA_DASH_CFG_HASH
             echo "PROM_CFG_HASH=$PROM_CFG_HASH"
-            test -n "$PROM_CFG_HASH"
+            echo "GRAFANA_DS_CFG_HASH=$GRAFANA_DS_CFG_HASH"
+            echo "GRAFANA_DASH_CFG_HASH=$GRAFANA_DASH_CFG_HASH"
+            test -n "$PROM_CFG_HASH" && test -n "$GRAFANA_DS_CFG_HASH" && test -n "$GRAFANA_DASH_CFG_HASH"
 
             echo "=== [prod 3/5] Stack deploy ==="
             docker stack deploy --detach=false \
