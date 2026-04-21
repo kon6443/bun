@@ -1,0 +1,16 @@
+apiVersion: 1
+
+# dashboards/json/ 디렉터리 아래의 모든 JSON 파일을 자동 로드.
+# bind mount 로 실시간 반영 (updateIntervalSeconds 주기로 폴링).
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''                    # 루트 폴더 (팀 많아지면 환경별로 분리 가능)
+    type: file
+    disableDeletion: false        # UI 에서 대시보드 삭제 허용
+    editable: true                # UI 수정 허용 (export 후 커밋 플로우)
+    updateIntervalSeconds: 30     # 파일 변경 감지 주기
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: false
