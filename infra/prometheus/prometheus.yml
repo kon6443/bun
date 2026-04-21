@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    env: prod
+    cluster: oci-swarm
+
+# Alertmanager는 Step 6에서 추가되면 주석 해제
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['tasks.prod_monitor_alertmanager:9093']
+
+# Recording/Alert rules는 Step 4.5/6에서 추가되면 주석 해제
+# rule_files:
+#   - 'rules/*.yml'
+
+scrape_configs:
+  # NestJS 앱 — overlay 내부 DNS로 각 replica(task) IP를 개별 scrape
+  - job_name: 'prod_nest_app'
+    metrics_path: /api/v1/metrics
+    dns_sd_configs:
+      - names: ['tasks.prod_nest_app']
+        type: A
+        port: 3500
+
+  # node_exporter — shared 스택에서 global 배포, 모든 노드 1개씩
+  - job_name: 'node_exporter'
+    dns_sd_configs:
+      - names: ['tasks.monitor_shared_node_exporter']
+        type: A
+        port: 9100
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus_self'
+    static_configs:
+      - targets: ['localhost:9090']

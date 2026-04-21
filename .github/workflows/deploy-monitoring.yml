@@ -1,0 +1,100 @@
+name: Deploy Monitoring Stack
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/prometheus/**'
+      - 'infra/alertmanager/**'
+      - 'infra/grafana/**'
+      - 'infra/loki/**'
+      - 'infra/promtail/**'
+      - 'infra/docker-stack.monitoring.yml'
+      - 'infra/docker-stack.monitoring.shared.yml'
+      - '.github/workflows/deploy-monitoring.yml'
+  workflow_dispatch:   # 수동 실행 지원
+
+jobs:
+  # ============================================
+  # 1단계: shared 스택 (node_exporter — global 모든 노드)
+  #   Prometheus가 scrape 하려면 node_exporter가 먼저 떠 있어야 함
+  # ============================================
+  deploy-monitoring-shared:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rsync shared stack files to Swarm manager
+        run: |
+          echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          rsync -avz --relative \
+            -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
+            infra/docker-stack.monitoring.shared.yml \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/
+          rm /tmp/ssh_key
+
+      - name: Deploy shared stack via SSH (converge 동기 대기)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_SERVER }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/desktop/deploy
+            docker stack deploy --detach=false \
+              -c infra/docker-stack.monitoring.shared.yml \
+              monitor_shared
+            docker stack services monitor_shared
+
+  # ============================================
+  # 2단계: prod 스택 (Prometheus — Step 3/6에서 Grafana/Alertmanager/Loki 추가 예정)
+  #   sha256 config 해시로 무중단 rolling update
+  # ============================================
+  deploy-monitoring-prod:
+    needs: deploy-monitoring-shared
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rsync prod stack files to Swarm manager
+        run: |
+          echo "${{ secrets.SWARM_MANAGER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          rsync -avz --relative \
+            -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
+            infra/prometheus \
+            infra/docker-stack.monitoring.yml \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/
+          rm /tmp/ssh_key
+
+      - name: Deploy prod stack via SSH (sha256 config + converge 동기 대기)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_SERVER }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/desktop/deploy
+
+            # sha256 해시 계산 (config name에 포함 — 변경 시 새 config 자동 생성)
+            export PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | head -c 12)
+            echo "PROM_CFG_HASH=$PROM_CFG_HASH"
+
+            docker stack deploy --detach=false \
+              -c infra/docker-stack.monitoring.yml \
+              prod_monitor
+            docker stack services prod_monitor
+
+            # 미사용 config 정리 (현재 서비스가 참조하지 않는 구 버전만 제거됨)
+            echo "--- Cleaning up orphaned configs ---"
+            docker config ls --filter "name=prod_monitor_" --format "{{.Name}}" | while read cfg; do
+              docker config rm "$cfg" 2>/dev/null && echo "  removed: $cfg" || true
+            done
