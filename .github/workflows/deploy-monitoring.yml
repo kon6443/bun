@@ -99,6 +99,12 @@ jobs:
             set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
 
+            # .env 로드 — docker-stack.monitoring.yml 의 ${GRAFANA_ADMIN_USER}, ${GRAFANA_ADMIN_PASSWORD} 치환용
+            # (set -a: 이후 source 한 변수를 자동 export 해서 docker stack deploy 가 읽을 수 있게 함)
+            set -a
+            source /home/ubuntu/desktop/deploy/sys/config/env/.env
+            set +a
+
             echo "=== [prod 1/5] Files check ==="
             ls -la infra/prometheus/prometheus.yml
             ls -la infra/grafana/provisioning/datasources/datasources.yml
