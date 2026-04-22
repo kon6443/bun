@@ -80,6 +80,30 @@ services:
         condition: on-failure
     # ports 섹션 없음 → overlay 내부만 (Caddy가 tasks.prod_monitor_grafana:3000 으로 reverse_proxy)
 
+  # Loki — 로그 저장·쿼리 서버 (fs-03, Grafana 와 공존).
+  # ports 미노출 → overlay 내부에서만 접근 (Grafana, Promtail 이 tasks.prod_monitor_loki:3100).
+  loki:
+    image: grafana/loki:3.4.2
+    user: "10001:10001"   # Loki 기본 uid/gid — named volume 권한 일관성
+    command: -config.file=/etc/loki/config.yml
+    configs:
+      - source: prod_monitor_loki_yml
+        target: /etc/loki/config.yml
+    volumes:
+      - loki-data:/loki
+    networks:
+      - sys_default
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.prod_monitor_view == 1   # fs-03
+      resources:
+        limits:
+          memory: 400M
+      restart_policy:
+        condition: on-failure
+
 configs:
   # file: 경로는 compose 파일(infra/docker-stack.monitoring.yml)의 디렉토리 기준 상대경로.
   # → 실제 해석: /home/ubuntu/desktop/deploy/infra/<relative>
@@ -92,10 +116,14 @@ configs:
   prod_monitor_grafana_dashboards_yml:
     name: prod_monitor_grafana_dashboards_yml_${GRAFANA_DASH_CFG_HASH:-latest}
     file: ./grafana/provisioning/dashboards/dashboards.yml
+  prod_monitor_loki_yml:
+    name: prod_monitor_loki_yml_${LOKI_CFG_HASH:-latest}
+    file: ./loki/loki-config.yml
 
 volumes:
   prometheus-data:
   grafana-data:
+  loki-data:
 
 networks:
   sys_default:

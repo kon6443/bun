@@ -1,0 +1,55 @@
+auth_enabled: false
+
+# Loki 3.4.2 단일 바이너리 모드.
+# - filesystem storage (별도 객체 스토리지 미사용 — 단일 노드 fs-03 디스크)
+# - retention 7일 (Prometheus TSDB 와 보관 기간 통일)
+# - structured_metadata 활성 → Promtail 에서 container_name 등 고카디널리티 메타 저장
+# - ingestion rate 제한 → 1GB 노드 OOM 방지 안전장치
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2026-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h        # 7일
+  allow_structured_metadata: true
+  # 1GB 노드 (fs-03) OOM/디스크 폭주 보호
+  # 정상 트래픽(분당 수백 로그)은 KB/s 단위라 영향 없음, 폭증 시에만 드롭
+  ingestion_rate_mb: 4          # 초당 4MB 제한
+  ingestion_burst_size_mb: 6    # 순간 버스트 6MB 허용
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_query_series: 500
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 50
+  delete_request_store: filesystem
+
+# 외부 원격 사용량 수집 비활성화 (보안/프라이버시)
+analytics:
+  reporting_enabled: false
