@@ -23,9 +23,6 @@ services:
         target: /etc/prometheus/prometheus.yml
     volumes:
       - prometheus-data:/prometheus
-      # Swarm API 조회용 (노드 hostname 을 instance label 로 주입 — prometheus.yml 참조)
-      # manager 노드 필수 → placement constraint(prod_monitor_metrics=1) 및 fs-02 manager 구성으로 충족
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - sys_default
     deploy:

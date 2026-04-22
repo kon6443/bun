@@ -11,10 +11,21 @@ version: '3.9'
 services:
   node_exporter:
     image: prom/node-exporter:v1.8.2
+    # Swarm 템플릿으로 컨테이너 hostname 을 노드 hostname(fs-01/02/03)으로 설정.
+    # → node_uname_info 메트릭의 nodename label 이 실제 노드명으로 기록되어
+    #    Grafana Dashboard 1860 의 Nodename 드롭다운이 정상 채워짐.
+    hostname: '{{.Node.Hostname}}'
+    # 호스트의 /proc, /sys, / 를 별도 bind → 컨테이너 파일시스템이 아닌
+    # 호스트 메트릭을 수집 (node_exporter 공식 권장 배포 구성).
     command:
-      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     volumes:
-      - '/:/host:ro,rslave'
+      - '/proc:/host/proc:ro'
+      - '/sys:/host/sys:ro'
+      - '/:/rootfs:ro'
     networks:
       - sys_default
     deploy:
