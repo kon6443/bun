@@ -1,9 +1,11 @@
 version: '3.9'
 
 # shared 스택 — 모든 노드에서 global 실행되는 모니터링 에이전트.
-# node_exporter: OS/HW 메트릭 수집. Promtail은 tasks-logging.md 단계에서 추가.
+# - node_exporter: OS/HW 메트릭 수집
+# - promtail-prod: 컨테이너 stdout 로그 수집 → Loki push
 #
 # 배포:
+#   export PROMTAIL_CFG_HASH=$(sha256sum infra/promtail/promtail-config.yml | head -c 12)
 #   docker stack deploy --detach=false -c infra/docker-stack.monitoring.shared.yml monitor_shared
 #
 # 스택명이 monitor_shared이므로 overlay DNS는 tasks.monitor_shared_node_exporter:9100
@@ -36,6 +38,36 @@ services:
       restart_policy:
         condition: on-failure
     # ports 없음 → overlay 내부에서만 접근 (Prometheus가 DNS로 scrape)
+
+  # Promtail — 각 노드 docker.sock 을 읽어 컨테이너 stdout 을 Loki 로 push.
+  # docker.sock 은 read-only 마운트 (쓰기 불필요).
+  # 앱 코드 변경 0 (docker logging driver 그대로 json-file/journald 유지, Promtail 이 docker API 로 읽음).
+  promtail-prod:
+    image: grafana/promtail:3.4.2
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-prod-positions:/tmp
+    configs:
+      - source: prod_monitor_promtail_yml
+        target: /etc/promtail/config.yml
+    networks:
+      - sys_default
+    deploy:
+      mode: global
+      resources:
+        limits:
+          memory: 100M
+      restart_policy:
+        condition: on-failure
+
+configs:
+  prod_monitor_promtail_yml:
+    name: prod_monitor_promtail_yml_${PROMTAIL_CFG_HASH:-latest}
+    file: ./promtail/promtail-config.yml
+
+volumes:
+  promtail-prod-positions:
 
 networks:
   sys_default:

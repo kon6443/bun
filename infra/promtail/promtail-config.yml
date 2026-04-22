@@ -1,0 +1,54 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+# 재시작 후 중복 수집 방지 — positions 파일은 promtail-prod-positions volume 으로 영속화
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://tasks.prod_monitor_loki:3100/loki/api/v1/push
+
+# Docker Swarm global mode 로 모든 노드에서 실행.
+# docker.sock 을 통해 각 노드의 컨테이너 stdout 을 자동 발견·수집.
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    relabel_configs:
+      # Swarm 서비스 이름 (예: prod_nest_app, prod_next_app, infra_caddy, infra_redis)
+      # → 저카디널리티(~5개) 레이블 service 로 승격
+      - source_labels: ['__meta_docker_container_label_com_docker_swarm_service_name']
+        target_label: service
+
+      # 환경/클러스터 고정값 (카디널리티 1)
+      - target_label: env
+        replacement: prod
+      - target_label: cluster
+        replacement: oci-swarm
+
+      # ⚠️ container_name / container_id 는 레이블로 승격하지 않음
+      #   - Swarm 은 컨테이너 재시작마다 container_id 가 바뀌어 고카디널리티 유발
+      #   - 필요 시 LogQL line 필터(`|~ "patt"`)로 검색 가능
+
+    pipeline_stages:
+      # Pino JSON 파싱 — non-JSON 로그(Caddy, Redis 등)는 이 stage 가 실패해도
+      # drop 되지 않고 raw line 그대로 수집됨 (Promtail 기본 동작)
+      - json:
+          expressions:
+            level: level
+            time: time
+            msg: msg
+
+      # level 만 저카디널리티 레이블 승격 (info, warn, error, debug, fatal — 약 5종)
+      - labels:
+          level:
+
+      # Pino timestamp 파싱 — logger.module.ts 의 pino.stdTimeFunctions.isoTime 출력 형식:
+      # "time":"2024-01-01T00:00:00.000Z" (RFC 3339)
+      # Go 의 RFC3339Nano 포맷은 ms/ns 유무 모두 허용하므로 단일 format 으로 충분
+      - timestamp:
+          source: time
+          format: RFC3339Nano

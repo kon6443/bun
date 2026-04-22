@@ -40,11 +40,12 @@ jobs:
           chmod 600 /tmp/ssh_key
           rsync -avz --relative \
             -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
+            infra/promtail \
             infra/docker-stack.monitoring.shared.yml \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/
           rm /tmp/ssh_key
 
-      - name: Deploy shared stack via SSH (converge 동기 대기)
+      - name: Deploy shared stack via SSH (sha256 config + converge 동기 대기)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
@@ -55,13 +56,27 @@ jobs:
             set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
 
-            echo "=== [shared 1/2] Stack deploy ==="
+            echo "=== [shared 1/4] Hash calc ==="
+            PROMTAIL_CFG_HASH=$(sha256sum infra/promtail/promtail-config.yml | awk '{print $1}' | cut -c1-12)
+            export PROMTAIL_CFG_HASH
+            echo "PROMTAIL_CFG_HASH=$PROMTAIL_CFG_HASH"
+            test -n "$PROMTAIL_CFG_HASH"
+
+            echo "=== [shared 2/4] Stack deploy ==="
             docker stack deploy --detach=false \
               -c infra/docker-stack.monitoring.shared.yml \
               monitor_shared
 
-            echo "=== [shared 2/2] Services status ==="
+            echo "=== [shared 3/4] Services status ==="
             docker stack services monitor_shared
+
+            echo "=== [shared 4/4] Cleanup orphaned promtail configs ==="
+            for cfg in $(docker config ls --filter "name=prod_monitor_promtail_" --format "{{.Name}}"); do
+              if docker config rm "$cfg" 2>/dev/null; then
+                echo "removed orphan: $cfg"
+              fi
+            done
+            echo "cleanup done"
 
   # ============================================
   # 2단계: prod 스택 (Prometheus — Grafana/Alertmanager/Loki는 Step 3/6에서 추가)
@@ -84,6 +99,7 @@ jobs:
             -e "ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no" \
             infra/prometheus \
             infra/grafana \
+            infra/loki \
             infra/docker-stack.monitoring.yml \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_SERVER }}:/home/ubuntu/desktop/deploy/
           rm /tmp/ssh_key
@@ -109,17 +125,20 @@ jobs:
             ls -la infra/prometheus/prometheus.yml
             ls -la infra/grafana/provisioning/datasources/datasources.yml
             ls -la infra/grafana/provisioning/dashboards/dashboards.yml
+            ls -la infra/loki/loki-config.yml
             ls -la infra/docker-stack.monitoring.yml
 
             echo "=== [prod 2/5] Hash calc ==="
             PROM_CFG_HASH=$(sha256sum infra/prometheus/prometheus.yml | awk '{print $1}' | cut -c1-12)
             GRAFANA_DS_CFG_HASH=$(sha256sum infra/grafana/provisioning/datasources/datasources.yml | awk '{print $1}' | cut -c1-12)
             GRAFANA_DASH_CFG_HASH=$(sha256sum infra/grafana/provisioning/dashboards/dashboards.yml | awk '{print $1}' | cut -c1-12)
-            export PROM_CFG_HASH GRAFANA_DS_CFG_HASH GRAFANA_DASH_CFG_HASH
+            LOKI_CFG_HASH=$(sha256sum infra/loki/loki-config.yml | awk '{print $1}' | cut -c1-12)
+            export PROM_CFG_HASH GRAFANA_DS_CFG_HASH GRAFANA_DASH_CFG_HASH LOKI_CFG_HASH
             echo "PROM_CFG_HASH=$PROM_CFG_HASH"
             echo "GRAFANA_DS_CFG_HASH=$GRAFANA_DS_CFG_HASH"
             echo "GRAFANA_DASH_CFG_HASH=$GRAFANA_DASH_CFG_HASH"
-            test -n "$PROM_CFG_HASH" && test -n "$GRAFANA_DS_CFG_HASH" && test -n "$GRAFANA_DASH_CFG_HASH"
+            echo "LOKI_CFG_HASH=$LOKI_CFG_HASH"
+            test -n "$PROM_CFG_HASH" && test -n "$GRAFANA_DS_CFG_HASH" && test -n "$GRAFANA_DASH_CFG_HASH" && test -n "$LOKI_CFG_HASH"
 
             echo "=== [prod 3/5] Stack deploy ==="
             docker stack deploy --detach=false \
