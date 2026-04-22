@@ -24,26 +24,14 @@ scrape_configs:
         type: A
         port: 3500
 
-  # node_exporter — Swarm 노드별 hostname을 instance label 로 주입.
-  # dockerswarm_sd_configs + relabel 로 노드 메타 획득 (IP 대신 fs-01/02/03).
-  # 조건: Prometheus 컨테이너가 manager 노드에 있고 /var/run/docker.sock 마운트 필요.
+  # node_exporter — shared 스택 global 배포, 모든 노드 1개씩.
+  # 노드 hostname 은 node_exporter 컨테이너의 hostname: '{{.Node.Hostname}}' 템플릿으로
+  # node_uname_info{nodename=...} 에 주입됨 → Grafana 대시보드에서 fs-01/02/03 표시.
   - job_name: 'node_exporter'
-    dockerswarm_sd_configs:
-      - host: unix:///var/run/docker.sock
-        role: nodes
-    relabel_configs:
-      # scrape 주소를 노드 IP:9100 으로 (role:nodes는 포트 제공 X → 수동 지정)
-      - source_labels: [__meta_dockerswarm_node_address]
-        target_label: __address__
-        replacement: ${1}:9100
-      # instance label = 노드 hostname (fs-01/fs-02/fs-03)
-      - source_labels: [__meta_dockerswarm_node_hostname]
-        target_label: instance
-      # (선택) 노드 역할/가용성도 label 로 보존
-      - source_labels: [__meta_dockerswarm_node_availability]
-        target_label: node_availability
-      - source_labels: [__meta_dockerswarm_node_role]
-        target_label: node_role
+    dns_sd_configs:
+      - names: ['tasks.monitor_shared_node_exporter']
+        type: A
+        port: 9100
 
   # Prometheus self-monitoring
   - job_name: 'prometheus_self'
