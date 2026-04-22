@@ -33,6 +33,7 @@
 | 배치 (선택 A) | 기존 앱 노드에 공존 (4 OCPU / 24GB, 여유 충분) | 운영 단순성 |
 | 배치 (선택 B) | **OCI Always Free 1GB × 2 분리 배치** (fs-02, fs-03 / 스왑 2GB 적용 완료) | 앱 리소스 격리 (후술) |
 | Prometheus retention | **7일 (QA·PROD 동일)** (`--storage.tsdb.retention.time=7d`) | 디스크 ~200MB/월. QA 도입 시에도 동일 유지 (단순성 + 디스크 예산 고정) |
+| Redis 서버 메트릭 | **`oliver006/redis_exporter` 별도 컨테이너** (prod_monitor 스택, fs-02 배치) | 앱의 `redis_connection_status`(앱 관점)와 별개로 Redis 서버 상태(메모리·명령·keyspace) 수집. overlay DNS 로 fs-01 의 Redis 접근 |
 | scrape 간격 | `scrape_interval: 15s`, `scrape_timeout: 10s` | 표준값, 오버헤드 최소 |
 | external_labels | `env=prod`, `cluster=oci-swarm` | Grafana 환경 필터링 + 멀티 환경 확장 대비 |
 | Grafana Provisioning | **IaC** (`datasources.yml` + `dashboards.yml` + JSON 커밋) | 수동 설정 탈피, 서버 재배포 시 자동 재현 |
@@ -822,8 +823,70 @@ providers:
 - `ws_connections_active` (TeamGateway 연결/해제 시 증감)
 - `ws_team_online_users{team_id}` (OnlineUserService 주기 갱신 30s~1m)
 - `ws_events_total{event}` / `ws_event_duration_seconds{event}` (gateway handlers)
-- `redis_connection_status` (RedisIoAdapter)
+- `redis_connection_status` (RedisIoAdapter — 앱 관점 "연결되어 있나")
 - (선택) 비즈니스 메트릭: 팀 생성 수, 태스크 완료율
+
+### Step 4.1 — Redis 서버 메트릭 (redis_exporter)
+
+Step 4 의 `redis_connection_status` 는 **앱 관점**(0/1)이고, Redis **서버 자체**의 상태
+(메모리, 연결 수, 명령 처리량, keyspace 히트율 등)는 별도 exporter 필요.
+
+**배치**: `prod_monitor` 스택, fs-02 (`prod_monitor_metrics=1` 라벨). Redis 는 fs-01
+고정이지만 exporter 는 overlay DNS 로 `tasks.infra_redis:6379` 접근 — 노드 위치 무관.
+
+**4.1-1. `docker-stack.monitoring.yml` 에 서비스 추가** (→ 최종 합본은 문서 말미):
+
+```yaml
+redis-exporter:
+  image: oliver006/redis_exporter:v1.62.0
+  command:
+    - '--redis.addr=redis://tasks.infra_redis:6379'
+    # Redis AUTH 사용 시: --redis.password-file=/run/secrets/redis_password
+  networks:
+    - sys_default
+  deploy:
+    replicas: 1
+    placement:
+      constraints:
+        - node.labels.prod_monitor_metrics == 1
+    resources:
+      limits:
+        memory: 50M
+    restart_policy:
+      condition: on-failure
+  # ports 없음 → overlay 내부만 (Prometheus 가 redis-exporter:9121 scrape)
+```
+
+**4.1-2. `prometheus.yml` 에 scrape 추가**:
+
+```yaml
+scrape_configs:
+  # ... 기존 job 들 ...
+
+  # Redis 서버 메트릭 (oliver006/redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['tasks.prod_monitor_redis-exporter:9121']
+        labels:
+          redis_instance: 'infra_redis'    # Redis 인스턴스 식별 (멀티 Redis 대비)
+```
+
+**4.1-3. Grafana Dashboard Import**:
+- ID `763` (Redis Dashboard for Prometheus Redis Exporter 1.x) — 공식·가장 널리 쓰이는 대시보드
+- 대체: ID `11692` (Redis Dashboard for Prometheus Redis Exporter helm stable/redis-ha)
+
+**4.1-4. 수집되는 주요 메트릭**:
+- `redis_up` (0/1) — Redis 서버 응답 가능 여부. **알림 소스 (Step 6)**
+- `redis_memory_used_bytes` / `redis_memory_max_bytes` — 128MB maxmemory 대비 사용률
+- `redis_connected_clients` — 현재 연결된 클라이언트 수
+- `redis_commands_processed_total` — 명령 처리량 rate
+- `redis_keyspace_hits_total` / `redis_keyspace_misses_total` — 캐시 히트율
+- `redis_evicted_keys_total` — allkeys-lru 정책에 의한 eviction 수 (128MB 포화 감지)
+
+**4.1-5. fs-01 단일 노드 고려사항**:
+- Redis 는 fs-01 manager 에서만 (`docker-stack.yml` 의 `node.role == manager` + 실제 fs-01 배치).
+- fs-01 장애 시 → Redis 다운 → exporter scrape 실패 → `redis_up == 0` → Step 6 알림 즉시 발동.
+- 앱(NestJS)은 Redis 실패해도 HTTP 정상 (WS 프레즌스만 중단) — 이미 Step 2 Redis Pub/Sub 설계에 반영.
 
 ### Step 4.5 — Recording Rules + Loki Drill-down 준비 ⭐
 
@@ -1212,41 +1275,67 @@ Step 2 — Caddy 차단 + Prometheus + node_exporter:
   [ ] NestJS 레플리카 개별 scrape 확인 (tasks.prod_nest_app DNS) — Step 1 배포 선행 필요
   [ ] node_exporter 각 노드 확인 (tasks.monitor_shared_node_exporter DNS)
 
-Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출):
+Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출): ✅ 완료 (2026-04-22)
 
-  [A] Grafana 컨테이너가 읽는 env (docker-stack.monitoring.yml 의 grafana 서비스 environment):
-    [x] 서버 .env에 GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD 추가 — 완료
-        ※ GRAFANA_HOSTNAME / GRAFANA_ALLOWED_IPS 는 추가 안 함 (각각 subpath 방식 · Caddyfile 직접 작성 방식이라 불필요).
+  [A] Grafana 컨테이너 env:
+    [x] 서버 .env에 GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD 추가
+    [x] deploy-monitoring.yml 에 `set -a; source .env; set +a` 로드 (치환 실패 방지)
 
-  [B] Caddyfile 수정 (서버 /home/ubuntu/desktop/deploy/infra/caddy/config/Caddyfile):
-    [ ] @grafana_path (path matcher) + @grafana_allowed (remote_ip matcher — IP 직접 작성) + handle /grafana/* 블록 추가
-        (IP 화이트리스트 통과 시만 reverse_proxy tasks.prod_monitor_grafana:3000, 아니면 404)
-    [ ] caddy reload 실행: for cid in $(docker ps -q -f name=infra_caddy); do docker exec $cid caddy reload --config /config/Caddyfile --adapter caddyfile; done
-        (Caddy env 주입이 필요 없으므로 infra_caddy 서비스 재배포는 불필요)
+  [B] Caddyfile (서버 직접 편집):
+    [x] @grafana_path matcher + handle /grafana/* 블록 추가 (IP 화이트리스트 통과 시만 proxy)
+    [x] (allowed_ips) snippet 에 운영자 IP 직접 작성 (/32 CIDR 명시)
+    [x] caddy reload 반영 확인
 
-  [C] docker-stack.monitoring.yml 의 grafana 서비스 정의:
-    [ ] grafana 서비스 추가 (fs-03 배치, memory 350M, user 472:472)
-        - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
-        - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-        - GF_SERVER_ROOT_URL=https://fivesouth.duckdns.org/grafana/
-        - GF_SERVER_SERVE_FROM_SUB_PATH=true
-        - GF_SERVER_DOMAIN=fivesouth.duckdns.org
-        - GF_USERS_ALLOW_SIGN_UP=false, GF_AUTH_ANONYMOUS_ENABLED=false
-        - ports 섹션 없음 (overlay 노출만)
-  [ ] infra/grafana/provisioning/datasources/datasources.yml 작성 (Prometheus uid: prometheus 고정)
-  [ ] infra/grafana/provisioning/dashboards/dashboards.yml 작성 (discovery 설정)
-  [ ] datasources.yml/dashboards.yml → Swarm configs 주입 (sha256 해시 name)
-  [ ] 대시보드 JSON 커밋: nodejs.json (11159), node-exporter.json (1860), fivesouth-custom.json
-  [ ] dashboards/json/ 디렉터리 → bind mount (read-only) 설정 확인
-  [ ] Grafana 재배포 후 https://fivesouth.duckdns.org/grafana/ 접근 확인 (허용 IP만)
-  [ ] 화이트리스트 미포함 IP에서 404 반환 확인 (보안 검증)
+  [C] Caddy host 모드 전환 (Swarm ingress IPVS SNAT 회피 — 클라이언트 IP 보존):
+    [x] infra/docker-stack.yml: ports 를 mode: host 로 전환 (80/tcp, 443/tcp, 443/udp HTTP/3)
+    [x] replicas: 2 → 1, update_config.order: stop-first
+    [x] infra 스택 재배포 완료
+
+  [D] docker-stack.monitoring.yml grafana 서비스:
+    [x] grafana 서비스 추가 (fs-03, memory 350M, user 472:472, subpath env)
+    [x] provisioning configs 2개 (datasources, dashboards) sha256 해시 naming
+
+  [E] Grafana provisioning 파일:
+    [x] infra/grafana/provisioning/datasources/datasources.yml (Prometheus uid: prometheus 고정)
+    [x] infra/grafana/provisioning/dashboards/dashboards.yml (discovery 설정)
+    [x] infra/grafana/provisioning/dashboards/json/fivesouth-custom.json (골격)
+    [x] dashboards/json/ 디렉터리 bind mount (서버 fs-03 에서 mkdir 완료)
+
+  [F] node_exporter hostname 주입 (Grafana Dashboard 1860 의 nodename 드롭다운 채움):
+    [x] docker-stack.monitoring.shared.yml: hostname: '{{.Node.Hostname}}' 추가
+    [x] /proc, /sys, /:/rootfs 호스트 별도 bind + --path.rootfs=/rootfs (공식 권장)
+    [x] prometheus.yml: dns_sd_configs 로 원복 (dockerswarm_sd + relabel 과잉 설계 제거)
+    [x] Prometheus user:root + /var/run/docker.sock 마운트 제거 (보안 복귀)
+
+  [G] 검증:
+    [x] https://fivesouth.duckdns.org/grafana/ 접속 — Grafana 로그인 페이지 노출
+    [x] 허용 IP 외에서는 404 반환 (Caddy @admin_ips 차단)
+    [x] Dashboard 1860 Import → Nodename 드롭다운에 fs-01/02/03 자동 채움
+    [x] 각 노드별 CPU/RAM/Disk/Network 실측치 표시 (RAM 957 MiB, Uptime 40.8 weeks 등)
+    [ ] Dashboard 11159 (NodeJS Application Dashboard) import — 선택
+    [ ] UI 편집 후 export → json 디렉터리 커밋 (영속화) — 선택
 
 Step 4 — 커스텀 메트릭:
   [ ] ws_connections_active (TeamGateway 연결/해제 시 증감)
   [ ] ws_team_online_users (OnlineUserService 주기 갱신 30s~1m, 팀별 labels)
+      ※ 팀 삭제 시 stale label 제거 (ws_team_online_users.remove({ team_id })) 필요
   [ ] ws_events_total / ws_event_duration_seconds (gateway handlers)
-  [ ] redis_connection_status (RedisIoAdapter)
-  [ ] (선택) 비즈니스 메트릭
+      ※ Histogram bucket 기본값 유지 (prom-client default, 10개). 커스텀 bucket 시 메모리 증가 주의
+  [ ] redis_connection_status (RedisIoAdapter on('ready'/'end'/'error'))
+  [ ] MetricsModule 분리 + makeCounterProvider/makeGaugeProvider/makeHistogramProvider 로 DI
+  [ ] OnModuleDestroy 에서 setInterval clearInterval (주기 갱신 사용 시 메모리 leak 방지)
+  [ ] (선택) 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+
+Step 4.1 — Redis 서버 메트릭 (redis_exporter):
+  [ ] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
+      - 이미지 oliver006/redis_exporter:v1.62.0
+      - command: --redis.addr=redis://tasks.infra_redis:6379
+      - placement: prod_monitor_metrics=1 (fs-02)
+      - memory 50M
+  [ ] prometheus.yml 에 'redis' job 추가 (tasks.prod_monitor_redis-exporter:9121)
+  [ ] Grafana Dashboard 763 (Redis Dashboard for Prometheus Redis Exporter 1.x) Import
+  [ ] 핵심 메트릭 확인: redis_up=1, redis_memory_used_bytes, redis_commands_processed_total
+  [ ] (Step 6 연계) alerts.yml 에 RedisDown (redis_up == 0 for 1m) + RedisMemoryHigh (> 90%) 룰 추가 예약
 
 Step 4.5 — Recording Rules + Drill-down 준비:
   [ ] infra/prometheus/rules/recording.yml 작성 (p95, error_rate, active_teams 등)
@@ -1364,7 +1453,7 @@ services:
     # ports 없음 → overlay 내부에서만 노출 (Prometheus tasks.monitor_shared_node_exporter:9100)
 
   promtail-prod:
-    image: grafana/promtail:3.1.0
+    image: grafana/promtail:3.4.2
     command: -config.file=/etc/promtail/config.yml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -1499,7 +1588,7 @@ services:
         mode: host   # SSH 터널만 접근
 
   loki:
-    image: grafana/loki:3.1.0
+    image: grafana/loki:3.4.2
     user: "10001:10001"
     command: -config.file=/etc/loki/config.yml
     configs:
@@ -1577,9 +1666,10 @@ networks:
 - `src/app.module.ts` (PrometheusModule import + MiddlewareConsumer 등록)
 - `src/common/middleware/metrics-access.middleware.ts` (신규 — XFF 1차 + IP 2차 검증)
 - `src/common/middleware/metrics-access.middleware.spec.ts` (신규 — 20+ 케이스)
+- `src/common/metrics/metrics.module.ts` (신규 — Step 4: Counter/Gauge/Histogram provider 선언, DI export)
 - `src/modules/team/team.gateway.ts` (ws_connections_active, ws_events_total, ws_event_duration_seconds)
-- `src/modules/team/online-user.service.ts` (ws_team_online_users 주기 갱신)
-- `src/common/adapters/redis-io.adapter.ts` (redis_connection_status)
+- `src/modules/team/online-user.service.ts` (ws_team_online_users 주기 갱신 + OnModuleDestroy clearInterval)
+- `src/common/adapters/redis-io.adapter.ts` (redis_connection_status — 앱 관점. Redis 서버 메트릭은 Step 4.1 redis_exporter)
 
 **인프라 설정 (신규)**:
 - `infra/docker-stack.monitoring.shared.yml` (**shared 스택** — node_exporter + promtail-prod)

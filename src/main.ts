@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { register } from 'prom-client';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
@@ -16,6 +17,14 @@ import compression from 'compression';
 import { ALLOWED_ORIGINS } from './common/constants/cors.constants';
 
 async function bootstrap() {
+  // 모든 Prometheus 메트릭에 Swarm 레플리카 식별자 주입.
+  // docker-stack.app.yml 의 TASK_SLOT={{.Task.Slot}} 환경변수(1/2/3 …)로 전달됨.
+  // LOCAL 은 미설정 → '0'. AppModule 로드(= PrometheusModule.register) 전에 호출해야
+  // default metrics 에도 라벨이 붙는다.
+  register.setDefaultLabels({
+    replica: process.env.TASK_SLOT ?? '0',
+  });
+
   const logger = new Logger('Bootstrap');
 
   try {

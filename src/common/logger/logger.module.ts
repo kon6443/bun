@@ -140,6 +140,15 @@ function redactSensitiveData(obj: unknown): unknown {
             formatters: {
               level: (label) => ({ level: label }),
             },
+            // Loki 저장량/조회 노이즈 차단.
+            // - /api/v1/metrics: Prometheus scrape (15s 간격 × replicas 분당 다수 요청)
+            // - /api/v1/health-check: Docker healthcheck + 외부 모니터링 probe
+            autoLogging: {
+              ignore: (req: { url?: string; originalUrl?: string }) => {
+                const url = (req.originalUrl || req.url || '').split('?')[0];
+                return url === '/api/v1/health-check' || url === '/api/v1/metrics';
+              },
+            },
           },
         };
       },

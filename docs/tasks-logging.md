@@ -71,10 +71,10 @@
 
 ## 📦 패키지 및 도구
 
-| 도구 | 버전 (추천) | 역할 |
+| 도구 | 버전 | 역할 |
 |------|-----------|------|
-| Loki | `grafana/loki:3.1.0` | 로그 저장·쿼리 서버 |
-| Promtail | `grafana/promtail:3.1.0` | 로그 수집 에이전트 (docker discovery) |
+| Loki | `grafana/loki:3.4.2` | 로그 저장·쿼리 서버 (mobisell prod 검증 버전) |
+| Promtail | `grafana/promtail:3.4.2` | 로그 수집 에이전트 (docker discovery) |
 
 **앱 레벨 추가 설치 없음** — Pino 이미 도입되어 stdout JSON 출력 중.
 
@@ -173,29 +173,28 @@ scrape_configs:
       # 필요 시 아래 pipeline_stages.structured_metadata에서 보존 (인덱스 영향 없음)
 
     pipeline_stages:
-      # Pino JSON 파싱 (실패 시 해당 stage만 스킵, 로그는 정상 raw line으로 수집됨)
+      # Pino JSON 파싱 — non-JSON 로그(Redis, Caddy 등)는 json stage 가 실패해도
+      # drop 되지 않고 raw line 그대로 수집됨 (Promtail 기본 동작)
       - json:
           expressions:
             level: level
             time: time
             msg: msg
 
-      # level만 저카디널리티 레이블로 승격 (info/warn/error/debug — 4개)
+      # level 만 저카디널리티 레이블로 승격 (info/warn/error/debug — 4개)
       - labels:
           level:
 
-      # 타임스탬프 교정 (Pino는 ms epoch)
+      # 타임스탬프 교정 — bun 의 logger.module.ts 는 pino.stdTimeFunctions.isoTime 사용.
+      # 출력 형식: "time":"2024-01-01T00:00:00.000Z" (RFC 3339)
+      # Go 의 RFC3339Nano 포맷은 ms/ns precision 모두 허용하므로 단일 format 으로 OK.
+      # ⚠️ Pino 기본값(epochTime, ms number) 사용 시에는 format: UnixMs 로 전환 필요.
       - timestamp:
           source: time
-          format: UnixMs
-
-      # container_name은 structured_metadata로 저장 — 인덱스 미영향, LogQL에서 필터 가능
-      # Loki 3.0+ + limits_config.allow_structured_metadata: true 필요 (loki-config.yml에 활성화됨)
-      - structured_metadata:
-          container_name: container_name
-
-      # non-JSON 로그(Redis, Caddy 등)는 json stage가 실패해도 raw line으로 정상 수집
+          format: RFC3339Nano
 ```
+
+> **container_name 제외 결정**: 설계 초안은 container_name 을 structured_metadata 로 저장하려 했으나, Promtail 은 docker_sd 의 `__meta_docker_container_name` 을 pipeline extracted map 에 직접 주입하는 표준 수단이 없음 (structured_metadata stage 는 extracted map 값만 받음). index label 로 승격하면 Swarm 재시작마다 container_id 가 바뀌어 고카디널리티 유발. 따라서 **저장하지 않고 필요 시 LogQL line 필터** (`|= "container_id"`) 로 검색.
 
 ### Step 2 — Loki 설정 파일
 
@@ -248,7 +247,7 @@ Loki는 `docker-stack.monitoring.yml` (prod 스택)에, Promtail은 `docker-stac
 ```yaml
 services:
   loki:
-    image: grafana/loki:3.1.0
+    image: grafana/loki:3.4.2
     user: "10001:10001"   # Loki 기본 uid/gid — 볼륨 권한 일관성
     command: -config.file=/etc/loki/config.yml
     volumes:
@@ -268,7 +267,7 @@ services:
         condition: on-failure
 
   promtail:
-    image: grafana/promtail:3.1.0
+    image: grafana/promtail:3.4.2
     # Promtail은 docker.sock 접근이 필요하므로 기본 root 유지 (user 지시어 명시 안 함)
     command: -config.file=/etc/promtail/config.yml
     volumes:
@@ -478,7 +477,7 @@ Step 1 — Promtail 설정:
   [ ] infra/promtail/promtail-config.yml 작성
   [ ] docker_sd_configs + relabel_configs (저카디널리티 레이블만: service, env, cluster)
   [ ] pipeline_stages: Pino JSON 파싱 (level, time, msg) → level 레이블 승격
-  [ ] structured_metadata stage로 container_name 보존 (인덱스 미영향)
+  [ ] timestamp stage: format RFC3339Nano (Pino isoTime 출력 매칭)
 
 Step 2 — Loki 설정:
   [ ] infra/loki/loki-config.yml 작성
@@ -501,9 +500,10 @@ Step 4 — Grafana 데이터소스 (Provisioning):
   [ ] Explore 탭에서 {service="prod_nest_app"} 쿼리 → 로그 출력 확인
 
 Step 5 — Pino 포맷 + 보안:
-  [ ] PROD stdout JSON 형식 재확인 (level, time, msg)
-  [ ] Pino redact 설정 (password, token, cookie, authorization)
-  [ ] Pino serializers 설정 (req, res, err 구조 통일)
+  [x] PROD stdout JSON 형식 (level, time, msg) — logger.module.ts 기구현
+  [x] Pino redact (password, token, cookie, authorization 등 재귀) — 기구현
+  [x] Pino serializers (req, res, err 구조 통일) — 기구현
+  [x] autoLogging.ignore: /api/v1/health-check, /api/v1/metrics 제외 (PROD 한정, Loki 저장량 절감)
   [ ] 프로덕션 로그 레벨 확인 (info 기본, DEBUG 제외)
   [ ] LogQL로 파싱 확인: `{service="prod_nest_app"} | json | level="error"`
 
