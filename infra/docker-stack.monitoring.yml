@@ -80,6 +80,31 @@ services:
         condition: on-failure
     # ports 섹션 없음 → overlay 내부만 (Caddy가 tasks.prod_monitor_grafana:3000 으로 reverse_proxy)
 
+  # Redis 서버 메트릭 수집 exporter.
+  # - Redis 서버(fs-01)와 다른 노드(fs-02)에 배치 → 장애 도메인 분리
+  #   redis_up=0 발생 시 신호 조합으로 원인 구분:
+  #     • Redis 프로세스만 다운: redis_up=0 + node_exporter fs-01 정상
+  #     • fs-01 노드 다운: redis_up=0 + node_exporter fs-01 도 사라짐
+  #     • exporter 자체 문제: up{job="redis"}=0 + redis_up 부재
+  # - overlay DNS 로 Redis 접근 (무인증, 서비스 재배치 내성)
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    command:
+      - '--redis.addr=redis://tasks.infra_redis:6379'
+    networks:
+      - sys_default
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.prod_monitor_metrics == 1   # fs-02 (Prometheus 와 동일 노드)
+      resources:
+        limits:
+          memory: 50M
+      restart_policy:
+        condition: on-failure
+    # ports 없음 → overlay 내부에서만 Prometheus 가 scrape
+
   # Loki — 로그 저장·쿼리 서버 (fs-03, Grafana 와 공존).
   # ports 미노출 → overlay 내부에서만 접근 (Grafana, Promtail 이 tasks.prod_monitor_loki:3100).
   loki:

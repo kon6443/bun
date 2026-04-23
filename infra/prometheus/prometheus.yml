@@ -37,3 +37,12 @@ scrape_configs:
   - job_name: 'prometheus_self'
     static_configs:
       - targets: ['localhost:9090']
+
+  # Redis 서버 메트릭 — oliver006/redis_exporter 가 Redis 서버에 접속해 수집.
+  # 앱 관점(app_redis_connection_status) 과 구분되는 서버 관점 메트릭:
+  # redis_up, redis_memory_used_bytes, redis_commands_processed_total 등.
+  - job_name: 'redis'
+    dns_sd_configs:
+      - names: ['tasks.prod_monitor_redis-exporter']
+        type: A
+        port: 9121
