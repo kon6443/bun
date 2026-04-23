@@ -65,8 +65,11 @@ services:
     deploy:
       replicas: 1
       placement:
+        # fs-01 고정 — named volume(redis-data) 이 노드 로컬이므로 재배치 시 데이터 초기화.
+        # node.role == manager 만으로는 fs-01/02/03 셋 다 허용되어 실제로 fs-03 로 튀는 사고 발생 (2026-04-23).
+        # redis_exporter (B1-2 예정) 는 fs-02 에 분리 배치 → "redis_up=0" 의 원인이 Redis 인지 exporter/노드 인지 명확.
         constraints:
-          - node.role == manager
+          - node.labels.infra_redis == 1
       update_config:
         parallelism: 1
         order: stop-first

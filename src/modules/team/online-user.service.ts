@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Gauge } from 'prom-client';
 import { Redis } from 'ioredis';
 import { OnlineUserInfo } from './team.events';
 
@@ -12,16 +14,93 @@ import { OnlineUserInfo } from './team.events';
 const SOCKET_KEY_TTL = 3600; // 1시간 (고아 키 자동 정리 안전장치)
 const TEAM_ONLINE_KEY_TTL = 7200; // 2시간 (online 해시 — 서버 재시작 시 고아 데이터 자동 정리)
 
+// 팀별 온라인 유저 수 Gauge 재계산 주기 (Prometheus scrape 15s 보다 길게 — 설계 결정 P3).
+const METRIC_REFRESH_INTERVAL_MS = 60_000;
+// 멀티 replica 환경에서 같은 team_id 에 대해 여러 replica 가 동시에 set 하면
+// Prometheus 에 중복 timeseries 가 생겨 쿼리 혼란. TASK_SLOT=1 (리더) 만 갱신.
+const METRIC_LEADER_TASK_SLOT = 1;
+
 @Injectable()
-export class OnlineUserService {
+export class OnlineUserService implements OnModuleDestroy {
   private readonly logger = new Logger(OnlineUserService.name);
   private redis: Redis;
+  // 이 replica 가 joinTeam 이벤트를 받은 팀 집합. 60s 주기 재계산 대상.
+  private readonly activeTeamIds = new Set<number>();
+  private metricTimer?: NodeJS.Timeout;
+
+  constructor(
+    @InjectMetric('ws_team_online_users')
+    private readonly teamOnlineGauge: Gauge<string>,
+  ) {
+    const taskSlot = Number(process.env.TASK_SLOT ?? 0);
+    if (taskSlot === METRIC_LEADER_TASK_SLOT) {
+      this.metricTimer = setInterval(
+        () => void this.refreshTeamOnlineMetric(),
+        METRIC_REFRESH_INTERVAL_MS,
+      );
+      this.logger.log(`ws_team_online_users 60s 주기 갱신 활성 (TASK_SLOT=${taskSlot})`);
+    }
+  }
+
+  onModuleDestroy(): void {
+    if (this.metricTimer) {
+      clearInterval(this.metricTimer);
+      this.metricTimer = undefined;
+    }
+  }
 
   /**
    * main.ts에서 RedisIoAdapter 초기화 후 호출
    */
   setRedisClient(client: Redis): void {
     this.redis = client;
+  }
+
+  /**
+   * TeamGateway.handleJoinTeam 에서 호출 — 60s 주기 재계산 대상 팀 등록.
+   * count == 0 이 되면 refreshTeamOnlineMetric 에서 자동으로 Set/Gauge 에서 제거.
+   */
+  trackActiveTeam(teamId: number): void {
+    this.activeTeamIds.add(teamId);
+  }
+
+  /**
+   * Redis 에서 팀별 온라인 유저 수를 재계산해 Gauge 에 set.
+   * 정상 0 이면 remove + activeTeamIds 에서 제거 (stale label 방지).
+   * TASK_SLOT=1 replica 에서만 호출됨.
+   *
+   * 구현 메모:
+   *  - Redis.hlen 을 직접 호출 → 예외가 여기서 catch 되어 "이번 주기만 skip".
+   *    (getOnlineUsersCount 는 내부 try-catch 로 0 반환하므로 실패/진짜 0 구분 불가.
+   *     failure 를 0 과 구분해야 Gauge 를 잘못 지우지 않음.)
+   *  - Promise.all 병렬화 — 순차 for-await 은 Redis 연결을 오래 점유해
+   *    사용자 경로(addUserToOnline 등)의 응답 지연 유발.
+   */
+  private async refreshTeamOnlineMetric(): Promise<void> {
+    if (!this.redis) return;
+    const teamIds = Array.from(this.activeTeamIds);
+    const results = await Promise.all(
+      teamIds.map(async (teamId) => {
+        try {
+          const count = await this.redis.hlen(this.teamOnlineKey(teamId));
+          return { teamId, count, ok: true as const };
+        } catch (error) {
+          this.logger.warn(
+            `refreshTeamOnlineMetric 실패 (teamId=${teamId}): ${(error as Error).message}`,
+          );
+          return { teamId, count: 0, ok: false as const };
+        }
+      }),
+    );
+    for (const { teamId, count, ok } of results) {
+      if (!ok) continue; // Redis 장애 — 이번 주기 skip, 이전 Gauge 값 유지
+      if (count > 0) {
+        this.teamOnlineGauge.set({ team_id: String(teamId) }, count);
+      } else {
+        this.teamOnlineGauge.remove({ team_id: String(teamId) });
+        this.activeTeamIds.delete(teamId);
+      }
+    }
   }
 
   // ===== 키 생성 헬퍼 =====

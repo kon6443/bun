@@ -2,7 +2,7 @@
 
 > 작성일: 2026-04-15
 > 브랜치: `feat-onam`
-> 상태: **도입 확정** (배포 미진행)
+> 상태: **Step 1~5 배포 완료 (2026-04-22)** — Step 6~8 (Drill-down/쿼리 카탈로그/알림) 미진행
 > 선행: [`tasks-swarm-stack-migration.md`](./tasks-swarm-stack-migration.md) → [`tasks-monitoring.md`](./tasks-monitoring.md) Grafana 배포 → 본 문서
 > 본 문서는 마이그레이션 완료 후 상태 기준 (서비스 DNS: `prod_nest_app`)
 
@@ -473,31 +473,31 @@ sum by (level) (count_over_time({service="prod_nest_app"} [1m]))
 ## ✅ 실행 체크리스트
 
 ```
-Step 1 — Promtail 설정:
-  [ ] infra/promtail/promtail-config.yml 작성
-  [ ] docker_sd_configs + relabel_configs (저카디널리티 레이블만: service, env, cluster)
-  [ ] pipeline_stages: Pino JSON 파싱 (level, time, msg) → level 레이블 승격
-  [ ] timestamp stage: format RFC3339Nano (Pino isoTime 출력 매칭)
+Step 1 — Promtail 설정: ✅ 완료 (2026-04-22)
+  [x] infra/promtail/promtail-config.yml 작성
+  [x] docker_sd_configs + relabel_configs (저카디널리티 레이블만: service, env, cluster)
+  [x] pipeline_stages: Pino JSON 파싱 (level, time, msg) → level 레이블 승격
+  [x] timestamp stage: format RFC3339Nano (Pino isoTime 출력 매칭)
 
-Step 2 — Loki 설정:
-  [ ] infra/loki/loki-config.yml 작성
-  [ ] retention_period: 168h (7일)
-  [ ] filesystem storage (BoltDB shipper)
+Step 2 — Loki 설정: ✅ 완료 (2026-04-22)
+  [x] infra/loki/loki-config.yml 작성 (v3.4.2)
+  [x] retention_period: 168h (7일)
+  [x] filesystem storage (tsdb schema v13)
+  [x] ingestion_rate_mb: 4 (fs-03 1GB 보호), analytics.reporting_enabled: false
 
-Step 3 — Swarm 스택:
-  [ ] docker-stack.monitoring.yml (prod)에 loki 서비스 추가 (volume, configs)
-  [ ] docker-stack.monitoring.shared.yml에 promtail 서비스 추가 (mode: global)
-  [ ] 옵션 B: loki placement.constraints (prod_monitor_view)
-  [ ] docker stack deploy -c docker-stack.monitoring.shared.yml monitor_shared
-  [ ] docker stack deploy -c docker-stack.monitoring.yml prod_monitor
-  [ ] docker service logs prod_monitor_loki → Ready
-  [ ] docker service logs monitor_shared_promtail-prod → 컨테이너 발견 로그 확인
+Step 3 — Swarm 스택: ✅ 완료 (2026-04-22)
+  [x] docker-stack.monitoring.yml (prod)에 loki 서비스 추가 (volume, configs, user 10001, memory 400M)
+  [x] docker-stack.monitoring.shared.yml에 promtail-prod 서비스 추가 (mode: global, memory 100M)
+  [x] loki placement.constraints (prod_monitor_view=1 → fs-03)
+  [x] 자동 배포 (GitHub Actions deploy-monitoring.yml) — main 머지로 트리거
+  [x] docker service 확인 → prod_monitor_loki 1/1, monitor_shared_promtail-prod 3/3 Running
 
-Step 4 — Grafana 데이터소스 (Provisioning):
-  [ ] datasources.yml에 Loki 블록 append (Prometheus와 병행)
-  [ ] (선택) derivedFields로 trace_id → Prometheus 연결 설정
-  [ ] Grafana 재배포 → Connections 화면에 Prometheus + Loki 자동 등록 확인
-  [ ] Explore 탭에서 {service="prod_nest_app"} 쿼리 → 로그 출력 확인
+Step 4 — Grafana 데이터소스 (Provisioning): ✅ 완료 (2026-04-22)
+  [x] datasources.yml에 Loki 블록 append (uid: loki, Prometheus와 병행)
+  [x] derivedFields 로 trace_id → Prometheus 연결 설정 (실제 trace_id 필드 도입 시 활성)
+  [x] Grafana 재배포 → Connections 화면에 Loki 자동 등록 확인
+  [x] Explore 탭에서 {service_name="prod_nest_app"} 쿼리 → 로그 출력 확인
+        ※ Loki 3.x 는 service 레이블을 service_name 으로도 자동 복사
 
 Step 5 — Pino 포맷 + 보안:
   [x] PROD stdout JSON 형식 (level, time, msg) — logger.module.ts 기구현
