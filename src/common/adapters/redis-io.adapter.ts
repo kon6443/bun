@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
 import { ServerOptions } from 'socket.io';
+import { Gauge } from 'prom-client';
 
 /**
  * Redis 기반 Socket.IO 어댑터
@@ -16,6 +17,8 @@ export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
   private pubClient: Redis;
   private subClient: Redis;
+  // 메트릭 연결 전(setStatusGauge 호출 전)에는 undefined — optional chaining 으로 noop 처리
+  private statusGauge?: Gauge<string>;
 
   constructor(app: INestApplication) {
     super(app);
@@ -39,6 +42,24 @@ export class RedisIoAdapter extends IoAdapter {
     this.subClient.on('error', (err) => this.logger.error('Redis sub 클라이언트 에러', err.message));
     this.pubClient.on('connect', () => this.logger.log('Redis pub 클라이언트 연결'));
     this.subClient.on('connect', () => this.logger.log('Redis sub 클라이언트 연결'));
+
+    // ioredis 상태 전이 (wait → connecting → connect → ready / close → end) 시마다
+    // pubClient.status 기준으로 Gauge 갱신. pubClient 만 관찰해도 sub 와 같은 서버라 충분.
+    const updateStatus = () => this.statusGauge?.set(this.pubClient.status === 'ready' ? 1 : 0);
+    this.pubClient.on('ready', updateStatus);
+    this.pubClient.on('end', updateStatus);
+    this.pubClient.on('error', updateStatus);
+    this.pubClient.on('close', updateStatus);
+    this.pubClient.on('reconnecting', updateStatus);
+  }
+
+  /**
+   * main.ts 에서 MetricsModule 의 Gauge 를 주입받아 Redis 연결 상태를 반영.
+   * 주입 이후의 ioredis 이벤트뿐 아니라 현재 상태도 즉시 Gauge 에 반영.
+   */
+  setStatusGauge(gauge: Gauge<string>): void {
+    this.statusGauge = gauge;
+    this.statusGauge.set(this.pubClient.status === 'ready' ? 1 : 0);
   }
 
   /**

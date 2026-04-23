@@ -33,7 +33,7 @@
 | 배치 (선택 A) | 기존 앱 노드에 공존 (4 OCPU / 24GB, 여유 충분) | 운영 단순성 |
 | 배치 (선택 B) | **OCI Always Free 1GB × 2 분리 배치** (fs-02, fs-03 / 스왑 2GB 적용 완료) | 앱 리소스 격리 (후술) |
 | Prometheus retention | **7일 (QA·PROD 동일)** (`--storage.tsdb.retention.time=7d`) | 디스크 ~200MB/월. QA 도입 시에도 동일 유지 (단순성 + 디스크 예산 고정) |
-| Redis 서버 메트릭 | **`oliver006/redis_exporter` 별도 컨테이너** (prod_monitor 스택, fs-02 배치) | 앱의 `redis_connection_status`(앱 관점)와 별개로 Redis 서버 상태(메모리·명령·keyspace) 수집. overlay DNS 로 fs-01 의 Redis 접근 |
+| Redis 서버 메트릭 | **`oliver006/redis_exporter` 별도 컨테이너** (prod_monitor 스택, fs-02 배치 — 장애 도메인 분리) | 앱의 `app_redis_connection_status`(클라이언트 관점)와 별개로 Redis 서버 상태(메모리·명령·keyspace) 수집. overlay DNS 로 fs-01 의 Redis 접근 (무인증) |
 | scrape 간격 | `scrape_interval: 15s`, `scrape_timeout: 10s` | 표준값, 오버헤드 최소 |
 | external_labels | `env=prod`, `cluster=oci-swarm` | Grafana 환경 필터링 + 멀티 환경 확장 대비 |
 | Grafana Provisioning | **IaC** (`datasources.yml` + `dashboards.yml` + JSON 커밋) | 수동 설정 탈피, 서버 재배포 시 자동 재현 |
@@ -66,7 +66,7 @@
 - **클라우드**: OCI (Oracle Cloud Infrastructure)
 - **오케스트레이션**: Docker Swarm
 - **앱 배포 방식**: **`docker stack deploy`** (스택 per 서비스 — `prod_nest`, `prod_next` 각 1 service)
-- **리버스 프록시**: **Caddy** (infra 스택, 포트 80/443, `infra_caddy` 라벨 노드 고정, replicas 2)
+- **리버스 프록시**: **Caddy** (infra 스택, 포트 80/443, `infra_caddy` 라벨 노드 고정, replicas 1 + mode:host — 클라이언트 IP 보존용 Swarm ingress 우회)
 - **앱 서비스 DNS**: `prod_nest_app` (NestJS, globalPrefix `/api/v1`, 포트 3500), `prod_next_app` (Next.js, 3000)
 - **Redis**: `infra_redis` (infra 스택, 128mb maxmemory)
 - **Registry**: `infra_registry` (infra 스택)
@@ -193,7 +193,7 @@ deploy:
       │ HTTPS fivesouth.duckdns.org/*  │ HTTPS .../grafana/*            │ SSH -L
       │ (일반 API/Next.js 요청)         │ (IP 화이트리스트)              │
       ↓                               ↓                                │
-                [Caddy (infra_caddy, replicas=2)]                       │
+                [Caddy (infra_caddy, replicas=1 + mode:host)]           │
                 ├── /api/v1/metrics → respond 404                       │
                 ├── /api/v1/*        → prod_nest_app:3500                │
                 ├── /socket.io/*     → prod_nest_app:3500                │
@@ -274,11 +274,14 @@ deploy:
 | 메트릭 | 타입 | 용도 | 구현 위치 |
 |--------|------|------|----------|
 | `ws_connections_active` | Gauge | WebSocket 접속자 수 | TeamGateway connect/disconnect |
-| `ws_team_online_users` | Gauge (labels: `team_id`) | 팀별 현재 접속자 수 | OnlineUserService.getOnlineUsersCount() 주기적 갱신 |
-| `ws_events_total` | Counter (labels: `event`) | WS 이벤트 발생 수 (taskCreated, commentCreated 등) | 각 gateway handler |
-| `ws_event_duration_seconds` | Histogram (labels: `event`) | WS 이벤트 처리 시간 | gateway handler |
-| `redis_connection_status` | Gauge | Redis 연결 상태 (0/1) | RedisIoAdapter |
-| `redis_pubsub_messages_total` | Counter | Pub/Sub 메시지 수 | RedisIoAdapter (선택) |
+| `ws_team_online_users` | Gauge (labels: `team_id`) | 팀별 현재 접속자 수 (60s 주기 재계산) | OnlineUserService |
+| `ws_events_total` | Counter (labels: `event`) | **inbound** WS 이벤트 발생 수 (joinTeam/leaveTeam 등 C→S) | 각 gateway @SubscribeMessage |
+| `ws_event_duration_seconds` | Histogram (labels: `event`, prom-client 기본 10 bucket) | **inbound** WS 이벤트 처리 시간 | gateway handler startTimer/end |
+| `app_redis_connection_status` | Gauge (0/1) | 앱 → Redis 연결 상태 (클라이언트 관점, exporter `redis_up` 과 구분) | RedisIoAdapter on('ready'/'end'/'error') |
+| `redis_pubsub_messages_total` | Counter | Pub/Sub 메시지 수 | RedisIoAdapter (선택 — 향후 필요 시) |
+
+> **범위 결정**: outbound 이벤트(S→C 브로드캐스트: `taskCreated`, `commentUpdated` 등)는 Counter/Histogram 측정에서 제외 — 서버 내부 emit 처리 시간은 의미 낮고, inbound handler 의 duration 에 포함됨.
+> **Redis 인증**: 현재 overlay 내부 통신으로 무인증 운영 (`redis-io.adapter.ts` 기준). redis_exporter 도 `--redis.addr=redis://tasks.infra_redis:6379` 만으로 접근 가능 (secret 불필요).
 
 ---
 
@@ -520,7 +523,7 @@ export class AppModule implements NestModule {
 - **커스텀 메트릭**: ws_connections_active 등은 Gateway에서 직접 카운터 증감
 - **Swarm DNS**: `tasks.prod_nest_app`로 레플리카 개별 scrape
 - **node_exporter**: Swarm `global` mode 등록 (레플리카 수 무관, 노드마다 1개)
-- **팀별 Gauge 갱신**: 매 요청 호출 금지 → **주기 갱신(30s~1m) 또는 joinTeam/leaveTeam 이벤트 시점 갱신**
+- **팀별 Gauge 갱신**: 매 요청 호출 금지 → **60s 주기 재계산** (Prometheus scrape 15s 보다 길게, 이벤트 순서 꼬임 보정용. 설계 결정 2026-04-22)
 - **configs immutable + sha256 버전 관리**: Swarm config는 수정 불가 → `name:` 필드에 파일 sha256 해시 12자 포함 (예: `prod_monitor_prometheus_yml_a1b2c3d4e5f6`). 파일 변경 시 새 해시로 새 config 자동 생성, 구 config는 서비스 업데이트까지 유지 → **무중단 rolling update**
 - **configs 이름 규약**: compose 참조 키는 `prod_monitor_{service}_{file}`, 실제 Swarm config 이름은 `prod_monitor_{service}_{file}_{hash12}`. 전체 목록 (8개, 2개 스택 분산):
   - **shared 스택** (2개): `prod_monitor_promtail_yml`
@@ -821,14 +824,14 @@ providers:
 ### Step 4 — 커스텀 메트릭
 
 - `ws_connections_active` (TeamGateway 연결/해제 시 증감)
-- `ws_team_online_users{team_id}` (OnlineUserService 주기 갱신 30s~1m)
-- `ws_events_total{event}` / `ws_event_duration_seconds{event}` (gateway handlers)
-- `redis_connection_status` (RedisIoAdapter — 앱 관점 "연결되어 있나")
+- `ws_team_online_users{team_id}` (OnlineUserService 60s 주기 갱신 + OnModuleDestroy clearInterval)
+- `ws_events_total{event}` / `ws_event_duration_seconds{event}` (inbound handler 만, prom-client 기본 10 bucket)
+- `app_redis_connection_status` (RedisIoAdapter — 앱 관점 "연결되어 있나", exporter `redis_up` 과 prefix 로 구분)
 - (선택) 비즈니스 메트릭: 팀 생성 수, 태스크 완료율
 
 ### Step 4.1 — Redis 서버 메트릭 (redis_exporter)
 
-Step 4 의 `redis_connection_status` 는 **앱 관점**(0/1)이고, Redis **서버 자체**의 상태
+Step 4 의 `app_redis_connection_status` 는 **앱 클라이언트 관점**(0/1)이고, Redis **서버 자체**의 상태
 (메모리, 연결 수, 명령 처리량, keyspace 히트율 등)는 별도 exporter 필요.
 
 **배치**: `prod_monitor` 스택, fs-02 (`prod_monitor_metrics=1` 라벨). Redis 는 fs-01
@@ -1186,12 +1189,14 @@ groups:
           summary: "Node.js 힙 사용률 90% 초과"
 
       - alert: RedisDown
-        expr: redis_connection_status == 0
+        # redis_exporter 의 redis_up (서버 관점) 사용 — 앱 관점(app_redis_connection_status)
+        # 은 앱 재시작/네트워크 일시 장애로 잘못 감지될 가능성 있음
+        expr: redis_up == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Redis 연결 끊김"
+          summary: "Redis 서버 다운"
 
       - alert: DiskSpaceLow
         expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
@@ -1245,7 +1250,7 @@ Step 0 — 인프라 준비:
     [x] docker node update --label-add prod_monitor_metrics=1 fs-02 — 완료 (2026-04-20)
     [x] docker node update --label-add prod_monitor_view=1 fs-03 — 완료 (2026-04-20)
 
-Step 1 — NestJS 앱:
+Step 1 — NestJS 앱: ✅ 완료 (2026-04-22 배포)
   [x] pnpm add prom-client @willsoto/nestjs-prometheus — 완료
   [x] pnpm add -D jest @types/jest ts-jest @nestjs/testing (test 인프라 도입) — 완료
   [x] PrometheusModule.register() in app.module.ts (path: 'metrics') — 완료
@@ -1260,9 +1265,10 @@ Step 1 — NestJS 앱:
       - XFF 빈 문자열 → 헤더 없는 것으로 취급
   [x] AppModule implements NestModule + configure() + MiddlewareConsumer.apply().forRoutes() — 완료
   [x] pnpm run build (TypeScript strict 통과) — 완료
-  [ ] /api/v1/metrics 로컬 접근 확인 (dev 서버 기동 후 curl)
+  [x] /api/v1/metrics 배포 환경 접근 확인 (Grafana Dashboard NodeJS 11159 시각화 — replica 라벨 포함)
+  [x] register.setDefaultLabels({ replica: TASK_SLOT }) — main.ts bootstrap (2026-04-22)
 
-Step 2 — Caddy 차단 + Prometheus + node_exporter:
+Step 2 — Caddy 차단 + Prometheus + node_exporter: ✅ 완료 (2026-04-22 배포)
   [x] Caddyfile에 /api/v1/metrics 차단 규칙 추가 (named matcher @metrics + handle @metrics { respond 404 }) — 완료 (2026-04-21)
   [x] Caddy reload 반영 확인 — 완료 (--watch가 atomic-write 편집을 놓쳐서 `docker service update --force` 또는 `caddy reload` 수동 실행 필요). 검증: curl /api/v1/metrics → 404 + server: Caddy + content-length: 0
   [x] infra/prometheus/prometheus.yml 작성 — 완료 (external_labels env:prod, cluster:oci-swarm)
@@ -1270,10 +1276,10 @@ Step 2 — Caddy 차단 + Prometheus + node_exporter:
   [x] infra/docker-stack.monitoring.yml 작성 — 완료 (Prometheus, sha256 config naming, mode:host 9090)
   [x] placement.constraints 확인 — 완료 (fs-02 prod_monitor_metrics=1, fs-03 prod_monitor_view=1 부여됨)
   [x] .github/workflows/deploy-monitoring.yml 작성 — 완료 (main push 자동 배포, shared→prod needs 의존성)
-  [ ] main 머지 → GitHub Actions 자동 배포 (수동 rsync 불필요)
-  [ ] Prometheus UI 접근 (SSH 터널 9090) → Targets 모두 UP
-  [ ] NestJS 레플리카 개별 scrape 확인 (tasks.prod_nest_app DNS) — Step 1 배포 선행 필요
-  [ ] node_exporter 각 노드 확인 (tasks.monitor_shared_node_exporter DNS)
+  [x] main 머지 → GitHub Actions 자동 배포 (수동 rsync 불필요)
+  [x] Prometheus UI 접근 (SSH 터널 9090) → Targets 모두 UP (prod_nest_app 3/3, node_exporter 3/3, prometheus_self 1/1)
+  [x] NestJS 레플리카 개별 scrape 확인 (tasks.prod_nest_app DNS)
+  [x] node_exporter 각 노드 확인 (tasks.monitor_shared_node_exporter DNS)
 
 Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출): ✅ 완료 (2026-04-22)
 
@@ -1315,16 +1321,36 @@ Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출): ✅ 완료
     [ ] Dashboard 11159 (NodeJS Application Dashboard) import — 선택
     [ ] UI 편집 후 export → json 디렉터리 커밋 (영속화) — 선택
 
-Step 4 — 커스텀 메트릭:
-  [ ] ws_connections_active (TeamGateway 연결/해제 시 증감)
-  [ ] ws_team_online_users (OnlineUserService 주기 갱신 30s~1m, 팀별 labels)
-      ※ 팀 삭제 시 stale label 제거 (ws_team_online_users.remove({ team_id })) 필요
-  [ ] ws_events_total / ws_event_duration_seconds (gateway handlers)
-      ※ Histogram bucket 기본값 유지 (prom-client default, 10개). 커스텀 bucket 시 메모리 증가 주의
-  [ ] redis_connection_status (RedisIoAdapter on('ready'/'end'/'error'))
-  [ ] MetricsModule 분리 + makeCounterProvider/makeGaugeProvider/makeHistogramProvider 로 DI
-  [ ] OnModuleDestroy 에서 setInterval clearInterval (주기 갱신 사용 시 메모리 leak 방지)
-  [ ] (선택) 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+Step 4 — 커스텀 메트릭 (Phase B 세분화):
+
+  Step 4 [B1-1] 앱 커스텀 메트릭 (src/ 변경):
+    [ ] src/common/metrics/metrics.module.ts 신규 — Counter/Gauge/Histogram provider DI
+    [ ] ws_connections_active (Gauge) — TeamGateway 연결/해제 시 inc/dec
+    [ ] ws_events_total (Counter, labels: event) — gateway handlers
+    [ ] ws_event_duration_seconds (Histogram, labels: event, prom-client 기본 10 bucket)
+    [ ] ws_team_online_users (Gauge, labels: team_id) — OnlineUserService 60s 주기 재계산
+        ※ setInterval 사용 시 OnModuleDestroy 에서 clearInterval (메모리 leak 방지)
+        ※ 팀 삭제 시 gauge.remove({ team_id }) 호출 (stale label 방지)
+    [ ] app_redis_connection_status (Gauge, 0/1) — RedisIoAdapter on('ready'/'end'/'error')
+        ※ exporter 의 redis_up 과 의미 구분 위해 app_ prefix (앱 클라이언트 관점 / 서버 관점 분리)
+    [ ] (선택, 여유 시) 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+
+  Step 4 [B1-2] redis_exporter (infra/ 변경):
+    [ ] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
+        - 이미지 oliver006/redis_exporter:v1.62.0
+        - command: --redis.addr=redis://tasks.infra_redis:6379
+        - placement: prod_monitor_metrics=1 (fs-02) — 장애 도메인 분리 (Redis fs-01 과 분리)
+        - memory 50M
+    [ ] prometheus.yml 에 'redis' job 추가 (tasks.prod_monitor_redis-exporter:9121)
+    [ ] 핵심 메트릭 확인: redis_up=1, redis_memory_used_bytes, redis_commands_processed_total
+    [ ] (Step 6 연계) alerts.yml 에 RedisDown (redis_up == 0 for 1m) + RedisMemoryHigh (> 90%) 룰 추가 예약
+
+  Step 4 [B1-3] 커스텀 대시보드 (Grafana UI → Git export):
+    [ ] Grafana UI 에서 fivesouth-custom 대시보드 구성
+        - replica 기반 variable (label_values(nodejs_version_info, replica))
+        - 패널: WS 커넥션 수 (replica별), 팀별 온라인 유저 수, WS 이벤트 처리율/p95, Redis 상태
+    [ ] Dashboard settings → JSON Model → copy
+    [ ] infra/grafana/provisioning/dashboards/json/fivesouth-custom.json 덮어쓰기 + Git 커밋
 
 Step 4.1 — Redis 서버 메트릭 (redis_exporter):
   [ ] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
@@ -1669,7 +1695,7 @@ networks:
 - `src/common/metrics/metrics.module.ts` (신규 — Step 4: Counter/Gauge/Histogram provider 선언, DI export)
 - `src/modules/team/team.gateway.ts` (ws_connections_active, ws_events_total, ws_event_duration_seconds)
 - `src/modules/team/online-user.service.ts` (ws_team_online_users 주기 갱신 + OnModuleDestroy clearInterval)
-- `src/common/adapters/redis-io.adapter.ts` (redis_connection_status — 앱 관점. Redis 서버 메트릭은 Step 4.1 redis_exporter)
+- `src/common/adapters/redis-io.adapter.ts` (app_redis_connection_status — 앱 관점. Redis 서버 메트릭은 Step 4.1 redis_exporter)
 
 **인프라 설정 (신규)**:
 - `infra/docker-stack.monitoring.shared.yml` (**shared 스택** — node_exporter + promtail-prod)
