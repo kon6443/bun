@@ -3,7 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { register } from 'prom-client';
+import { Gauge, register } from 'prom-client';
+import { getToken } from '@willsoto/nestjs-prometheus';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
@@ -63,6 +64,9 @@ async function bootstrap() {
 
     // WebSocket Adapter 설정 - Redis Pub/Sub으로 멀티 레플리카 지원
     const redisAdapter = new RedisIoAdapter(app);
+    // MetricsModule 의 Gauge 를 adapter 에 연결 → ioredis 이벤트마다 0/1 반영
+    const redisStatusGauge = app.get<Gauge<string>>(getToken('app_redis_connection_status'));
+    redisAdapter.setStatusGauge(redisStatusGauge);
     await redisAdapter.connectToRedis();
     app.useWebSocketAdapter(redisAdapter);
 

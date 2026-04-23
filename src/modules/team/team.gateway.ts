@@ -10,6 +10,8 @@ import {
 } from '@nestjs/websockets';
 import { Injectable, Logger, UseFilters, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter, Gauge, Histogram } from 'prom-client';
 import { Server, Socket } from 'socket.io';
 
 import { WsJwtGuard, AuthenticatedSocket } from '../../common/guards/ws-jwt-auth.guard';
@@ -70,6 +72,12 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly teamService: TeamService,
     private readonly configService: ConfigService,
     private readonly onlineUserService: OnlineUserService,
+    @InjectMetric('ws_connections_active')
+    private readonly wsConnectionsActive: Gauge<string>,
+    @InjectMetric('ws_events_total')
+    private readonly wsEventsTotal: Counter<string>,
+    @InjectMetric('ws_event_duration_seconds')
+    private readonly wsEventDuration: Histogram<string>,
   ) {}
 
   // ===== 라이프사이클 훅 (NestJS 정석) =====
@@ -85,6 +93,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * 클라이언트 연결 시 호출
    */
   handleConnection(client: Socket): void {
+    this.wsConnectionsActive.inc();
     this.logger.log(`클라이언트 연결: ${client.id}`);
   }
 
@@ -92,6 +101,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * 클라이언트 연결 해제 시 호출
    */
   async handleDisconnect(client: Socket): Promise<void> {
+    this.wsConnectionsActive.dec();
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
 
     // 온라인 유저에서 제거
@@ -116,69 +126,78 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() dto: JoinTeamDto,
   ): Promise<JoinedTeamPayload> {
-    const { teamId } = dto;
-    const userId = client.data.user?.userId;
+    this.wsEventsTotal.inc({ event: 'joinTeam' });
+    const endTimer = this.wsEventDuration.startTimer({ event: 'joinTeam' });
+    try {
+      const { teamId } = dto;
+      const userId = client.data.user?.userId;
 
-    this.logger.debug(`팀 참가 요청: teamId=${teamId}, userId=${userId}, socketId=${client.id}`);
+      this.logger.debug(`팀 참가 요청: teamId=${teamId}, userId=${userId}, socketId=${client.id}`);
 
-    // 팀 멤버십 검증
-    if (userId) {
-      try {
-        await this.teamService.verifyTeamMemberAccess(teamId, userId);
-      } catch (_error) {
-        this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
-        client.emit(TeamSocketEvents.ERROR, {
-          code: 'FORBIDDEN',
-          message: '해당 팀에 접근 권한이 없습니다.',
-        });
-        return { teamId, room: '' };
-      }
-    }
-
-    const roomName = this.getRoomName(teamId);
-    await client.join(roomName);
-
-    // 온라인 유저에 추가
-    if (userId) {
-      const userName = getDisplayName(client.data.user?.userName, userId);
-
-      const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
-        teamId,
-        userId,
-        userName,
-        client.id,
-      );
-
-      const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
-      if (userInfo) {
-        const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
-
-        // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
-        if (!wasAlreadyOnline) {
-          const payload: UserJoinedPayload = {
-            teamId,
-            userId,
-            userName,
-            connectionCount: userInfo.connectionCount,
-            totalOnlineCount: onlineUsers.length,
-          };
-          // 본인 제외하고 브로드캐스트
-          client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
+      // 팀 멤버십 검증
+      if (userId) {
+        try {
+          await this.teamService.verifyTeamMemberAccess(teamId, userId);
+        } catch (_error) {
+          this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
+          client.emit(TeamSocketEvents.ERROR, {
+            code: 'FORBIDDEN',
+            message: '해당 팀에 접근 권한이 없습니다.',
+          });
+          return { teamId, room: '' };
         }
-
-        // 본인에게는 항상 현재 온라인 유저 목록 전송
-        const onlineUsersPayload: OnlineUsersPayload = {
-          teamId,
-          users: onlineUsers,
-          totalCount: onlineUsers.length,
-        };
-        client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
       }
+
+      const roomName = this.getRoomName(teamId);
+      await client.join(roomName);
+
+      // 온라인 유저에 추가
+      if (userId) {
+        const userName = getDisplayName(client.data.user?.userName, userId);
+
+        const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
+          teamId,
+          userId,
+          userName,
+          client.id,
+        );
+
+        // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
+        this.onlineUserService.trackActiveTeam(teamId);
+
+        const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
+        if (userInfo) {
+          const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
+
+          // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
+          if (!wasAlreadyOnline) {
+            const payload: UserJoinedPayload = {
+              teamId,
+              userId,
+              userName,
+              connectionCount: userInfo.connectionCount,
+              totalOnlineCount: onlineUsers.length,
+            };
+            // 본인 제외하고 브로드캐스트
+            client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
+          }
+
+          // 본인에게는 항상 현재 온라인 유저 목록 전송
+          const onlineUsersPayload: OnlineUsersPayload = {
+            teamId,
+            users: onlineUsers,
+            totalCount: onlineUsers.length,
+          };
+          client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
+        }
+      }
+
+      this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);
+
+      return { teamId, room: roomName };
+    } finally {
+      endTimer();
     }
-
-    this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);
-
-    return { teamId, room: roomName };
   }
 
   /**
@@ -193,24 +212,30 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() dto: LeaveTeamDto,
   ): Promise<LeftTeamPayload> {
-    const { teamId } = dto;
-    const roomName = this.getRoomName(teamId);
+    this.wsEventsTotal.inc({ event: 'leaveTeam' });
+    const endTimer = this.wsEventDuration.startTimer({ event: 'leaveTeam' });
+    try {
+      const { teamId } = dto;
+      const roomName = this.getRoomName(teamId);
 
-    // 온라인 유저에서 제거 및 퇴장 알림
-    // 이미 handleDisconnect에서 처리된 소켓이면 스킵 (중복 알림 방지)
-    const userId = client.data.user?.userId;
-    if (userId && (await this.onlineUserService.isSocketRegistered(client.id))) {
-      const result = await this.onlineUserService.removeSocket(client.id);
-      if (result?.isFullyOffline) {
-        await this.broadcastUserLeftIfOffline(teamId, userId, result.userName);
+      // 온라인 유저에서 제거 및 퇴장 알림
+      // 이미 handleDisconnect에서 처리된 소켓이면 스킵 (중복 알림 방지)
+      const userId = client.data.user?.userId;
+      if (userId && (await this.onlineUserService.isSocketRegistered(client.id))) {
+        const result = await this.onlineUserService.removeSocket(client.id);
+        if (result?.isFullyOffline) {
+          await this.broadcastUserLeftIfOffline(teamId, userId, result.userName);
+        }
       }
+
+      await client.leave(roomName);
+
+      this.logger.log(`팀 퇴장: teamId=${teamId}, socketId=${client.id}`);
+
+      return { teamId, room: roomName };
+    } finally {
+      endTimer();
     }
-
-    await client.leave(roomName);
-
-    this.logger.log(`팀 퇴장: teamId=${teamId}, socketId=${client.id}`);
-
-    return { teamId, room: roomName };
   }
 
   // ===== 이벤트 브로드캐스트 (Server → Client) =====

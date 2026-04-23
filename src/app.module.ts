@@ -32,6 +32,7 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { UsersModule } from './modules/users/users.module';
 import { FishingModule } from './modules/fishing/fishing.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { MetricsAccessMiddleware } from './common/middleware/metrics-access.middleware';
 import databaseConfig from './config/database.config';
 import oracleConfig from './config/oracle.config';
@@ -115,6 +116,7 @@ const logger = new Logger('AppModule');
       path: 'metrics',
       defaultMetrics: { enabled: true },
     }),
+    MetricsModule,
     LoggerModule,
     MainModule,
     AuthModule,
