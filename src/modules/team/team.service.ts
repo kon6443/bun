@@ -574,9 +574,9 @@ export class TeamService {
     // 1. 팀 멤버 권한 확인 (활성화된 멤버만)
     const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
-    // 2. 태스크 존재 여부 확인 (활성 태스크만)
+    // 2. 태스크 존재 여부 확인 (보관함 포함)
     const task = await this.teamTaskRepository.findOne({
-      where: { taskId, teamId, actStatus: ActStatus.ACTIVE },
+      where: { taskId, teamId },
     });
 
     if (!task) {
@@ -646,10 +646,10 @@ export class TeamService {
       throw new TeamTaskBadRequestErrorResponseDto('삭제된 댓글은 수정할 수 없습니다.');
     }
 
-    const [teamTask] = await this.getTeamTasksBy({taskIds: [taskId], teamIds: [teamId], actStatus: [ActStatus.ACTIVE]});
+    const [teamTask] = await this.getTeamTasksBy({taskIds: [taskId], teamIds: [teamId]});
 
     if (!teamTask) {
-      throw new TeamTaskNotFoundErrorResponseDto('활성 태스크를 찾을 수 없습니다.');
+      throw new TeamTaskNotFoundErrorResponseDto();
     }
 
     // 수정 가능한 필드만 업데이트
