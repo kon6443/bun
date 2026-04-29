@@ -4,18 +4,18 @@
  */
 import { ApiProperty } from '@nestjs/swagger';
 import { ApiErrorResponseDto } from '../../common/dto/api-error.dto';
+import { defineDomainError } from '../../common/dto/define-domain-error';
 
 /**
  * 팀을 찾을 수 없음 (404)
+ *
+ * Phase 0 PoC: defineDomainError 팩토리로 마이그레이션
  */
-export class TeamNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_NOT_FOUND', enum: ['TEAM_NOT_FOUND'] })
-  readonly code: string = 'TEAM_NOT_FOUND';
-
-  constructor(message: string = '팀을 찾을 수 없습니다.') {
-    super(404, message, 'TEAM_NOT_FOUND');
-  }
-}
+export const TeamNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_NOT_FOUND',
+  status: 404,
+  message: '팀을 찾을 수 없습니다.',
+});
 
 /**
  * 팀 접근 권한 없음 (403)
