@@ -7,8 +7,13 @@ interface DefineDomainErrorOptions {
   message: string;
 }
 
+interface ThrowOptions {
+  message?: string;
+  details?: unknown;
+}
+
 interface DomainErrorClass {
-  new (message?: string): ApiErrorResponseDto;
+  new (messageOrOptions?: string | ThrowOptions): ApiErrorResponseDto;
   readonly errorCode: string;
   readonly status: number;
   readonly defaultMessage: string;
@@ -33,8 +38,12 @@ export function defineDomainError(options: DefineDomainErrorOptions): DomainErro
     @ApiProperty({ example: defaultMessage })
     declare message: string;
 
-    constructor(message?: string) {
-      super(status, message ?? defaultMessage, code);
+    constructor(messageOrOptions?: string | ThrowOptions) {
+      const opts: ThrowOptions =
+        typeof messageOrOptions === 'string'
+          ? { message: messageOrOptions }
+          : (messageOrOptions ?? {});
+      super(status, opts.message ?? defaultMessage, code, opts.details);
     }
 
     static readonly errorCode = code;
