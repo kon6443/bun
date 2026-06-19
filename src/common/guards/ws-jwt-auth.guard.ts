@@ -21,6 +21,8 @@ type AccessTokenPayload = JwtPayload & {
 export interface AuthenticatedSocket extends Socket {
   data: {
     user?: User;
+    /** joinTeam 시 캐싱되는 팀 ID (채팅 등 후속 이벤트의 room 식별용) */
+    teamId?: number;
   };
 }
 
