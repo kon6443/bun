@@ -51,7 +51,7 @@ import {
   UpdateMemberRoleResponseDto,
   UpdateMemberStatusResponseDto,
 } from './team.dto';
-import { TeamForbiddenErrorResponseDto, TeamDiscordWebhookInvalidErrorResponseDto } from './team-error.dto';
+import { TeamForbiddenErrorResponseDto, TeamDiscordWebhookInvalidErrorResponseDto, TeamNotFoundErrorResponseDto } from './team-error.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../entities/User';
@@ -123,7 +123,7 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamResponseDto })
   @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
   @ApiResponse({ status: 403, description: '팀 멤버만 팀 정보를 수정할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
   @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
   async updateTeam(
     @CurrentUser() user: User,

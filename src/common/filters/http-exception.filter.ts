@@ -48,12 +48,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // 에러 코드 및 메시지 추출
     let code: string;
     let message: string;
+    let details: unknown;
 
     if (exception instanceof ApiErrorResponseDto) {
       // 커스텀 에러 DTO인 경우
       const exceptionResponse = exception.getResponse() as { code: string; message: string };
       code = exceptionResponse.code || exception.getErrorCode();
       message = exceptionResponse.message || exception.message;
+      details = exception.details;
     } else if (exception instanceof HttpException) {
       // 일반 HttpException인 경우
       const exceptionResponse = exception.getResponse();
@@ -71,6 +73,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const errorResponse = {
       code,
       message,
+      ...(details !== undefined ? { details } : {}),
       timestamp: new Date().toISOString(),
     };
 

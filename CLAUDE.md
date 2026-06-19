@@ -28,6 +28,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **Caddyfile**: 서버 직접 관리 (공개 레포 보안 정책, Git 커밋 안 함)
 
 ## Active Work
+- **팀 단위 실시간 채팅**: 백엔드+프론트 구현 완료 (저장 없음, 빌드/타입체크/코드리뷰 통과) — 수동 E2E·배포 대기. `docs/tasks-team-chat.md`
 - **Swarm 스택 마이그레이션**: ✅ 완료 (2026-04-18) — 세부사항 `docs/tasks-swarm-stack-migration.md`
 - **다음**: 모니터링 스택 (`docs/tasks-monitoring.md`) → 로그 중앙 수집 (`docs/tasks-logging.md`)
 
@@ -38,5 +39,6 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md` (구현 완료)
 - NestJS 고도화 Tasks: `docs/tasks-nestjs-improvements.md`
 - Swarm 스택 마이그레이션 Tasks: `docs/tasks-swarm-stack-migration.md` (✅ 완료)
+- 팀 단위 실시간 채팅 Tasks: `docs/tasks-team-chat.md` (구현 완료, E2E·배포 대기)
 - 모니터링(Prometheus+Grafana+node_exporter) Tasks: `docs/tasks-monitoring.md`
 - 로그 중앙 수집(Loki+Promtail) Tasks: `docs/tasks-logging.md`

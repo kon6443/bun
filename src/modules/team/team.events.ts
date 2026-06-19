@@ -9,6 +9,8 @@ export const TeamSocketEvents = {
   JOIN_TEAM: 'joinTeam',
   /** 팀 room 퇴장 */
   LEAVE_TEAM: 'leaveTeam',
+  /** 채팅 메시지 전송 */
+  CHAT_MESSAGE: 'chatMessage',
 
   // ===== Server → Client 이벤트 =====
   /** 태스크 생성 알림 */
@@ -43,6 +45,10 @@ export const TeamSocketEvents = {
   MEMBER_ROLE_CHANGED: 'memberRoleChanged',
   /** 멤버 상태 변경 알림 */
   MEMBER_STATUS_CHANGED: 'memberStatusChanged',
+
+  // ===== 채팅 이벤트 =====
+  /** 채팅 메시지 수신 */
+  CHAT_RECEIVED: 'chatReceived',
 
   // ===== 공통 이벤트 =====
   /** room 참가 성공 응답 */
@@ -238,4 +244,33 @@ export interface MemberStatusChangedPayload {
   previousStatus: number;
   newStatus: number;
   changedBy: number;
+}
+
+// ===== 채팅 관련 타입 =====
+
+/**
+ * 채팅 메시지 전송 페이로드 (Client → Server)
+ *
+ * teamId는 보내지 않음 — 서버가 소켓에 캐싱된 teamId로 room을 식별한다.
+ * clientMsgId는 클라이언트가 생성한 메시지 식별자로, 낙관적 업데이트 및
+ * 추후 저장 도입 시 중복 제거(dedup) 키로 사용한다.
+ */
+export interface ChatMessagePayload {
+  message: string;
+  clientMsgId: string;
+}
+
+/**
+ * 채팅 메시지 수신 페이로드 (Server → Client)
+ *
+ * messageId는 현재 clientMsgId를 그대로 에코한다.
+ * 추후 DB 저장 도입 시 서버가 발급한 영속 ID로 교체될 수 있다.
+ */
+export interface ChatReceivedPayload {
+  messageId: string;
+  teamId: number;
+  userId: number;
+  userName: string;
+  message: string;
+  timestamp: string;
 }
