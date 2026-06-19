@@ -19,7 +19,7 @@ import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamService } from './team.service';
 import { OnlineUserService } from './online-user.service';
-import { JoinTeamDto, LeaveTeamDto } from './team.gateway.dto';
+import { JoinTeamDto, LeaveTeamDto, ChatMessageDto } from './team.gateway.dto';
 import {
   TeamSocketEvents,
   TaskCreatedPayload,
@@ -37,6 +37,7 @@ import {
   OnlineUsersPayload,
   MemberRoleChangedPayload,
   MemberStatusChangedPayload,
+  ChatReceivedPayload,
 } from './team.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
@@ -151,6 +152,9 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const roomName = this.getRoomName(teamId);
       await client.join(roomName);
 
+      // 채팅 등 후속 이벤트의 room 식별을 위해 teamId 캐싱
+      client.data.teamId = teamId;
+
       // 온라인 유저에 추가
       if (userId) {
         const userName = getDisplayName(client.data.user?.userName, userId);
@@ -230,9 +234,65 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       await client.leave(roomName);
 
+      // 캐싱된 teamId 정리 (퇴장한 팀의 채팅이 계속 전송되는 것 방지)
+      if (client.data.teamId === teamId) {
+        client.data.teamId = undefined;
+      }
+
       this.logger.log(`팀 퇴장: teamId=${teamId}, socketId=${client.id}`);
 
       return { teamId, room: roomName };
+    } finally {
+      endTimer();
+    }
+  }
+
+  // ===== 채팅 (Client → Server) =====
+
+  /**
+   * 채팅 메시지 수신 → 같은 팀 room에 브로드캐스트 (저장 없음)
+   *
+   * - teamId는 joinTeam 시 소켓에 캐싱된 값을 사용 (room 미참여자 차단)
+   * - 본인 포함 브로드캐스트(server.to) → 프론트에서 self-filtering
+   * - timestamp는 서버에서 생성 (클라이언트 시계 불신)
+   */
+  @UseGuards(WsJwtGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage(TeamSocketEvents.CHAT_MESSAGE)
+  async handleChatMessage(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() dto: ChatMessageDto,
+  ): Promise<void> {
+    this.wsEventsTotal.inc({ event: 'chatMessage' });
+    const endTimer = this.wsEventDuration.startTimer({ event: 'chatMessage' });
+    try {
+      const teamId = client.data.teamId;
+      const user = client.data.user;
+
+      // 팀 room에 참가하지 않았거나 인증 정보가 없으면 에러 응답 (침묵 실패 방지)
+      if (!teamId || !user) {
+        this.logger.warn(`채팅 거부: 팀 미참여 소켓 socketId=${client.id}`);
+        client.emit(TeamSocketEvents.ERROR, {
+          code: 'CHAT_NOT_JOINED',
+          message: '채팅을 보내려면 먼저 팀에 참가해야 합니다.',
+        });
+        return;
+      }
+
+      const userId = user.userId;
+      const userName = getDisplayName(user.userName, userId);
+
+      const payload: ChatReceivedPayload = {
+        messageId: dto.clientMsgId,
+        teamId,
+        userId,
+        userName,
+        message: dto.message,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.CHAT_RECEIVED, payload);
+      this.logger.debug(`채팅 브로드캐스트: teamId=${teamId}, userId=${userId}`);
     } finally {
       endTimer();
     }
