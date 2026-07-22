@@ -6,6 +6,11 @@ import { Team } from '../../entities/Team';
 import { TelegramLink } from '../../entities/TelegramLink';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { NotificationTeamInfo } from '../../common/port/notification.port';
+import { TeamNotFoundErrorResponseDto } from '../../common/dto/api-error.dto';
+import {
+  NotificationTelegramConfigErrorResponseDto,
+  NotificationTelegramUnlinkErrorResponseDto,
+} from './notification-error.dto';
 import { randomBytes } from 'crypto';
 
 /**
@@ -211,7 +216,9 @@ export class TelegramService {
    */
   getDeepLink(token: string): string {
     if (!this.botUsername) {
-      throw new Error('BOT_USERNAME_TELEGRAM 환경변수가 설정되지 않았습니다.');
+      // 구체 원인은 서버 로그에만 남기고 클라이언트에는 일반 메시지 응답
+      this.logger.error('BOT_USERNAME_TELEGRAM 환경변수가 설정되지 않았습니다.');
+      throw new NotificationTelegramConfigErrorResponseDto();
     }
     return `https://t.me/${this.botUsername}?startgroup=${token}`;
   }
@@ -366,7 +373,7 @@ export class TelegramService {
     });
 
     if (!team) {
-      throw new Error('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     // 이미 연동된 경우
@@ -416,7 +423,7 @@ export class TelegramService {
     });
 
     if (!team) {
-      throw new Error('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     // // chatId 제거
@@ -439,7 +446,7 @@ export class TelegramService {
         ]);
       });
     } catch (_err) {
-      throw new Error('연동 해제 처리 중 오류가 발생했습니다.');
+      throw new NotificationTelegramUnlinkErrorResponseDto();
     }
     this.logger.log(`팀 연동 해제. teamId: ${teamId}`);
   }

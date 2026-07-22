@@ -5,10 +5,6 @@ import {
   Query,
   Headers,
   Res,
-  UnauthorizedException,
-  ForbiddenException,
-  NotFoundException,
-  BadRequestException,
   Inject,
   Logger,
 } from '@nestjs/common';
@@ -17,6 +13,12 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiHeader, ApiParam } fro
 import { Response } from 'express';
 import { FileShareService } from './file-share.service';
 import { FileListResponseDto } from './file-share.dto';
+import {
+  FileShareUnauthorizedErrorResponseDto,
+  FileShareForbiddenErrorResponseDto,
+  FileShareFileNotFoundErrorResponseDto,
+  FileShareInvalidFileTypeErrorResponseDto,
+} from './file-share-error.dto';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -54,7 +56,7 @@ export class FileShareController {
   @ApiHeader({ name: 'x-share-id', required: false })
   @ApiHeader({ name: 'x-api-key', required: false })
   @ApiResponse({ status: 200, description: '성공', type: FileListResponseDto })
-  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 401, description: '인증 실패', type: FileShareUnauthorizedErrorResponseDto })
   async getFiles(
     @Query('shareId') shareId?: string,
     @Query('apiKey') apiKey?: string,
@@ -65,17 +67,17 @@ export class FileShareController {
     const finalApiKey = apiKey || headerApiKey;
 
     if (!finalShareId) {
-      throw new UnauthorizedException('인증이 필요합니다. shareId를 제공해주세요.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증이 필요합니다. shareId를 제공해주세요.');
     }
 
     if (!finalApiKey) {
-      throw new UnauthorizedException('인증이 필요합니다. API key를 제공해주세요.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증이 필요합니다. API key를 제공해주세요.');
     }
 
     const isValid = await this.fileShareService.validateShareIdAndApiKey(finalShareId, finalApiKey);
 
     if (!isValid) {
-      throw new UnauthorizedException('인증 실패. shareId와 API key가 일치하지 않습니다.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증 실패. shareId와 API key가 일치하지 않습니다.');
     }
 
     // 디렉토리 생성 시도
@@ -128,9 +130,10 @@ export class FileShareController {
   @ApiHeader({ name: 'x-share-id', required: false })
   @ApiHeader({ name: 'x-api-key', required: false })
   @ApiResponse({ status: 200, description: '성공' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '접근 거부' })
-  @ApiResponse({ status: 404, description: '파일을 찾을 수 없음' })
+  @ApiResponse({ status: 400, description: '파일 형식 오류', type: FileShareInvalidFileTypeErrorResponseDto })
+  @ApiResponse({ status: 401, description: '인증 실패', type: FileShareUnauthorizedErrorResponseDto })
+  @ApiResponse({ status: 403, description: '접근 거부', type: FileShareForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '파일을 찾을 수 없음', type: FileShareFileNotFoundErrorResponseDto })
   async downloadFile(
     @Param('filename') filename: string,
     @Res() res: Response,
@@ -143,17 +146,17 @@ export class FileShareController {
     const finalApiKey = apiKey || headerApiKey;
 
     if (!finalShareId) {
-      throw new UnauthorizedException('인증이 필요합니다. shareId를 제공해주세요.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증이 필요합니다. shareId를 제공해주세요.');
     }
 
     if (!finalApiKey) {
-      throw new UnauthorizedException('인증이 필요합니다. API key를 제공해주세요.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증이 필요합니다. API key를 제공해주세요.');
     }
 
     const isValid = await this.fileShareService.validateShareIdAndApiKey(finalShareId, finalApiKey);
 
     if (!isValid) {
-      throw new UnauthorizedException('인증 실패. shareId와 API key가 일치하지 않습니다.');
+      throw new FileShareUnauthorizedErrorResponseDto('인증 실패. shareId와 API key가 일치하지 않습니다.');
     }
 
     // 디렉토리 생성 시도
@@ -162,7 +165,7 @@ export class FileShareController {
     // 경로 탐색 공격 방지
     const safeFilename = path.basename(filename);
     if (safeFilename !== filename || filename.includes('..')) {
-      throw new ForbiddenException('접근이 거부되었습니다.');
+      throw new FileShareForbiddenErrorResponseDto();
     }
 
     const shareDir = path.join(this.sharedBaseDir, finalShareId);
@@ -173,17 +176,17 @@ export class FileShareController {
     const resolvedShareDir = path.resolve(shareDir);
 
     if (!resolvedFilePath.startsWith(resolvedShareDir)) {
-      throw new ForbiddenException('접근이 거부되었습니다.');
+      throw new FileShareForbiddenErrorResponseDto();
     }
 
     // 파일 존재 확인
     if (!fs.existsSync(filePath)) {
-      throw new NotFoundException('파일을 찾을 수 없습니다.');
+      throw new FileShareFileNotFoundErrorResponseDto();
     }
 
     const stats = fs.statSync(filePath);
     if (!stats.isFile()) {
-      throw new BadRequestException('파일이 아닙니다.');
+      throw new FileShareInvalidFileTypeErrorResponseDto();
     }
 
     // 파일 스트리밍으로 전송

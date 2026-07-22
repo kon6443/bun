@@ -32,8 +32,9 @@ export class WsExceptionFilter extends BaseWsExceptionFilter {
     const client = host.switchToWs().getClient<Socket>();
     const errorResponse = this.createErrorResponse(exception);
 
+    // 로그에는 원본 메시지 유지 (응답 메시지는 마스킹될 수 있음)
     this.logger.error(
-      `WebSocket Error [${client.id}]: ${errorResponse.message}`,
+      `WebSocket Error [${client.id}]: ${exception instanceof Error ? exception.message : errorResponse.message}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 
@@ -66,11 +67,11 @@ export class WsExceptionFilter extends BaseWsExceptionFilter {
       }
     }
 
-    // 일반 Error인 경우
+    // 일반 Error인 경우 — 내부 메시지 노출 방지 (HTTP 필터와 동일 정책)
     if (exception instanceof Error) {
       return {
         code: 'WS_ERROR',
-        message: exception.message,
+        message: '서버 내부 오류가 발생했습니다.',
         timestamp,
       };
     }

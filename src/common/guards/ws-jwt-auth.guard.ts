@@ -50,7 +50,7 @@ export class WsJwtGuard implements CanActivate {
 
     if (!token) {
       this.logger.warn(`인증 토큰 없음: ${client.id}`);
-      throw new WsException('인증 토큰이 필요합니다.');
+      throw new WsException({ code: 'AUTH_UNAUTHORIZED', message: '인증 토큰이 필요합니다.' });
     }
 
     const payload = this.verifyToken(token);
@@ -61,7 +61,7 @@ export class WsJwtGuard implements CanActivate {
 
     if (!user) {
       this.logger.warn(`사용자 없음: userId=${payload.sub}`);
-      throw new WsException('사용자를 찾을 수 없습니다.');
+      throw new WsException({ code: 'AUTH_UNAUTHORIZED', message: '사용자를 찾을 수 없습니다.' });
     }
 
     // client.data에 user 정보 저장 (이후 Gateway에서 사용)
@@ -96,20 +96,20 @@ export class WsJwtGuard implements CanActivate {
   private verifyToken(token: string): AccessTokenPayload {
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new WsException('서버 설정 오류: JWT_SECRET이 없습니다.');
+      throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '서버 설정 오류: JWT_SECRET이 없습니다.' });
     }
 
     try {
       const payload = verify(token, secret) as AccessTokenPayload;
       if (!payload?.sub) {
-        throw new WsException('유효하지 않은 토큰입니다.');
+        throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '유효하지 않은 토큰입니다.' });
       }
       return payload;
     } catch (error) {
       if (error instanceof WsException) {
         throw error;
       }
-      throw new WsException('토큰 검증에 실패했습니다.');
+      throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '토큰 검증에 실패했습니다.' });
     }
   }
 }
