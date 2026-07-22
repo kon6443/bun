@@ -2,7 +2,7 @@
 
 > 작성일: 2026-04-28 · 최종 갱신: 2026-07-22 (Phase 2~4 구현 + QA 리뷰 2회 통과)
 > 브랜치: `feat-onam`
-> 상태: **구현·검증 완료, 커밋 대기** — 잔여: ① Phase별 커밋 4개, ② 인증 필요한 수동 E2E 2건(팀 미존재 404 / 유효 토큰 WS의 FORBIDDEN·CHAT_NOT_JOINED), ③ blog-api-throttling.md 429 서술 정정(후속). 하단 Results 참조
+> 상태: **구현·검증·커밋 완료 (커밋 `73adc28` Phase 2 / `61de433` Phase 3 / `cb35d3f` Phase 4 / `8b678c4` docs)** — 잔여: ① 인증 필요한 수동 E2E 2건(팀 미존재 404 / 유효 토큰 WS의 FORBIDDEN·CHAT_NOT_JOINED), ② blog-api-throttling.md 429 서술 정정(후속). 하단 Results 참조
 > 참고 구현: `../mobisell/mobisell-back` (NestJS 4.0 현행 — 패턴만 차용, 도메인 코드는 우리 프로젝트 기준으로 재정의)
 > 연관 파일: `src/common/dto/api-error.dto.ts`, `src/common/filters/http-exception.filter.ts`, `src/modules/*/[*-]error.dto.ts`
 
