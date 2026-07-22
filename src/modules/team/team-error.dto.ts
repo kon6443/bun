@@ -1,222 +1,134 @@
 /**
  * Team Module Error DTOs
  * Separated from team.dto.ts to avoid circular dependency
+ *
+ * defineDomainError 팩토리로 정의 — 클래스명은 code에서 자동 생성되며
+ * 기존 수동 클래스와 동일 (예: TEAM_FORBIDDEN → TeamForbiddenErrorResponseDto)
  */
-import { ApiProperty } from '@nestjs/swagger';
-import { ApiErrorResponseDto } from '../../common/dto/api-error.dto';
 import { defineDomainError } from '../../common/dto/define-domain-error';
 
 /**
  * 팀을 찾을 수 없음 (404)
- *
- * Phase 0 PoC: defineDomainError 팩토리로 마이그레이션
+ * notification 모듈도 사용하므로 공통(src/common/dto/api-error.dto.ts)으로 승격 (D3).
+ * 기존 import 경로 호환을 위해 re-export.
  */
-export const TeamNotFoundErrorResponseDto = defineDomainError({
-  code: 'TEAM_NOT_FOUND',
-  status: 404,
-  message: '팀을 찾을 수 없습니다.',
+export { TeamNotFoundErrorResponseDto } from '../../common/dto/api-error.dto';
+
+/** 팀 접근 권한 없음 (403) */
+export const TeamForbiddenErrorResponseDto = defineDomainError({
+  code: 'TEAM_FORBIDDEN',
+  status: 403,
+  message: '팀에 접근할 권한이 없습니다.',
 });
 
-/**
- * 팀 접근 권한 없음 (403)
- */
-export class TeamForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_FORBIDDEN', enum: ['TEAM_FORBIDDEN'] })
-  readonly code: string = 'TEAM_FORBIDDEN';
+/** 태스크를 찾을 수 없음 (404) */
+export const TeamTaskNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_TASK_NOT_FOUND',
+  status: 404,
+  message: '태스크를 찾을 수 없습니다.',
+});
 
-  constructor(message: string = '팀에 접근할 권한이 없습니다.') {
-    super(403, message, 'TEAM_FORBIDDEN');
-  }
-}
+/** 태스크 요청 오류 (400) */
+export const TeamTaskBadRequestErrorResponseDto = defineDomainError({
+  code: 'TEAM_TASK_BAD_REQUEST',
+  status: 400,
+  message: '태스크 요청이 올바르지 않습니다.',
+});
 
-/**
- * 태스크를 찾을 수 없음 (404)
- */
-export class TeamTaskNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_TASK_NOT_FOUND', enum: ['TEAM_TASK_NOT_FOUND'] })
-  readonly code: string = 'TEAM_TASK_NOT_FOUND';
+/** 댓글을 찾을 수 없음 (404) */
+export const TeamCommentNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_COMMENT_NOT_FOUND',
+  status: 404,
+  message: '댓글을 찾을 수 없습니다.',
+});
 
-  constructor(message: string = '태스크를 찾을 수 없습니다.') {
-    super(404, message, 'TEAM_TASK_NOT_FOUND');
-  }
-}
+/** 댓글 권한 없음 (403) */
+export const TeamCommentForbiddenErrorResponseDto = defineDomainError({
+  code: 'TEAM_COMMENT_FORBIDDEN',
+  status: 403,
+  message: '댓글에 접근할 권한이 없습니다.',
+});
 
-/**
- * 태스크 요청 오류 (400)
- */
-export class TeamTaskBadRequestErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_TASK_BAD_REQUEST', enum: ['TEAM_TASK_BAD_REQUEST'] })
-  readonly code: string = 'TEAM_TASK_BAD_REQUEST';
+/** 초대를 찾을 수 없음 (404) */
+export const TeamInviteNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_INVITE_NOT_FOUND',
+  status: 404,
+  message: '초대 링크를 찾을 수 없습니다.',
+});
 
-  constructor(message: string = '태스크 요청이 올바르지 않습니다.') {
-    super(400, message, 'TEAM_TASK_BAD_REQUEST');
-  }
-}
+/** 초대 만료됨 (400) */
+export const TeamInviteExpiredErrorResponseDto = defineDomainError({
+  code: 'TEAM_INVITE_EXPIRED',
+  status: 400,
+  message: '만료된 초대 링크입니다.',
+});
 
-/**
- * 댓글을 찾을 수 없음 (404)
- */
-export class TeamCommentNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_COMMENT_NOT_FOUND', enum: ['TEAM_COMMENT_NOT_FOUND'] })
-  readonly code: string = 'TEAM_COMMENT_NOT_FOUND';
+/** 초대 권한 없음 (403) */
+export const TeamInviteForbiddenErrorResponseDto = defineDomainError({
+  code: 'TEAM_INVITE_FORBIDDEN',
+  status: 403,
+  message: '초대 링크를 생성할 권한이 없습니다.',
+});
 
-  constructor(message: string = '댓글을 찾을 수 없습니다.') {
-    super(404, message, 'TEAM_COMMENT_NOT_FOUND');
-  }
-}
+/** 이미 팀 멤버임 (400) */
+export const TeamMemberAlreadyExistsErrorResponseDto = defineDomainError({
+  code: 'TEAM_MEMBER_ALREADY_EXISTS',
+  status: 400,
+  message: '이미 팀 멤버입니다.',
+});
 
-/**
- * 댓글 권한 없음 (403)
- */
-export class TeamCommentForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_COMMENT_FORBIDDEN', enum: ['TEAM_COMMENT_FORBIDDEN'] })
-  readonly code: string = 'TEAM_COMMENT_FORBIDDEN';
+/** 팀 멤버를 찾을 수 없음 (404) */
+export const TeamMemberNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_MEMBER_NOT_FOUND',
+  status: 404,
+  message: '팀 멤버를 찾을 수 없습니다.',
+});
 
-  constructor(message: string = '댓글에 접근할 권한이 없습니다.') {
-    super(403, message, 'TEAM_COMMENT_FORBIDDEN');
-  }
-}
+/** 역할 변경 권한 없음 (403) */
+export const TeamRoleChangeForbiddenErrorResponseDto = defineDomainError({
+  code: 'TEAM_ROLE_CHANGE_FORBIDDEN',
+  status: 403,
+  message: '역할을 변경할 권한이 없습니다.',
+});
 
-/**
- * 초대를 찾을 수 없음 (404)
- */
-export class TeamInviteNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_INVITE_NOT_FOUND', enum: ['TEAM_INVITE_NOT_FOUND'] })
-  readonly code: string = 'TEAM_INVITE_NOT_FOUND';
+/** 잘못된 역할 요청 (400) */
+export const TeamInvalidRoleErrorResponseDto = defineDomainError({
+  code: 'TEAM_INVALID_ROLE',
+  status: 400,
+  message: '유효하지 않은 역할입니다.',
+});
 
-  constructor(message: string = '초대 링크를 찾을 수 없습니다.') {
-    super(404, message, 'TEAM_INVITE_NOT_FOUND');
-  }
-}
+/** 본인 역할 변경 불가 (400) */
+export const TeamSelfRoleChangeErrorResponseDto = defineDomainError({
+  code: 'TEAM_SELF_ROLE_CHANGE',
+  status: 400,
+  message: '본인의 역할은 변경할 수 없습니다.',
+});
 
-/**
- * 초대 만료됨 (400)
- */
-export class TeamInviteExpiredErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_INVITE_EXPIRED', enum: ['TEAM_INVITE_EXPIRED'] })
-  readonly code: string = 'TEAM_INVITE_EXPIRED';
+/** 멤버 상태 변경 권한 없음 (403) */
+export const TeamMemberStatusChangeForbiddenErrorResponseDto = defineDomainError({
+  code: 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN',
+  status: 403,
+  message: '멤버 상태를 변경할 권한이 없습니다.',
+});
 
-  constructor(message: string = '만료된 초대 링크입니다.') {
-    super(400, message, 'TEAM_INVITE_EXPIRED');
-  }
-}
+/** 본인 상태 변경 불가 (400) */
+export const TeamSelfStatusChangeErrorResponseDto = defineDomainError({
+  code: 'TEAM_SELF_STATUS_CHANGE',
+  status: 400,
+  message: '본인의 상태는 변경할 수 없습니다.',
+});
 
-/**
- * 초대 권한 없음 (403)
- */
-export class TeamInviteForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_INVITE_FORBIDDEN', enum: ['TEAM_INVITE_FORBIDDEN'] })
-  readonly code: string = 'TEAM_INVITE_FORBIDDEN';
+/** 마스터 상태 변경 불가 (400) */
+export const TeamMasterStatusChangeErrorResponseDto = defineDomainError({
+  code: 'TEAM_MASTER_STATUS_CHANGE',
+  status: 400,
+  message: '마스터의 상태는 변경할 수 없습니다.',
+});
 
-  constructor(message: string = '초대 링크를 생성할 권한이 없습니다.') {
-    super(403, message, 'TEAM_INVITE_FORBIDDEN');
-  }
-}
-
-/**
- * 이미 팀 멤버임 (400)
- */
-export class TeamMemberAlreadyExistsErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_MEMBER_ALREADY_EXISTS', enum: ['TEAM_MEMBER_ALREADY_EXISTS'] })
-  readonly code: string = 'TEAM_MEMBER_ALREADY_EXISTS';
-
-  constructor(message: string = '이미 팀 멤버입니다.') {
-    super(400, message, 'TEAM_MEMBER_ALREADY_EXISTS');
-  }
-}
-
-/**
- * 팀 멤버를 찾을 수 없음 (404)
- */
-export class TeamMemberNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_MEMBER_NOT_FOUND', enum: ['TEAM_MEMBER_NOT_FOUND'] })
-  readonly code: string = 'TEAM_MEMBER_NOT_FOUND';
-
-  constructor(message: string = '팀 멤버를 찾을 수 없습니다.') {
-    super(404, message, 'TEAM_MEMBER_NOT_FOUND');
-  }
-}
-
-/**
- * 역할 변경 권한 없음 (403)
- */
-export class TeamRoleChangeForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_ROLE_CHANGE_FORBIDDEN', enum: ['TEAM_ROLE_CHANGE_FORBIDDEN'] })
-  readonly code: string = 'TEAM_ROLE_CHANGE_FORBIDDEN';
-
-  constructor(message: string = '역할을 변경할 권한이 없습니다.') {
-    super(403, message, 'TEAM_ROLE_CHANGE_FORBIDDEN');
-  }
-}
-
-/**
- * 잘못된 역할 요청 (400)
- */
-export class TeamInvalidRoleErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_INVALID_ROLE', enum: ['TEAM_INVALID_ROLE'] })
-  readonly code: string = 'TEAM_INVALID_ROLE';
-
-  constructor(message: string = '유효하지 않은 역할입니다.') {
-    super(400, message, 'TEAM_INVALID_ROLE');
-  }
-}
-
-/**
- * 본인 역할 변경 불가 (400)
- */
-export class TeamSelfRoleChangeErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_SELF_ROLE_CHANGE', enum: ['TEAM_SELF_ROLE_CHANGE'] })
-  readonly code: string = 'TEAM_SELF_ROLE_CHANGE';
-
-  constructor(message: string = '본인의 역할은 변경할 수 없습니다.') {
-    super(400, message, 'TEAM_SELF_ROLE_CHANGE');
-  }
-}
-
-/**
- * 멤버 상태 변경 권한 없음 (403)
- */
-export class TeamMemberStatusChangeForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN', enum: ['TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN'] })
-  readonly code: string = 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN';
-
-  constructor(message: string = '멤버 상태를 변경할 권한이 없습니다.') {
-    super(403, message, 'TEAM_MEMBER_STATUS_CHANGE_FORBIDDEN');
-  }
-}
-
-/**
- * 본인 상태 변경 불가 (400)
- */
-export class TeamSelfStatusChangeErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_SELF_STATUS_CHANGE', enum: ['TEAM_SELF_STATUS_CHANGE'] })
-  readonly code: string = 'TEAM_SELF_STATUS_CHANGE';
-
-  constructor(message: string = '본인의 상태는 변경할 수 없습니다.') {
-    super(400, message, 'TEAM_SELF_STATUS_CHANGE');
-  }
-}
-
-/**
- * 마스터 상태 변경 불가 (400)
- */
-export class TeamMasterStatusChangeErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_MASTER_STATUS_CHANGE', enum: ['TEAM_MASTER_STATUS_CHANGE'] })
-  readonly code: string = 'TEAM_MASTER_STATUS_CHANGE';
-
-  constructor(message: string = '마스터의 상태는 변경할 수 없습니다.') {
-    super(400, message, 'TEAM_MASTER_STATUS_CHANGE');
-  }
-}
-
-/**
- * 디스코드 Webhook URL 유효성 검증 실패 (400)
- */
-export class TeamDiscordWebhookInvalidErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'TEAM_DISCORD_WEBHOOK_INVALID', enum: ['TEAM_DISCORD_WEBHOOK_INVALID'] })
-  readonly code: string = 'TEAM_DISCORD_WEBHOOK_INVALID';
-
-  constructor(message: string = '유효하지 않은 디스코드 Webhook URL입니다.') {
-    super(400, message, 'TEAM_DISCORD_WEBHOOK_INVALID');
-  }
-}
+/** 디스코드 Webhook URL 유효성 검증 실패 (400) */
+export const TeamDiscordWebhookInvalidErrorResponseDto = defineDomainError({
+  code: 'TEAM_DISCORD_WEBHOOK_INVALID',
+  status: 400,
+  message: '유효하지 않은 디스코드 Webhook URL입니다.',
+});

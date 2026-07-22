@@ -1,42 +1,29 @@
 /**
  * Auth Module Error DTOs
  * Separated from auth.dto.ts to avoid circular dependency
+ *
+ * defineDomainError 팩토리로 정의 — 클래스명은 code에서 자동 생성되며
+ * 기존 수동 클래스와 동일 (예: AUTH_UNAUTHORIZED → AuthUnauthorizedErrorResponseDto)
  */
-import { ApiProperty } from '@nestjs/swagger';
-import { ApiErrorResponseDto } from '../../common/dto/api-error.dto';
+import { defineDomainError } from '../../common/dto/define-domain-error';
 
-/**
- * 인증 실패 에러 (401)
- */
-export class AuthUnauthorizedErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'AUTH_UNAUTHORIZED', enum: ['AUTH_UNAUTHORIZED'] })
-  readonly code: string = 'AUTH_UNAUTHORIZED';
+/** 인증 실패 에러 (401) */
+export const AuthUnauthorizedErrorResponseDto = defineDomainError({
+  code: 'AUTH_UNAUTHORIZED',
+  status: 401,
+  message: '인증이 필요합니다.',
+});
 
-  constructor(message: string = '인증이 필요합니다.') {
-    super(401, message, 'AUTH_UNAUTHORIZED');
-  }
-}
+/** 유효하지 않은 토큰 에러 (401) */
+export const AuthInvalidTokenErrorResponseDto = defineDomainError({
+  code: 'AUTH_INVALID_TOKEN',
+  status: 401,
+  message: '유효하지 않은 토큰입니다.',
+});
 
-/**
- * 유효하지 않은 토큰 에러 (401)
- */
-export class AuthInvalidTokenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'AUTH_INVALID_TOKEN', enum: ['AUTH_INVALID_TOKEN'] })
-  readonly code: string = 'AUTH_INVALID_TOKEN';
-
-  constructor(message: string = '유효하지 않은 토큰입니다.') {
-    super(401, message, 'AUTH_INVALID_TOKEN');
-  }
-}
-
-/**
- * 카카오 API 오류 (502)
- */
-export class AuthKakaoApiErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'AUTH_KAKAO_API_ERROR', enum: ['AUTH_KAKAO_API_ERROR'] })
-  readonly code: string = 'AUTH_KAKAO_API_ERROR';
-
-  constructor(message: string = '카카오 인증에 실패했습니다.') {
-    super(502, message, 'AUTH_KAKAO_API_ERROR');
-  }
-}
+/** 카카오 API 오류 (502) */
+export const AuthKakaoApiErrorResponseDto = defineDomainError({
+  code: 'AUTH_KAKAO_API_ERROR',
+  status: 502,
+  message: '카카오 인증에 실패했습니다.',
+});
