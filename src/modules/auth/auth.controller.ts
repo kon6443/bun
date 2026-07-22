@@ -2,8 +2,17 @@ import { Controller, Post, Body, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE_AUTH_SHORT, THROTTLE_AUTH_LONG } from '../../common/constants/throttle.constants';
+import {
+  ApiCommonValidationResponse,
+  ApiThrottledResponse,
+  ApiCommonInternalServerErrorResponse,
+} from '../../common/decorators/api-error-response.decorator';
 import { AuthService } from './auth.service';
 import { KakaoSignInUpDto, KakaoSignInUpResponseDto } from './auth.dto';
+import {
+  AuthUnauthorizedErrorResponseDto,
+  AuthKakaoApiErrorResponseDto,
+} from './auth-error.dto';
 
 @ApiTags('auth')
 @ApiCookieAuth('cookieAuth')
@@ -17,11 +26,11 @@ export class AuthController {
   // @ApiResponse는 Swagger 문서화용입니다. 실제 HTTP 상태 코드를 변경하지 않습니다.
   // 실제 상태 코드는 @HttpCode() 데코레이터나 return 값으로 결정됩니다.
   @ApiResponse({ status: 200, description: '성공 (기존 사용자 로그인 또는 신규 사용자 회원가입)', type: KakaoSignInUpResponseDto })
-  @ApiResponse({ status: 400, description: '나쁜 요청' })
-  @ApiResponse({ status: 401, description: '유효하지 않은 앱키나 토큰으로 요청' })
-  @ApiResponse({ status: 404, description: '해당 자원을 찾을 수 없음' })
-  @ApiResponse({ status: 429, description: '요청 횟수 초과 (초당 2회 / 분당 10회)' })
-  @ApiResponse({ status: 500, description: '내부 서버 오류' })
+  @ApiResponse({ status: 401, description: '카카오 액세스 토큰 누락 또는 JWT 설정 오류', type: AuthUnauthorizedErrorResponseDto })
+  @ApiCommonValidationResponse()
+  @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 10회)')
+  @ApiCommonInternalServerErrorResponse('내부 서버 오류')
+  @ApiResponse({ status: 502, description: '카카오 인증 실패', type: AuthKakaoApiErrorResponseDto })
   async postKakaoSignInUp(@Body() kakaoUserSign: KakaoSignInUpDto) {
     const { userId, userName, loginType, accessToken } = await this.authService.postKakaoSignInUp({
       kakaoUserSign,
