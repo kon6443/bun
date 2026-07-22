@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { TelegramService, TelegramUpdate } from './telegram.service';
 import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.dto';
+import { ApiCommonInternalServerErrorResponse } from '../../common/decorators/api-error-response.decorator';
 
 @ApiTags('telegram')
 @SkipThrottle() // 텔레그램 Bot API에서 호출 — 스로틀링 제외
@@ -25,7 +26,7 @@ export class TelegramController {
   @ApiOperation({ summary: '텔레그램 Webhook 수신' })
   @ApiBody({ type: TelegramWebhookDto })
   @ApiResponse({ status: 200, description: '처리 완료', type: TelegramWebhookResponseDto })
-  @ApiResponse({ status: 500, description: '서버 오류' })
+  @ApiCommonInternalServerErrorResponse('서버 오류')
   async handleWebhook(@Body() update: TelegramUpdate): Promise<TelegramWebhookResponseDto> {
     try {
       const result = await this.telegramService.handleWebhook(update);

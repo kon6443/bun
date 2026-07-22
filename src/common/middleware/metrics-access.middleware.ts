@@ -1,10 +1,6 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NestMiddleware,
-} from '@nestjs/common';
+import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { ApiForbiddenErrorResponseDto } from '../dto/api-error.dto';
 
 /**
  * /metrics 엔드포인트 접근 제한 미들웨어 (3중 방어의 2~3번째).
@@ -41,7 +37,7 @@ export class MetricsAccessMiddleware implements NestMiddleware {
       this.logger.warn(
         `metrics access denied (proxy headers): xff=${this.formatHeader(xff)} xRealIp=${this.formatHeader(xRealIp)} remoteIp=${req.socket.remoteAddress ?? '-'}`,
       );
-      throw new ForbiddenException('Forbidden');
+      throw new ApiForbiddenErrorResponseDto('Forbidden');
     }
 
     const remoteIp = req.socket.remoteAddress ?? '';
@@ -50,7 +46,7 @@ export class MetricsAccessMiddleware implements NestMiddleware {
       this.logger.warn(
         `metrics access denied (remote ip not allowed): remoteIp=${remoteIp || '-'} userAgent=${this.formatHeader(req.headers['user-agent'])}`,
       );
-      throw new ForbiddenException('Forbidden');
+      throw new ApiForbiddenErrorResponseDto('Forbidden');
     }
 
     next();

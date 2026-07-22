@@ -1,54 +1,43 @@
 /**
  * Notification Module Error DTOs
  * Separated from notification.dto.ts to avoid circular dependency
+ *
+ * defineDomainError 팩토리로 정의 — 클래스명은 code에서 자동 생성되며
+ * 기존 수동 클래스와 동일
  */
-import { ApiProperty } from '@nestjs/swagger';
-import { ApiErrorResponseDto } from '../../common/dto/api-error.dto';
+import { defineDomainError } from '../../common/dto/define-domain-error';
 
-/**
- * 텔레그램 설정 오류 (500)
- */
-export class NotificationTelegramConfigErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'NOTIFICATION_TELEGRAM_CONFIG_ERROR', enum: ['NOTIFICATION_TELEGRAM_CONFIG_ERROR'] })
-  readonly code: string = 'NOTIFICATION_TELEGRAM_CONFIG_ERROR';
+/** 텔레그램 설정 오류 (500) */
+export const NotificationTelegramConfigErrorResponseDto = defineDomainError({
+  code: 'NOTIFICATION_TELEGRAM_CONFIG_ERROR',
+  status: 500,
+  message: '텔레그램 설정이 올바르지 않습니다.',
+});
 
-  constructor(message: string = '텔레그램 설정이 올바르지 않습니다.') {
-    super(500, message, 'NOTIFICATION_TELEGRAM_CONFIG_ERROR');
-  }
-}
+/** 텔레그램 API 오류 (502) */
+export const NotificationTelegramApiErrorResponseDto = defineDomainError({
+  code: 'NOTIFICATION_TELEGRAM_API_ERROR',
+  status: 502,
+  message: '텔레그램 서비스 오류가 발생했습니다.',
+});
 
-/**
- * 텔레그램 API 오류 (502)
- */
-export class NotificationTelegramApiErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'NOTIFICATION_TELEGRAM_API_ERROR', enum: ['NOTIFICATION_TELEGRAM_API_ERROR'] })
-  readonly code: string = 'NOTIFICATION_TELEGRAM_API_ERROR';
+/** 텔레그램 연동 링크 유효하지 않음 (400) */
+export const NotificationTelegramLinkInvalidErrorResponseDto = defineDomainError({
+  code: 'NOTIFICATION_TELEGRAM_LINK_INVALID',
+  status: 400,
+  message: '유효하지 않은 텔레그램 연동 링크입니다.',
+});
 
-  constructor(message: string = '텔레그램 서비스 오류가 발생했습니다.') {
-    super(502, message, 'NOTIFICATION_TELEGRAM_API_ERROR');
-  }
-}
+/** 텔레그램 이미 연동됨 (400) */
+export const NotificationTelegramAlreadyLinkedErrorResponseDto = defineDomainError({
+  code: 'NOTIFICATION_TELEGRAM_ALREADY_LINKED',
+  status: 400,
+  message: '이미 텔레그램이 연동되어 있습니다.',
+});
 
-/**
- * 텔레그램 연동 링크 유효하지 않음 (400)
- */
-export class NotificationTelegramLinkInvalidErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'NOTIFICATION_TELEGRAM_LINK_INVALID', enum: ['NOTIFICATION_TELEGRAM_LINK_INVALID'] })
-  readonly code: string = 'NOTIFICATION_TELEGRAM_LINK_INVALID';
-
-  constructor(message: string = '유효하지 않은 텔레그램 연동 링크입니다.') {
-    super(400, message, 'NOTIFICATION_TELEGRAM_LINK_INVALID');
-  }
-}
-
-/**
- * 텔레그램 이미 연동됨 (400)
- */
-export class NotificationTelegramAlreadyLinkedErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'NOTIFICATION_TELEGRAM_ALREADY_LINKED', enum: ['NOTIFICATION_TELEGRAM_ALREADY_LINKED'] })
-  readonly code: string = 'NOTIFICATION_TELEGRAM_ALREADY_LINKED';
-
-  constructor(message: string = '이미 텔레그램이 연동되어 있습니다.') {
-    super(400, message, 'NOTIFICATION_TELEGRAM_ALREADY_LINKED');
-  }
-}
+/** 텔레그램 연동 해제 처리 오류 (500) */
+export const NotificationTelegramUnlinkErrorResponseDto = defineDomainError({
+  code: 'NOTIFICATION_TELEGRAM_UNLINK_ERROR',
+  status: 500,
+  message: '연동 해제 처리 중 오류가 발생했습니다.',
+});
