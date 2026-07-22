@@ -51,7 +51,29 @@ import {
   UpdateMemberRoleResponseDto,
   UpdateMemberStatusResponseDto,
 } from './team.dto';
-import { TeamForbiddenErrorResponseDto, TeamDiscordWebhookInvalidErrorResponseDto, TeamNotFoundErrorResponseDto } from './team-error.dto';
+import {
+  TeamForbiddenErrorResponseDto,
+  TeamDiscordWebhookInvalidErrorResponseDto,
+  TeamNotFoundErrorResponseDto,
+  TeamTaskNotFoundErrorResponseDto,
+  TeamTaskBadRequestErrorResponseDto,
+  TeamMemberNotFoundErrorResponseDto,
+  TeamInviteForbiddenErrorResponseDto,
+  TeamInviteExpiredErrorResponseDto,
+  TeamInviteNotFoundErrorResponseDto,
+  TeamRoleChangeForbiddenErrorResponseDto,
+  TeamSelfRoleChangeErrorResponseDto,
+  TeamSelfStatusChangeErrorResponseDto,
+  TeamCommentNotFoundErrorResponseDto,
+  TeamCommentForbiddenErrorResponseDto,
+  TeamMemberStatusChangeForbiddenErrorResponseDto,
+} from './team-error.dto';
+import { AuthUnauthorizedErrorResponseDto } from '../auth/auth-error.dto';
+import {
+  ApiCommonUnauthorizedResponse,
+  ApiCommonValidationResponse,
+  ApiCommonInternalServerErrorResponse,
+} from '../../common/decorators/api-error-response.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../entities/User';
@@ -90,8 +112,8 @@ export class TeamController {
   @Get()
   @ApiOperation({ summary: '내 팀 목록 조회' })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamMemberListResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiCommonInternalServerErrorResponse()
   async getMyTeams(@CurrentUser() user: User) {
     const teamMembers = await this.teamService.getTeamMembersBy({
       userIds: [user.userId],
@@ -106,8 +128,9 @@ export class TeamController {
   @ApiOperation({ summary: '팀 생성' })
   @ApiBody({ type: CreateTeamDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: CreateTeamResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async postMyTeams(@CurrentUser() user: User, @Body() createTeamDto: CreateTeamDto) {
     createTeamDto.actStatus = ActStatus.ACTIVE;
     createTeamDto.leaderId = user.userId;
@@ -121,10 +144,11 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiBody({ type: UpdateTeamDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 팀 정보를 수정할 수 있습니다.' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 팀 정보를 수정할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
   @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateTeam(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -160,9 +184,9 @@ export class TeamController {
     enum: [ActStatus.INACTIVE, ActStatus.ACTIVE],
   })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamUsersListResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getTeamUsers(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -183,9 +207,9 @@ export class TeamController {
     enum: [ActStatus.INACTIVE, ActStatus.ACTIVE],
   })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamTaskListResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getTasks(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -216,11 +240,11 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: GetTaskDetailResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getTaskDetail(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -243,9 +267,10 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiBody({ type: CreateTeamTaskDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamTaskResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async createTask(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -280,11 +305,12 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTeamTaskDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 태스크를 수정할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크를 수정할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateTask(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -320,11 +346,12 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTaskStatusDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 상태를 변경할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 상태를 변경할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateTaskStatus(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -361,11 +388,12 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTaskActiveStatusDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateTaskActiveStatus(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -400,11 +428,12 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: CreateTaskCommentDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTaskCommentResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 댓글을 작성할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 댓글을 작성할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async createTaskComment(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -440,11 +469,12 @@ export class TeamController {
   @ApiParam({ name: 'commentId', description: '댓글 ID', type: Number })
   @ApiBody({ type: UpdateTaskCommentDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTaskCommentResponseDto })
-  @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '댓글 작성자만 수정할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '댓글 작성자만 수정할 수 있습니다.', type: TeamCommentForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.', type: TeamCommentNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateTaskComment(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -480,11 +510,11 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiParam({ name: 'commentId', description: '댓글 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTaskCommentResponseDto })
-  @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '댓글 작성자만 삭제할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '댓글 작성자만 삭제할 수 있습니다.', type: TeamCommentForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.', type: TeamCommentNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async deleteTaskComment(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -515,10 +545,11 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiBody({ type: CreateTeamInviteDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamInviteResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.', type: TeamInviteForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async createTeamInvite(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -544,10 +575,12 @@ export class TeamController {
   @ApiResponse({
     status: 400,
     description: '유효하지 않거나 만료된 초대 링크입니다. 또는 이미 팀 멤버입니다.',
+    type: TeamInviteExpiredErrorResponseDto,
   })
-  @ApiResponse({ status: 401, description: '회원가입이 필요합니다. (비회원인 경우)' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 401, description: '회원가입이 필요합니다. (비회원인 경우)', type: AuthUnauthorizedErrorResponseDto })
+  @ApiResponse({ status: 404, description: '초대 링크를 찾을 수 없습니다.', type: TeamInviteNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async acceptTeamInvite(
     @CurrentUser() user: User | undefined,
     @Body() acceptInviteDto: AcceptTeamInviteDto,
@@ -569,10 +602,10 @@ export class TeamController {
   @ApiOperation({ summary: '팀 초대 링크 목록 조회' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.', type: TeamInviteForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getTeamInvites(@CurrentUser() user: User, @Param('teamId', ParseIntPipe) teamId: number) {
     const invites = await this.teamService.getTeamInvites(teamId, user.userId);
     return {
@@ -589,10 +622,10 @@ export class TeamController {
   @ApiOperation({ summary: '텔레그램 연동 링크 생성' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTelegramLinkResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async createTelegramLink(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -612,10 +645,10 @@ export class TeamController {
   @ApiOperation({ summary: '텔레그램 연동 상태 조회' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: TelegramStatusResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getTelegramStatus(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -636,10 +669,10 @@ export class TeamController {
   @ApiOperation({ summary: '텔레그램 연동 해제' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTelegramLinkResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async deleteTelegramLink(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -658,11 +691,12 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiBody({ type: SaveDiscordWebhookDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: SaveDiscordWebhookResponseDto })
-  @ApiResponse({ status: 400, description: '유효하지 않은 Webhook URL입니다.' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '유효하지 않은 Webhook URL입니다.', type: TeamDiscordWebhookInvalidErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async saveDiscordWebhook(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -685,10 +719,10 @@ export class TeamController {
   @ApiOperation({ summary: '디스코드 연동 상태 조회' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DiscordStatusResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async getDiscordStatus(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -708,10 +742,10 @@ export class TeamController {
   @ApiOperation({ summary: '디스코드 연동 해제' })
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteDiscordWebhookResponseDto })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 해제할 수 있습니다.' })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 해제할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
   async deleteDiscordWebhook(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -731,11 +765,12 @@ export class TeamController {
   @ApiParam({ name: 'userId', description: '대상 사용자 ID', type: Number })
   @ApiBody({ type: UpdateMemberRoleDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateMemberRoleResponseDto })
-  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 역할 변경, 동일 역할 변경 등)' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '역할을 변경할 권한이 없습니다.' })
-  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 역할 변경, 동일 역할 변경 등)', type: TeamSelfRoleChangeErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '역할을 변경할 권한이 없습니다.', type: TeamRoleChangeForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.', type: TeamMemberNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateMemberRole(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
@@ -779,11 +814,12 @@ export class TeamController {
   @ApiParam({ name: 'userId', description: '대상 사용자 ID', type: Number })
   @ApiBody({ type: UpdateMemberStatusDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateMemberStatusResponseDto })
-  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 상태 변경, 마스터 상태 변경, 동일 상태 변경 등)' })
-  @ApiResponse({ status: 401, description: 'UNAUTHORIZED' })
-  @ApiResponse({ status: 403, description: '멤버 상태를 변경할 권한이 없습니다.' })
-  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 500, description: 'INTERNAL SERVER ERROR' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 (본인 상태 변경, 마스터 상태 변경, 동일 상태 변경 등)', type: TeamSelfStatusChangeErrorResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '멤버 상태를 변경할 권한이 없습니다.', type: TeamMemberStatusChangeForbiddenErrorResponseDto })
+  @ApiResponse({ status: 404, description: '팀 멤버를 찾을 수 없습니다.', type: TeamMemberNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  @ApiCommonValidationResponse()
   async updateMemberStatus(
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,

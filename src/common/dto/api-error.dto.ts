@@ -1,102 +1,77 @@
-import { HttpException } from '@nestjs/common';
-import { ApiProperty } from '@nestjs/swagger';
+import { defineDomainError } from './define-domain-error';
 
-/**
- * 에러 응답 베이스 클래스
- * HttpException을 상속하여 NestJS 예외 처리 흐름 유지
- *
- * details: 도메인별 부가 컨텍스트 (validation 필드 목록, retry-after 등).
- *          정의 시점이 아닌 throw 시점에 옵션으로 전달. filter가 응답에 포함.
- */
-export abstract class ApiErrorResponseDto extends HttpException {
-  readonly code: string;
-  readonly details?: unknown;
-
-  constructor(status: number, message: string, code: string, details?: unknown) {
-    // 문자열만 전달하여 Swagger 분석 시 순환 참조 방지
-    super(message, status);
-    this.code = code;
-    if (details !== undefined) this.details = details;
-  }
-
-  getErrorCode(): string {
-    return this.code;
-  }
-
-  // 예외 필터에서 사용할 응답 객체 생성
-  getErrorResponse(): { code: string; message: string; details?: unknown } {
-    return {
-      code: this.code,
-      message: this.message,
-      ...(this.details !== undefined ? { details: this.details } : {}),
-    };
-  }
-}
+// 베이스 클래스는 api-error-base.dto.ts로 분리 (순환 import 방지).
+// 기존 import 경로 호환을 위해 re-export.
+export { ApiErrorResponseDto } from './api-error-base.dto';
 
 // ==================== 공통 에러 DTO ====================
 
-export class ApiValidationErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'VALIDATION_ERROR', enum: ['VALIDATION_ERROR'] })
-  readonly code: string = 'VALIDATION_ERROR';
+export const ApiValidationErrorResponseDto = defineDomainError({
+  code: 'VALIDATION_ERROR',
+  status: 422,
+  message: '요청 값이 올바르지 않습니다.',
+  name: 'ApiValidationErrorResponseDto',
+});
 
-  @ApiProperty({ example: '요청 값이 올바르지 않습니다.' })
-  declare message: string;
+export const ApiNotFoundErrorResponseDto = defineDomainError({
+  code: 'NOT_FOUND',
+  status: 404,
+  message: '리소스를 찾을 수 없습니다.',
+  name: 'ApiNotFoundErrorResponseDto',
+});
 
-  constructor(message: string = '요청 값이 올바르지 않습니다.') {
-    super(422, message, 'VALIDATION_ERROR');
-  }
-}
+export const ApiForbiddenErrorResponseDto = defineDomainError({
+  code: 'FORBIDDEN',
+  status: 403,
+  message: '접근 권한이 없습니다.',
+  name: 'ApiForbiddenErrorResponseDto',
+});
 
-export class ApiNotFoundErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'NOT_FOUND', enum: ['NOT_FOUND'] })
-  readonly code: string = 'NOT_FOUND';
+// 참고: 공통 401 DTO는 제거됨 — 가드 401은 AuthUnauthorizedErrorResponseDto(AUTH_UNAUTHORIZED)가
+// 실제 응답이며, ApiCommonUnauthorizedResponse 데코레이터가 이를 사용한다.
+// code 'UNAUTHORIZED'는 필터의 statusCodeMap fallback(비도메인 401)에서만 생성된다.
 
-  constructor(message: string = '리소스를 찾을 수 없습니다.') {
-    super(404, message, 'NOT_FOUND');
-  }
-}
+export const ApiBadRequestErrorResponseDto = defineDomainError({
+  code: 'BAD_REQUEST',
+  status: 400,
+  message: '잘못된 요청입니다.',
+  name: 'ApiBadRequestErrorResponseDto',
+});
 
-export class ApiForbiddenErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'FORBIDDEN', enum: ['FORBIDDEN'] })
-  readonly code: string = 'FORBIDDEN';
+export const ApiInternalServerErrorResponseDto = defineDomainError({
+  code: 'INTERNAL_SERVER_ERROR',
+  status: 500,
+  message: '서버 내부 오류가 발생했습니다.',
+  name: 'ApiInternalServerErrorResponseDto',
+});
 
-  constructor(message: string = '접근 권한이 없습니다.') {
-    super(403, message, 'FORBIDDEN');
-  }
-}
+export const ApiBadGatewayErrorResponseDto = defineDomainError({
+  code: 'BAD_GATEWAY',
+  status: 502,
+  message: '외부 서비스 오류가 발생했습니다.',
+  name: 'ApiBadGatewayErrorResponseDto',
+});
 
-export class ApiUnauthorizedErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'UNAUTHORIZED', enum: ['UNAUTHORIZED'] })
-  readonly code: string = 'UNAUTHORIZED';
+/**
+ * 429 Too Many Requests — ThrottlerGuard 발생 (Swagger 명세용, 직접 throw 없음)
+ * 실제 응답은 ThrottlerException을 HttpExceptionFilter가 이 포맷으로 변환
+ */
+export const ApiTooManyRequestsErrorResponseDto = defineDomainError({
+  code: 'TOO_MANY_REQUESTS',
+  status: 429,
+  message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+  name: 'ApiTooManyRequestsErrorResponseDto',
+});
 
-  constructor(message: string = '인증이 필요합니다.') {
-    super(401, message, 'UNAUTHORIZED');
-  }
-}
-
-export class ApiBadRequestErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'BAD_REQUEST', enum: ['BAD_REQUEST'] })
-  readonly code: string = 'BAD_REQUEST';
-
-  constructor(message: string = '잘못된 요청입니다.') {
-    super(400, message, 'BAD_REQUEST');
-  }
-}
-
-export class ApiInternalServerErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'INTERNAL_SERVER_ERROR', enum: ['INTERNAL_SERVER_ERROR'] })
-  readonly code: string = 'INTERNAL_SERVER_ERROR';
-
-  constructor(message: string = '서버 내부 오류가 발생했습니다.') {
-    super(500, message, 'INTERNAL_SERVER_ERROR');
-  }
-}
-
-export class ApiBadGatewayErrorResponseDto extends ApiErrorResponseDto {
-  @ApiProperty({ example: 'BAD_GATEWAY', enum: ['BAD_GATEWAY'] })
-  readonly code: string = 'BAD_GATEWAY';
-
-  constructor(message: string = '외부 서비스 오류가 발생했습니다.') {
-    super(502, message, 'BAD_GATEWAY');
-  }
-}
+/**
+ * 팀을 찾을 수 없음 (404)
+ *
+ * 원래 team 모듈 소속이었으나 notification(telegram/discord) 서비스도
+ * 사용하므로 순환 의존 회피를 위해 공통으로 승격 (D3 결정).
+ * team 모듈에서는 team-error.dto.ts가 re-export.
+ */
+export const TeamNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_NOT_FOUND',
+  status: 404,
+  message: '팀을 찾을 수 없습니다.',
+});

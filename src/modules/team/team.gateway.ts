@@ -7,6 +7,7 @@ import {
   OnGatewayDisconnect,
   ConnectedSocket,
   MessageBody,
+  WsException,
 } from '@nestjs/websockets';
 import { Injectable, Logger, UseFilters, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -141,11 +142,11 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
           await this.teamService.verifyTeamMemberAccess(teamId, userId);
         } catch (_error) {
           this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
-          client.emit(TeamSocketEvents.ERROR, {
+          // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
+          throw new WsException({
             code: 'FORBIDDEN',
             message: '해당 팀에 접근 권한이 없습니다.',
           });
-          return { teamId, room: '' };
         }
       }
 
@@ -270,13 +271,13 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const user = client.data.user;
 
       // 팀 room에 참가하지 않았거나 인증 정보가 없으면 에러 응답 (침묵 실패 방지)
+      // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
       if (!teamId || !user) {
         this.logger.warn(`채팅 거부: 팀 미참여 소켓 socketId=${client.id}`);
-        client.emit(TeamSocketEvents.ERROR, {
+        throw new WsException({
           code: 'CHAT_NOT_JOINED',
           message: '채팅을 보내려면 먼저 팀에 참가해야 합니다.',
         });
-        return;
       }
 
       const userId = user.userId;

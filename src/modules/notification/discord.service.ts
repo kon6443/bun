@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Team } from '../../entities/Team';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { NotificationTeamInfo } from '../../common/port/notification.port';
+import { TeamNotFoundErrorResponseDto } from '../../common/dto/api-error.dto';
 
 /**
  * 디스코드 Embed 필드 타입
@@ -135,7 +136,7 @@ export class DiscordService {
     });
 
     if (!team) {
-      throw new Error('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     await this.teamRepository.update({ teamId }, { discordWebhookUrl: webhookUrl });
@@ -155,7 +156,7 @@ export class DiscordService {
     });
 
     if (!team) {
-      throw new Error('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     return {
@@ -174,7 +175,7 @@ export class DiscordService {
     });
 
     if (!team) {
-      throw new Error('팀을 찾을 수 없습니다.');
+      throw new TeamNotFoundErrorResponseDto();
     }
 
     await this.teamRepository.update({ teamId }, { discordWebhookUrl: null });

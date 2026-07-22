@@ -29,6 +29,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ## Active Work
 - **팀 단위 실시간 채팅**: 백엔드+프론트 구현 완료 (저장 없음, 빌드/타입체크/코드리뷰 통과) — 수동 E2E·배포 대기. `docs/tasks-team-chat.md`
+- **에러 DTO 리팩토링 (defineDomainError)**: ✅ 구현·검증·커밋 완료 (2026-07-22, 커밋 `73adc28`~`8b678c4`) — 잔여: 인증 필요 수동 E2E 2건 (팀 미존재 404, WS FORBIDDEN/CHAT_NOT_JOINED). `docs/tasks-error-dto-refactor.md` Results 참조
 - **Swarm 스택 마이그레이션**: ✅ 완료 (2026-04-18) — 세부사항 `docs/tasks-swarm-stack-migration.md`
 - **다음**: 모니터링 스택 (`docs/tasks-monitoring.md`) → 로그 중앙 수집 (`docs/tasks-logging.md`)
 
@@ -38,6 +39,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - Redis Pub/Sub PRD: `docs/prd-redis-pubsub.md`
 - Redis Pub/Sub Tasks: `docs/tasks-redis-pubsub.md` (구현 완료)
 - NestJS 고도화 Tasks: `docs/tasks-nestjs-improvements.md`
+- 에러 DTO 리팩토링 Tasks: `docs/tasks-error-dto-refactor.md` (Phase 0~4 구현 완료, E2E·커밋 대기)
 - Swarm 스택 마이그레이션 Tasks: `docs/tasks-swarm-stack-migration.md` (✅ 완료)
 - 팀 단위 실시간 채팅 Tasks: `docs/tasks-team-chat.md` (구현 완료, E2E·배포 대기)
 - 모니터링(Prometheus+Grafana+node_exporter) Tasks: `docs/tasks-monitoring.md`

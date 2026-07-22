@@ -24,6 +24,7 @@ function getDefaultErrorCode(status: number): string {
     404: 'NOT_FOUND',
     409: 'CONFLICT',
     422: 'VALIDATION_ERROR',
+    429: 'TOO_MANY_REQUESTS',
     500: 'INTERNAL_SERVER_ERROR',
     502: 'BAD_GATEWAY',
     503: 'SERVICE_UNAVAILABLE',
@@ -51,11 +52,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let details: unknown;
 
     if (exception instanceof ApiErrorResponseDto) {
-      // 커스텀 에러 DTO인 경우
-      const exceptionResponse = exception.getResponse() as { code: string; message: string };
-      code = exceptionResponse.code || exception.getErrorCode();
-      message = exceptionResponse.message || exception.message;
-      details = exception.details;
+      // 커스텀 에러 DTO인 경우 — 직렬화는 베이스 클래스 헬퍼로 일원화
+      const errorBody = exception.getErrorResponse();
+      code = errorBody.code;
+      message = errorBody.message;
+      details = errorBody.details;
     } else if (exception instanceof HttpException) {
       // 일반 HttpException인 경우
       const exceptionResponse = exception.getResponse();
