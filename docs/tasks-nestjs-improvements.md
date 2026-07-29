@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-07-23 (D33 ✅ 완료: DB 마이그레이션 환경 + D34 신규: Entity↔DB 정합화)
+> 작성일: 2026-04-03 | 최종 수정: 2026-07-23 (D33 ✅ 완료 / D27·D34 구현·커밋 완료 — 수동 테스트만 잔여. 커밋 `169ee9a`~`802ebfa`)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -56,14 +56,14 @@
 | 32 | **D24 하드코딩 설정값 → ConfigService** | 쉬움 | 🟢 | 보통 | 없음 |
 | 33 | **D25 DTO 검증 누락 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | 34 | **D26 중복 Controller 클래스명 수정** | 쉬움 | 🟢 | 낮음 | 없음 |
-| 35 | **D27 TaskComment PK 자동 생성** | 보통 | 🟡 | 보통 | DB 작업 |
+| 35 | **D27 TaskComment PK 자동 생성** | 보통 | 🟡 | 보통 | ⏳ 구현·커밋 완료 — 수동 테스트 1건 잔여 |
 | 36 | **D28 N+1 쿼리 최적화** | 쉬움 | 🟢 | 보통 | 없음 |
 | 37 | **D29 QueryBuilder Raw 매핑 타입 안전성** | 보통 | 🟢 | 보통 | 없음 |
 | 38 | **D30 LOW 품질 개선 모음** | 쉬움~보통 | 🟢 | 낮음~보통 | 없음 |
 | 39 | **D31 환경 검증 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | 40 | **D32 Redis 캐시 userName invalidation** | 쉬움 | 🟢 | 보통 | 없음 |
 | ~~41~~ | ~~D33 DB 마이그레이션 환경 구축 (TypeORM migrations)~~ | — | — | — | **✅ 완료** |
-| 42 | **D34 Entity↔DB 정합화 (DDL 대조 후속)** | 쉬움~보통 | 🟡 | 높음 | D33 |
+| 42 | **D34 Entity↔DB 정합화 (DDL 대조 후속)** | 쉬움~보통 | 🟡 | 높음 | ⏳ 구현·커밋 완료 — 수동 테스트 3건 잔여 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -1642,6 +1642,7 @@ NestJS DI는 모듈 단위라 런타임 충돌은 없지만, 디버깅 시 스�
 
 - **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 2~3파일
 - **⚡ 우선도 높음**: 동시 요청 시 ID 충돌로 댓글 생성 실패 가능 — 사용자가 늘어나면 바로 문제됨
+- **상태**: ⏳ **구현·커밋 완료** (2026-07-23, 커밋 `669e338`) — 잔여: 댓글 생성 수동 테스트 1건
 
 ### 현재 문제
 
@@ -2074,7 +2075,7 @@ export default new DataSource({
 [✓] 추출 DDL ↔ Entity 8개 전수 대조 → 불일치 리포트 (D34 신규 등재 + D27 근거 정정)
 [✓] migrations/1784781522301-Init.ts 작성 (up: 풀 스키마 raw SQL, down: 빈 함수)
 [✓] 담당자가 pnpm db:migrate:fake 실행 → TYPEORM_MIGRATIONS에 Init 1행 기록 (2026-07-23 완료)
-[ ] pnpm db:migrate:list로 [X] Init 표시 확인 (선택 재확인 — fake 성공 출력으로 갈음 가능)
+[✓] 이력 테이블 실측 확인 — TYPEORM_MIGRATIONS 2행(Init, ExpandTeamInvitationsToken). up 정상 동작으로 CLI 체인 end-to-end 검증 완료
 [✓] CLAUDE.md에 마이그레이션 운영 규칙 추가 (멱등 작성, AI 실행 금지)
 [✓] D23/D27/D34-1을 후속 마이그레이션 1·2호 후보로 연계 (D34 등재 + 의존관계 문서화)
 ```
@@ -2084,6 +2085,7 @@ export default new DataSource({
 ## D34. Entity↔DB 정합화 (D33 DDL 대조 후속)
 
 - **난이도**: 쉬움~보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: Entity 3~4파일 + 마이그레이션 1~2개
+- **상태**: ⏳ **구현·커밋 완료** (2026-07-23, 커밋 `f9d2a35`·`669e338`) — 잔여: 인증 필요 수동 테스트 3건
 - **선행**: D33 (근거 데이터) | **연계**: D23, D27
 - **근거**: 2026-07-23 실제 DB(ONAM) DDL 추출 ↔ Entity 8개 전수 대조 결과
 
@@ -2091,8 +2093,8 @@ export default new DataSource({
 
 | # | 항목 | DB 실제 | Entity 선언 | 위험 | 권장 조치 |
 |---|------|---------|------------|------|----------|
-| 1 | `TEAM_INVITATIONS.TOKEN` | `VARCHAR2(255)` | `length: 500` | 토큰이 JWT(`team.service.ts:1047`) — 페이로드 증가 시 255 초과 → **ORA-12899 삽입 실패** | 마이그레이션으로 DB를 500 확장 (**첫 실전 마이그레이션 후보**, D23 유니크 인덱스와 함께) |
-| 2 | `USERS.KAKAO_ID` | `VARCHAR2(100) NOT NULL`, 유니크 제약 **없음** | `type: 'number'`, `unique: true` | 타입 불일치(암묵 변환으로 동작 중) + unique 선언이 허위 | Entity를 `varchar2`로 정정, unique는 DB 인덱스 추가 여부와 함께 결정 |
+| 1 | `TEAM_INVITATIONS.TOKEN` | ~~`VARCHAR2(255)`~~ → **500 적용됨** | `length: 500` | 토큰이 JWT(`team.service.ts:1047`) — 페이로드 증가 시 255 초과 → **ORA-12899 삽입 실패** | ✅ **완료** — 마이그레이션 `f9d2a35` 작성 + up 실행 (실측: char_length 500, 기존 최대 토큰 204자) |
+| 2 | `USERS.KAKAO_ID` | `VARCHAR2(100) NOT NULL`, 유니크 제약 **없음** | ~~`number`+`unique`~~ → **`varchar2(100)`** | 타입 불일치(암묵 변환으로 동작 중) + unique 선언이 허위 | ✅ **Entity 정정 완료** (`669e338`) — `getKakaoId()` 경계에서 String 변환. 유니크 인덱스 추가는 미결(D23과 함께 판단) |
 | 3 | `USERS.KAKAO_REFRESH_TOKEN` | `VARCHAR2(255)` 존재 | **컬럼 없음** | 코드 전체 미사용 (grep 0건) — 죽은 컬럼 | ✅ **현상 유지 결정** (2026-07-23) — Entity 미선언·DB 보존. 추후 기능화 시 `select: false`로 추가 |
 | 4 | `TASK_COMMENTS.COMMENT_ID` | `GENERATED ALWAYS AS IDENTITY` | `@PrimaryColumn` | D27 참조 | **D27에서 처리** (근거 정정 완료) |
 
