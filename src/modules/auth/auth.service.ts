@@ -14,7 +14,7 @@ import {
 import { getDisplayName } from '../../common/utils/user.utils';
 
 export type UserType = {
-  kakaoId?: number;
+  kakaoId?: string;
   kakaoNickname?: string;
   isActivated?: 0 | 1;
 };
@@ -42,7 +42,7 @@ export class AuthService {
     return sign({ sub: userId, loginType }, secret, { expiresIn });
   }
 
-  async getKakaoId({ accessToken }: { accessToken?: string }): Promise<number> {
+  async getKakaoId({ accessToken }: { accessToken?: string }): Promise<string> {
     if (!accessToken) {
       throw new AuthUnauthorizedErrorResponseDto('카카오 액세스 토큰이 필요합니다.');
     }
@@ -61,7 +61,8 @@ export class AuthService {
     }
 
     const user = (await kakaoRes.json()) as { id: number };
-    return user.id;
+    // DB KAKAO_ID가 VARCHAR2이므로 도메인 진입 경계에서 string으로 변환
+    return String(user.id);
   }
 
   /**
@@ -75,7 +76,7 @@ export class AuthService {
     kakaoIds,
     isActivateds,
   }: {
-    kakaoIds?: number[];
+    kakaoIds?: string[];
     isActivateds?: (0 | 1)[];
   }): Promise<User[]> {
     const where: FindOptionsWhere<User> = {};

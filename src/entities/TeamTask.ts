@@ -18,7 +18,7 @@ export class TeamTask {
   @Column({ name: 'TEAM_ID', type: 'number' })
   teamId: number;
 
-  @Column({ name: 'TASK_NAME', type: 'varchar2' })
+  @Column({ name: 'TASK_NAME', type: 'varchar2', length: 100, nullable: true })
   taskName: string;
 
   @Column({ name: 'TASK_DESCRIPTION', type: 'clob', nullable: true })
@@ -42,7 +42,7 @@ export class TeamTask {
   @Column({ name: 'COMPLETED_AT', type: 'timestamp with time zone', nullable: true })
   completedAt: Date | null;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP', nullable: true })
   crtdAt: Date;
 
   @Column({ name: 'CRTD_BY', type: 'number' })

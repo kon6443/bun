@@ -11,10 +11,10 @@ export class TeamMember {
   @PrimaryColumn({ name: "USER_ID", type: "number" })
   userId: number;
 
-  @Column({ name: "JOINED_AT", type: "timestamp with time zone" })
+  @Column({ name: "JOINED_AT", type: "timestamp with time zone", nullable: true })
   joinedAt: Date;
 
-  @Column({ name: "ROLE", type: "varchar2" })
+  @Column({ name: "ROLE", type: "varchar2", length: 50, nullable: true })
   role: string;
 
   @Column({ name: "ACT_STATUS", type: "number", default: 1 })

@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import {
   Entity,
   Column,
-  PrimaryColumn,
+  PrimaryGeneratedColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -13,7 +13,8 @@ import { User } from './User';
 
 @Entity('TASK_COMMENTS')
 export class TaskComment {
-  @PrimaryColumn({ name: 'COMMENT_ID', type: 'number' })
+  // DB: GENERATED ALWAYS AS IDENTITY — INSERT 시 ID 생략 필수 (명시 값은 ORA-32795 거부)
+  @PrimaryGeneratedColumn({ name: 'COMMENT_ID' })
   commentId: number;
 
   @Column({ name: 'TEAM_ID', type: 'number' })
@@ -28,7 +29,7 @@ export class TaskComment {
   @Column({ name: 'COMMENT_CONTENT', type: 'clob' })
   commentContent: string;
 
-  @Column({ name: 'STATUS', type: 'number', default: 1 })
+  @Column({ name: 'STATUS', type: 'number', default: 1, nullable: true })
   status: number; // 0: 비활성, 1: 활성(노출)
 
   @Column({ name: 'MDFD_AT', type: 'timestamp with time zone', nullable: true })
