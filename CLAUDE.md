@@ -13,6 +13,14 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - Oracle `FROM_TZ()` 사용 시 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`) 사용 (ORA-01805 방지)
 - 프론트엔드 프로젝트: `../next-bun` (Next.js 15 App Router + Bun)
 
+## DB Migrations (TypeORM)
+- CLI DataSource: `migration-datasource.ts` (루트, 런타임 설정과 분리) | 이력 테이블: `TYPEORM_MIGRATIONS` | 파일: `migrations/<timestamp>-PascalCase.ts`
+- 명령: `pnpm db:migrate:create <Name>` / `db:migrate:up` / `db:migrate:fake` / `db:migrate:revert` / `db:migrate:list`
+- ⚠️ `db:migrate:fake`는 베이스라인 등록 1회용 — pending 마이그레이션이 있는 상태에서 실행하면 **DDL 실행 없이 기록만 되어 조용히 미적용**됨. 평상시엔 `up`만 사용
+- **LOCAL/PROD 동일 DB — DB 접속이 발생하는 `db:migrate:*`(list 포함, 첫 실행 시 이력 테이블 자동 생성)는 담당자가 직접 실행. AI·자동화 도구는 마이그레이션 파일 작성까지만**
+- 작성 규칙: 멱등 작성(`USER_TAB_COLUMNS` 등 존재 체크 — Oracle DDL은 자동 커밋이라 실패 시 부분 적용됨), 1개 = 1목적, `down()` 필수(init 제외)
+- 스키마 변경은 항상 **Entity 수정 + 마이그레이션 파일 세트**로 (드리프트 방지). 상세: `docs/tasks-nestjs-improvements.md` D33/D34
+
 ## Rules
 - **추측/추론 금지**: 항상 코드, 로그, DB 데이터 등 근거 기반으로 작업. 확인 불가한 사항은 추측하지 말고 사용자에게 확인 요청
 - **필요 시 요청**: 정보가 부족하거나 판단이 어려운 경우 반드시 사용자에게 질문. 임의로 결정하지 않음
@@ -31,6 +39,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **팀 단위 실시간 채팅**: 백엔드+프론트 구현 완료 (저장 없음, 빌드/타입체크/코드리뷰 통과) — 수동 E2E·배포 대기. `docs/tasks-team-chat.md`
 - **에러 DTO 리팩토링 (defineDomainError)**: ✅ 구현·검증·커밋 완료 (2026-07-22, 커밋 `73adc28`~`8b678c4`) — 잔여: 인증 필요 수동 E2E 2건 (팀 미존재 404, WS FORBIDDEN/CHAT_NOT_JOINED). `docs/tasks-error-dto-refactor.md` Results 참조
 - **Swarm 스택 마이그레이션**: ✅ 완료 (2026-04-18) — 세부사항 `docs/tasks-swarm-stack-migration.md`
+- **DB 마이그레이션 환경 (D33)**: ✅ 완료 (2026-07-23, init 베이스라인 fake 등록 포함) — 이후 스키마 변경은 Entity 수정 + 마이그레이션 파일 세트로. 후속: Entity↔DB 정합화 (D34). `docs/tasks-nestjs-improvements.md`
 - **다음**: 모니터링 스택 (`docs/tasks-monitoring.md`) → 로그 중앙 수집 (`docs/tasks-logging.md`)
 
 ## Docs

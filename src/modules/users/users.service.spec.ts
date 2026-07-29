@@ -13,7 +13,7 @@ describe('UsersService', () => {
     userId: 1,
     userName: '홍길동',
     birth: null,
-    kakaoId: 123456789,
+    kakaoId: '123456789',
     kakaoEmail: 'test@kakao.com',
     createdDate: new Date('2024-01-15T09:30:00.000Z'),
     isActivated: 1,

@@ -9,13 +9,14 @@ export class TeamInvitation {
   @PrimaryGeneratedColumn({ name: 'INV_ID' })
   invId: number;
 
-  @Column({ name: 'TEAM_ID', type: 'number' })
+  @Column({ name: 'TEAM_ID', type: 'number', nullable: true })
   teamId: number;
 
-  @Column({ name: 'USER_ID', type: 'number' })
+  @Column({ name: 'USER_ID', type: 'number', nullable: true })
   userId: number;
 
-  @Column({ name: 'TOKEN', type: 'varchar2', length: 500 })
+  // DB는 마이그레이션(ExpandTeamInvitationsToken) 적용 후 VARCHAR2(500)
+  @Column({ name: 'TOKEN', type: 'varchar2', length: 500, nullable: true })
   // @Index('IDX_INVITE_TOKEN', { unique: true })
   token: string;
 
@@ -31,7 +32,7 @@ export class TeamInvitation {
   @Column({ name: 'END_AT', type: 'timestamp with time zone', nullable: false })
   endAt: Date;
 
-  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP', nullable: false })
+  @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP', nullable: true })
   crtdAt: Date;
 
   // 관계
