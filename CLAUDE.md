@@ -40,7 +40,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **에러 DTO 리팩토링 (defineDomainError)**: ✅ 구현·검증·커밋 완료 (2026-07-22, 커밋 `73adc28`~`8b678c4`) — 잔여: 인증 필요 수동 E2E 2건 (팀 미존재 404, WS FORBIDDEN/CHAT_NOT_JOINED). `docs/tasks-error-dto-refactor.md` Results 참조
 - **Swarm 스택 마이그레이션**: ✅ 완료 (2026-04-18) — 세부사항 `docs/tasks-swarm-stack-migration.md`
 - **DB 마이그레이션 환경 (D33)**: ✅ 완료 (2026-07-23, 커밋 `169ee9a`) — init fake 등록 + TOKEN 확장 up 실행까지 검증. 이후 스키마 변경은 Entity 수정 + 마이그레이션 파일 세트로
-- **Entity↔DB 정합화 (D27/D34)**: 구현·커밋 완료 (2026-07-23, 커밋 `f9d2a35`·`669e338`) — 잔여: 인증 필요 수동 테스트 3건 (카카오 로그인, 초대 생성·수락, 댓글 생성). `docs/tasks-nestjs-improvements.md` D34
+- **Entity↔DB 정합화 (D34)**: ✅ 완료 (2026-07-28, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락 검증. **D27(TaskComment PK)만 댓글 생성 수동 확인 잔여**. `docs/tasks-nestjs-improvements.md` D34
 - **다음**: 모니터링 스택 (`docs/tasks-monitoring.md`) → 로그 중앙 수집 (`docs/tasks-logging.md`)
 
 ## Docs
