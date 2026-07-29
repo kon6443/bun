@@ -70,7 +70,12 @@
     "start:prod": "node -r tsconfig-paths/register dist/main.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage",
+    "db:migrate:create": "sh -c 'npx typeorm migration:create migrations/\"$1\"' sh",
+    "db:migrate:up": "tsx node_modules/typeorm/cli.js migration:run -d migration-datasource.ts",
+    "db:migrate:fake": "tsx node_modules/typeorm/cli.js migration:run --fake -d migration-datasource.ts",
+    "db:migrate:revert": "tsx node_modules/typeorm/cli.js migration:revert -d migration-datasource.ts",
+    "db:migrate:list": "tsx node_modules/typeorm/cli.js migration:show -d migration-datasource.ts"
   },
   "packageManager": "pnpm@8.15.9"
 }

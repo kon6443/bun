@@ -1,6 +1,6 @@
 # NestJS 고도화 전략 — FiveSouth (bun)
 
-> 작성일: 2026-04-03 | 최종 수정: 2026-04-13 (D10 보강: node_exporter + 팀별 접속자 메트릭; D22/D23 신규 + D24~D31 재번호 추가)
+> 작성일: 2026-04-03 | 최종 수정: 2026-07-23 (D33 ✅ 완료: DB 마이그레이션 환경 + D34 신규: Entity↔DB 정합화)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
 > 참고 프로젝트: `mobisell-back` (Pino, Port/Adapter, 테스트 Factory 등)
@@ -21,7 +21,7 @@
 ## 진행률
 
 ```
-완료: 25/47  |  남은: 20  |  보류: 2
+완료: 26/50  |  남은: 22  |  보류: 2
 ```
 
 ---
@@ -42,7 +42,7 @@
 | ~~18~~ | ~~D13 NestJS 비정석 패턴 수정~~ | — | — | — | **✅ 완료** |
 | ~~19~~ | ~~D8 API Rate Limiting~~ | — | — | — | **✅ 완료** |
 | ~~20~~ | ~~D9 응답 압축~~ | — | — | — | **✅ 완료** |
-| 21 | **D10 메트릭 수집 (Prometheus+Grafana+node_exporter)** | 보통 | 🟢 | 높음 | 없음 (추후) |
+| 21 | **D10 메트릭 수집 (Prometheus+Grafana+node_exporter)** → [`tasks-monitoring.md`](./tasks-monitoring.md) | 보통 | 🟢 | 높음 | 없음 (추후) |
 | 22 | **D14 ResponseInterceptor** | 보통 | 🟡 | 매우 높음 | **보류 — API별 code/message/action 커스텀 예정으로 인터셉터 불적합** |
 | ~~23~~ | ~~D15 @CurrentUser 데코레이터~~ | — | — | — | **✅ 완료** |
 | ~~24~~ | ~~D16 하드코딩 상수화~~ | — | — | — | **✅ 완료** |
@@ -61,6 +61,9 @@
 | 37 | **D29 QueryBuilder Raw 매핑 타입 안전성** | 보통 | 🟢 | 보통 | 없음 |
 | 38 | **D30 LOW 품질 개선 모음** | 쉬움~보통 | 🟢 | 낮음~보통 | 없음 |
 | 39 | **D31 환경 검증 보완** | 쉬움 | 🟢 | 보통 | 없음 |
+| 40 | **D32 Redis 캐시 userName invalidation** | 쉬움 | 🟢 | 보통 | 없음 |
+| ~~41~~ | ~~D33 DB 마이그레이션 환경 구축 (TypeORM migrations)~~ | — | — | — | **✅ 완료** |
+| 42 | **D34 Entity↔DB 정합화 (DDL 대조 후속)** | 쉬움~보통 | 🟡 | 높음 | D33 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -73,7 +76,7 @@ D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검
 ✅ D7 (매직 문자열) ──→ 완료
 ✅ D8 (Rate Limiting) ──→ 완료
 ✅ D9 (응답 압축) ──→ 완료
-D10 (메트릭 수집) ──→ 독립 (추후, Docker 인프라 필요)
+D10 (메트릭 수집) ──→ 독립 (추후, Docker 인프라 필요) — 📦 tasks-monitoring.md로 분리
 ✅ D11 (ESLint) ──→ 완료
 ✅ D12 (Express 흔적 제거) ──→ 완료
 ✅ D13 (NestJS 비정석 패턴) ──→ 완료
@@ -90,11 +93,14 @@ D23 (토큰 Unique Index) ──→ 독립 (DB DDL 수동)
 D24 (하드코딩 설정값 ConfigService) ──→ 독립 (.env 추가)
 D25 (DTO 검증 보완) ──→ 독립
 D26 (Controller 클래스명) ──→ 독립
-D27 (TaskComment PK) ──→ 독립 (Entity만 변경, DB Sequence 기존 존재)
+D27 (TaskComment PK) ──→ 독립 (Entity만 변경, DB는 GENERATED ALWAYS AS IDENTITY — D33 확인)
 D28 (N+1 쿼리) ──→ 독립 (프론트 응답 형식 확인 필수)
 D29 (QueryBuilder Raw 매핑) ──→ 독립
 D30 (LOW 품질 개선) ──→ 독립 (서브항목 30-1 ~ 30-7)
 D31 (환경 검증) ──→ D24 (CORS_ORIGINS 등 D24 신규 변수 검증 포함)
+D32 (Redis userName invalidation) ──→ 독립
+✅ D33 (DB 마이그레이션 환경) ──→ 완료 (이후 모든 DB DDL 작업은 마이그레이션으로 수행)
+D34 (Entity↔DB 정합화) ──→ D33 (DDL 대조 결과 기반) — D23/D27과 연계
 ```
 
 ---
@@ -859,153 +865,14 @@ app.use(compression());
 
 ---
 
-## D10. 메트릭 수집 (Prometheus + Grafana)
+## D10. 메트릭 수집 (Prometheus + Grafana) — 📦 별도 문서로 분리됨
+
+> **2026-04-15 분리**: 본문 전체가 [`tasks-monitoring.md`](./tasks-monitoring.md)로 이전되었습니다.
+> 아키텍처 / 수집 메트릭 / 서버 부하 / 주의 사항 / 구현 단계 / 실행 체크리스트는 분리 문서를 참조하세요.
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 3파일 + Docker 설정
 - **상태**: 추후 적용 예정
-
-### 개념
-
-서버에서 측정값(응답 시간, 에러 수 등)을 수집 → Prometheus가 저장 → Grafana가 시각화
-
-### 구성
-
-```
-[NestJS + prom-client]  →  /metrics 엔드포인트 노출
-        ↓ (15초마다 수집)
-[Prometheus 컨테이너]   →  시계열 DB에 저장
-        ↓
-[Grafana 컨테이너]      →  대시보드 시각화 + 알림
-```
-
-### 패키지 및 도구
-
-| 도구 | 역할 | 설치 위치 |
-|------|------|----------|
-| `prom-client` | Node.js 메트릭 라이브러리 | NestJS 앱 (npm) |
-| `@willsoto/nestjs-prometheus` | NestJS 통합 모듈 | NestJS 앱 (npm) |
-| Prometheus | 메트릭 수집·저장 서버 | Docker 컨테이너 |
-| Grafana | 대시보드 시각화 | Docker 컨테이너 |
-| **node_exporter** | **노드(OS) 메트릭 — CPU/RAM/디스크/네트워크** | **Docker 컨테이너 (Swarm global mode, 모든 노드)** |
-
-### 수집할 메트릭
-
-**1) prom-client (NestJS 앱 자동)**
-
-| 메트릭 | 타입 | 용도 |
-|--------|------|------|
-| `http_request_duration_seconds` | Histogram | API 응답 시간 분포 (p50/p95/p99) |
-| `http_requests_total` | Counter | 총 요청 수 (method, status, route별) |
-| `nodejs_heap_used_bytes` | Gauge | Node.js 힙 메모리 |
-| `nodejs_eventloop_lag_seconds` | Gauge | 이벤트루프 지연 |
-| `process_cpu_seconds_total` | Counter | 프로세스 CPU 사용 |
-
-**2) node_exporter (노드 OS 자동)**
-
-| 카테고리 | 대표 메트릭 | 용도 |
-|---------|-----------|------|
-| CPU | `node_cpu_seconds_total`, `node_load1/5/15` | 코어별 CPU, load average |
-| 메모리 | `node_memory_MemAvailable_bytes`, `node_memory_MemTotal_bytes` | 가용/사용 메모리 |
-| 디스크 | `node_filesystem_avail_bytes`, `node_disk_io_time_seconds_total` | 파티션 사용량, I/O |
-| 네트워크 | `node_network_receive_bytes_total`, `node_network_transmit_bytes_total` | RX/TX |
-| 파일시스템 | `node_filesystem_files_free` | inode 사용률 |
-
-**3) 커스텀 메트릭 (Socket.IO + Redis + 팀 비즈니스)**
-
-| 메트릭 | 타입 | 용도 | 구현 위치 |
-|--------|------|------|----------|
-| `ws_connections_active` | Gauge | WebSocket 접속자 수 | TeamGateway connect/disconnect |
-| `ws_team_online_users` | Gauge (labels: `team_id`) | **팀별 현재 접속자 수** | OnlineUserService.getOnlineUsersCount() 주기적 갱신 |
-| `ws_events_total` | Counter (labels: `event`) | WS 이벤트 발생 수 (taskCreated, commentCreated 등) | 각 gateway handler |
-| `ws_event_duration_seconds` | Histogram (labels: `event`) | WS 이벤트 처리 시간 | gateway handler |
-| `redis_connection_status` | Gauge | Redis 연결 상태 (0/1) | RedisIoAdapter |
-| `redis_pubsub_messages_total` | Counter | Pub/Sub 메시지 수 | RedisIoAdapter (선택) |
-
-### 서버 부하
-
-| 항목 | 수치 |
-|------|------|
-| prom-client CPU | 거의 0 (메트릭 기록은 원자적 카운터 연산) |
-| /metrics 엔드포인트 | 호출당 ~5ms (15초 간격이므로 무시 가능) |
-| Prometheus 컨테이너 | CPU ~0.5%, RAM ~200MB, 디스크 ~200MB/월 (7일 보관) |
-| Grafana 컨테이너 | CPU ~0.5%, RAM ~150MB (대시보드 열 때만) |
-| **node_exporter (노드당)** | **CPU ~0%, RAM ~10MB** |
-| **모니터링 스택 합계** | **RAM ~360MB, CPU ~1%** |
-| **현재 서버 (4 OCPU, 24GB RAM)** | **전혀 문제 없음** |
-
-### ⚠️ 주의 사항
-
-- **/metrics 엔드포인트 보안**: 외부에서 접근 불가하도록 설정 필요 (내부 네트워크만 허용하거나 IP 제한)
-- **Prometheus 저장소**: 기본 15일 보관 → **7일로 축소 권장** (`--storage.tsdb.retention.time=7d`). 자동 삭제됨
-- **Grafana 초기 설정**: 대시보드 JSON export/import로 관리 (Infrastructure as Code)
-- **커스텀 메트릭**: ws_connections_active 등은 Gateway에서 직접 카운터 증감 필요
-- **Docker Swarm 연동**: Prometheus가 각 레플리카의 /metrics를 개별 수집해야 함 → Swarm DNS(`tasks.<service>`) 기반 service discovery 설정
-- **node_exporter 배포 모드**: Swarm `global` mode로 등록 → 모든 노드에 자동 1개씩 배포됨 (레플리카 수와 무관)
-- **팀별 접속자 Gauge 갱신 전략**: OnlineUserService는 Redis 조회 → 매 요청마다 호출하면 부하. **주기적 갱신(30s~1m) 또는 joinTeam/leaveTeam 이벤트 시점 갱신** 권장
-
-### 구현 단계
-
-```
-Step 1: NestJS 앱에 prom-client 적용 (30분)
-  - @willsoto/nestjs-prometheus 설치
-  - PrometheusModule.register() 추가
-  - /metrics 엔드포인트 자동 생성
-  - 기본 메트릭 (HTTP 요청, Node.js 런타임) 자동 수집
-
-Step 2: Prometheus + node_exporter Docker 서비스 추가
-  - Prometheus: infra/docker-stack.yml (또는 별도 monitoring stack)
-  - prometheus.yml 설정 (scrape target: NestJS /metrics + node_exporter)
-  - node_exporter: Swarm global mode (모든 노드에 자동 배포)
-  - 데이터 볼륨 마운트 (prometheus-data)
-  - retention 7일 설정
-
-Step 3: Grafana Docker 서비스 추가
-  - infra/docker-stack.yml에 grafana 추가
-  - Prometheus 데이터소스 연결
-  - Node.js 대시보드 import (Grafana ID: 11159)
-  - Node Exporter 대시보드 import (Grafana ID: 1860)
-  - 커스텀 대시보드 구성 (WS 접속자, 팀별 접속자, Redis 상태)
-
-Step 4: 커스텀 메트릭 추가
-  - ws_connections_active (TeamGateway)
-  - ws_team_online_users (OnlineUserService 주기 갱신, 팀별)
-  - ws_events_total / ws_event_duration_seconds (각 gateway handler)
-  - redis_connection_status (RedisIoAdapter)
-  - (선택) 비즈니스 메트릭: 팀 생성 수, 태스크 완료율 등
-```
-
-### 실행 체크리스트
-```
-Step 1 — NestJS 앱:
-  [ ] prom-client, @willsoto/nestjs-prometheus 설치
-  [ ] PrometheusModule 등록 (app.module.ts)
-  [ ] /metrics 엔드포인트 접근 확인
-  [ ] 기본 메트릭 (HTTP, Node.js) 수집 확인
-  [ ] /metrics 보안 설정 (IP 제한 또는 Guard)
-
-Step 2 — Prometheus + node_exporter:
-  [ ] infra/prometheus/prometheus.yml 작성 (scrape config)
-  [ ] docker-stack.yml에 prometheus 서비스 추가 (retention 7일, volume)
-  [ ] docker-stack.yml에 node_exporter 서비스 추가 (mode: global)
-  [ ] Swarm DNS(tasks.<service>) 기반 service discovery 확인
-  [ ] Prometheus UI 접근 확인 (http://localhost:9090/targets → 모든 타겟 UP)
-  [ ] NestJS 레플리카 2개 + node_exporter (노드당 1개) 메트릭 수집 확인
-
-Step 3 — Grafana:
-  [ ] docker-stack.yml에 grafana 서비스 추가 (volume)
-  [ ] Grafana 접근 보안 설정 (포트 제한 또는 SSH 터널)
-  [ ] Prometheus 데이터소스 연결
-  [ ] Node.js 기본 대시보드 import (ID: 11159)
-  [ ] Node Exporter 대시보드 import (ID: 1860)
-  [ ] 커스텀 대시보드: 팀별 접속자, WS 이벤트, Redis 상태
-
-Step 4 — 커스텀 메트릭:
-  [ ] ws_connections_active (TeamGateway 연결/해제 시 증감)
-  [ ] ws_team_online_users (OnlineUserService 주기 갱신, 팀별 labels)
-  [ ] ws_events_total / ws_event_duration_seconds (gateway handlers)
-  [ ] redis_connection_status (RedisIoAdapter)
-  [ ] (선택) 비즈니스 메트릭
-```
+- **선행**: 없음 (독립)
 
 ---
 
@@ -1516,7 +1383,7 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 작업 목록 (완료 10 + 미완료 20 + 보류 2)
+Phase 5 — 작업 목록 (완료 11 + 미완료 22 + 보류 2)
   [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
@@ -1529,7 +1396,7 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 20 + 보류 2)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
   [✓] D8  API Rate Limiting — 2단계 글로벌(초당5/분당60) + 로그인 엄격 + SkipThrottle 3곳
-  [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + node_exporter + prom-client, 팀별 접속자 등 커스텀 메트릭 포함)
+  [ ] D10 메트릭 수집 (추후 — Prometheus + Grafana + node_exporter + prom-client, 팀별 접속자 등 커스텀 메트릭 포함) → 📦 tasks-monitoring.md로 분리
   [⏸] D14 ResponseInterceptor — 보류 (API별 code/message/action 커스텀 예정 → 인터셉터 불적합)
   [✓] D15 @CurrentUser 데코레이터 — 27곳 @Req() req.user → @CurrentUser() user 전환
   [✓] D16 하드코딩 상수화 — 8곳 → 상수 파일 3개 (app, throttle, external-api)
@@ -1548,6 +1415,9 @@ Phase 5 — 작업 목록 (완료 10 + 미완료 20 + 보류 2)
   [ ] D29 QueryBuilder Raw 매핑 타입 안전성 (.getRawMany → .getMany)
   [ ] D30 LOW 품질 개선 모음 (as any, WS throttle, Helmet, Dockerfile, .env.example)
   [ ] D31 환경 검증 보완 (JWT_SECRET MinLength 등)
+  [ ] D32 Redis 캐시 userName invalidation (PUT /users/me 후 Redis Hash 갱신)
+  [✓] D33 DB 마이그레이션 환경 구축 — CLI DataSource + db:migrate:* 5종 + init 베이스라인 fake 등록 완료 (2026-07-23)
+  [ ] D34 Entity↔DB 정합화 (TOKEN 길이, kakaoId 타입, 죽은 컬럼 등 — DDL 대조 리포트 기반)
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -1788,7 +1658,7 @@ const newComment = this.taskCommentRepository.create({
 const comment = await this.taskCommentRepository.save(newComment);
 ```
 
-`commentId`를 할당하지 않고 `save()` 호출. **댓글 생성은 정상 동작 확인됨** → DB에 Sequence+Trigger가 이미 존재하여 자동 생성 중. 그러나 Entity 정의(`@PrimaryColumn`)와 DB 실제 구조가 불일치.
+`commentId`를 할당하지 않고 `save()` 호출. **댓글 생성은 정상 동작 확인됨** → DB 컬럼이 `GENERATED ALWAYS AS IDENTITY`라서 자동 생성 중 (2026-07-23 D33 DDL 추출로 확인 — 트리거·독립 시퀀스 아님, 스키마 전체 트리거 0개). 그러나 Entity 정의(`@PrimaryColumn`)와 DB 실제 구조가 불일치.
 
 - Entity 정의가 DB 실제 구조와 불일치 → 코드 읽는 사람이 "수동 ID 관리"로 오해
 - TypeORM이 의도와 다르게 동작할 가능성 (INSERT 시 NULL 전달 등)
@@ -1807,14 +1677,14 @@ commentId: number;
 
 ### ⚠️ 주의
 
-- DB에 Sequence+Trigger **이미 존재** (댓글 생성 정상 동작 확인됨)
+- DB 컬럼이 **`GENERATED ALWAYS AS IDENTITY`** (D33 DDL 추출 확인) — 명시적 ID를 INSERT하면 ORA-32795로 거부되므로, ID를 생략하는 `@PrimaryGeneratedColumn` 전환이 정확한 선언
 - Entity 변경만 필요 — DB 작업 불필요
 - `@PrimaryGeneratedColumn` 변경 후 TypeORM이 INSERT 시 ID 컬럼을 생략하는지 확인 필요
 
 ### 실행 체크리스트
 ```
-[ ] TaskComment.ts: @PrimaryColumn → @PrimaryGeneratedColumn
-[ ] tsc --noEmit + 앱 시작 확인
+[✓] TaskComment.ts: @PrimaryColumn → @PrimaryGeneratedColumn (2026-07-23 — commentId 수동 할당처 grep 0건 확인)
+[✓] tsc(빌드) 통과
 [ ] 댓글 생성 수동 테스트 (ID 자동 생성 확인)
 ```
 
@@ -2032,6 +1902,228 @@ app.use(helmet({
 
 ---
 
+## D32. Redis 캐시 userName invalidation
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 1~2파일
+- **발견 경로**: 2026-04-29 D5 (라우트 충돌 통합) review 중 발견
+- **관련 파일**: `src/modules/users/users.service.ts:38-54` (PUT 핸들러), `src/modules/team/online-user.service.ts:9,11,144,152` (Redis 캐시 저장)
+
+### 현재 문제
+
+사용자가 닉네임을 변경(`PUT /users/me`)하면 DB의 `userName`은 갱신되지만, Redis Hash에 캐시된 userName은 그대로 남아있음.
+
+**Redis 캐시 위치 (online-user.service.ts)**:
+- `socket:{socketId}` Hash → `{ teamId, userId, userName }` (TTL 1시간) — line 144
+- `team:{teamId}:online` Hash → `{ userId → userName }` (TTL 없음) — line 152
+
+**시나리오**:
+1. 사용자 A가 팀 입장 (소켓 연결) → Redis Hash에 옛 닉네임 캐시
+2. 사용자 A가 `PUT /users/me`로 닉네임 변경 → DB는 새 이름, Redis는 옛 이름
+3. 다른 팀원이 보는 화면에 옛 닉네임 표시 (Socket 이벤트의 userName 등)
+4. 새로 팀 입장(reconnect)하기 전까지 정합성 깨짐
+
+### 영향 범위
+
+**프론트 영향**: 팀별 온라인 사용자 목록(`onlineUsers` 이벤트), `userJoined`/`userLeft` 이벤트, 태스크/댓글 이벤트의 userName 필드에서 옛 이름이 일정 시간 노출됨.
+
+**범위**: 동일 사용자가 닉네임 변경 후 재로그인/재연결 전까지 (TTL 1시간 또는 명시적 disconnect까지).
+
+### 해결 방법
+
+**옵션 1**: `users.service.updateProfile`에서 DB save 후 Redis Hash 직접 갱신 (단순)
+
+```ts
+// users.service.ts
+async updateProfile(userId: number, dto: UpdateUserDto) {
+  // 기존 로직...
+  await this.userRepository.save(user);
+
+  // 추가: Redis 캐시 갱신
+  await this.onlineUserService.updateUserName(userId, dto.userName);
+
+  return { userId, userName: user.userName };
+}
+```
+
+→ `OnlineUserService`에 `updateUserName(userId, newName)` 신규 메서드 추가:
+- `team:{teamId}:online` Hash에서 해당 userId 키 갱신 (사용자가 속한 모든 팀에 대해)
+- `socket:{socketId}` Hash 갱신 (사용자의 모든 소켓에 대해 — 다중 탭 대응)
+
+**옵션 2**: 닉네임 변경 시 Socket 이벤트로 다른 팀원에게도 알림 + 클라이언트 store 갱신
+
+→ 본 작업 범위 초과 (프론트 협의 필요).
+
+### 추천: **옵션 1**
+
+서버 단독으로 정합성 회복 가능. 프론트 변경 불필요.
+
+### ⚠️ 주의
+
+- 사용자가 속한 팀 목록을 알아야 모든 `team:{teamId}:online` Hash를 갱신 가능 — `OnlineUserService`에 사용자별 팀 목록 추적 인덱스(`user:{userId}:teams` Set 등)가 필요할 수 있음
+- 또는 단순화: `socket:{socketId}` Hash만 갱신 + `team:{teamId}:online`은 다음 reconnect 시 자연 갱신되도록 허용 (절충안)
+
+### 실행 체크리스트
+```
+[ ] OnlineUserService에 updateUserName 메서드 추가
+[ ] users.service.updateProfile에서 호출 추가
+[ ] 다중 탭 시나리오 수동 테스트 (2개 탭 입장 → 한 탭에서 닉네임 변경 → 다른 탭에서 즉시 새 이름 보이는지)
+[ ] 멀티 팀 시나리오 수동 테스트 (사용자가 2개 팀 소속 → 닉네임 변경 → 양쪽 팀 모두 갱신 확인)
+[ ] 빌드/테스트 통과
+```
+
+---
+
+## D33. DB 마이그레이션 환경 구축 (TypeORM migrations)
+
+- **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 신규 파일 2~3개 + package.json + CLAUDE.md
+- **상태**: ✅ **완료 (2026-07-23)** — init 베이스라인 fake 등록까지 완료. 이후 모든 스키마 변경은 Entity 수정 + 마이그레이션 파일 세트로 수행
+- **선행**: 없음 (독립) | **후속 연계**: D34(Entity↔DB 정합화), D23(토큰 Unique Index), D27(TaskComment PK) — 도입 후 DB DDL 작업은 마이그레이션으로 수행
+- **참고 구현**: `../mobisell/mobisell-back` — `migration-datasource.ts` + `db:migrate:*` 스크립트 + init 풀 덤프 패턴 (MySQL, TypeORM 0.3.28 동일 버전)
+
+### 배경
+
+- 현재 `synchronize: false` + 마이그레이션 없음 → 스키마 변경이 수동 DDL로만 이뤄지고 코드화되지 않음 (D23/D27 같은 Entity↔DB 드리프트의 원인)
+- D12에서 삭제된 `src/database/data-source.ts`(CLI용 DataSource)가 사실상 이 작업의 전신 — Oracle thick client init 코드 재사용 (git `8be56f0` 직전 버전 참조)
+- `tsconfig.json`이 `include: ["src/**/*"]`, `rootDir: "./src"`이므로 루트 배치 시 앱 빌드(`pnpm build`)에 영향 없음 (확인 완료)
+
+### 확정 결정 사항 (2026-07-23)
+
+| 결정 | 선택 | 근거 |
+|------|------|------|
+| init 스키마 소스 | **실제 DB DDL 덤프** (`DBMS_METADATA.GET_DDL`) | Entity↔실 DB 드리프트(D27 등) 존재 → 실 DB가 source of truth |
+| 베이스라인 등록 | **`migration:run --fake`** | 기존 DB에 init 실행 없이 이력만 기록. 실 DB 변경은 이력 테이블 생성 + 행 1개뿐 |
+| 이후 작성 방식 | **수동 작성 only** (`migration:create`) | generate는 live DB(=상용) 대조라 드리프트 노이즈 발생. mobisell-back 컨벤션 동일 |
+| 실행 주체 | **담당자가 CLI 수동 실행** | LOCAL/PROD 동일 DB → 모든 `up`이 곧 상용 적용. **AI는 마이그레이션 파일 작성까지만** (mobisell-back 규칙 이식) |
+| 앱 자동 실행 | **금지** (`migrationsRun: false`, 런타임 설정에 migrations 키 자체를 두지 않음) | Swarm 3 replicas — 동시 기동 시 중복 실행 위험 |
+| Entity 정합화 | **DB 기준으로 Entity 수정** — 런타임 영향 항목만(D27 등), init 이후 별도 진행 | 실 데이터를 가진 DB가 source of truth. 인덱스·트리거·FK 등 DB 전용 객체는 Entity 선언 불요 (generate 미사용이라 효과 없음) |
+
+### 구현 내용
+
+**1. CLI 전용 DataSource** (`migration-datasource.ts`, 프로젝트 루트 — 런타임 `database.config.ts`와 완전 분리)
+
+```typescript
+import 'reflect-metadata';
+import dotenv from 'dotenv';
+import oracledb from 'oracledb';
+import { DataSource } from 'typeorm';
+
+dotenv.config();
+
+// Oracle thick client init (미설정 시 wallet 접속 불가)
+if (process.env.ORACLE_LIB_DIR && process.env.ORACLE_WALLET_PATH) {
+  oracledb.initOracleClient({
+    libDir: process.env.ORACLE_LIB_DIR,
+    configDir: process.env.ORACLE_WALLET_PATH,
+  });
+}
+
+export default new DataSource({
+  type: 'oracle',
+  username: process.env.ORACLE_DB_USER,
+  password: process.env.ORACLE_DB_PW,
+  connectString: process.env.ORACLE_DB_CONNECT_STR,
+  entities: ['src/entities/*.ts'],
+  migrations: ['migrations/*.ts'],
+  migrationsTableName: 'TYPEORM_MIGRATIONS',
+  synchronize: false,
+  migrationsRun: false,
+  logging: true,
+});
+```
+
+**2. package.json 스크립트** — ts-node 미설치 프로젝트이므로 `tsx` 래핑 (신규 의존성 불필요)
+
+```json
+"db:migrate:create": "sh -c 'npx typeorm migration:create migrations/\"$1\"' sh",
+"db:migrate:up": "tsx node_modules/typeorm/cli.js migration:run -d migration-datasource.ts",
+"db:migrate:fake": "tsx node_modules/typeorm/cli.js migration:run --fake -d migration-datasource.ts",
+"db:migrate:revert": "tsx node_modules/typeorm/cli.js migration:revert -d migration-datasource.ts",
+"db:migrate:list": "tsx node_modules/typeorm/cli.js migration:show -d migration-datasource.ts"
+```
+
+**3. init 베이스라인** (`migrations/<timestamp>-Init.ts`)
+
+- `DBMS_METADATA.GET_DDL`로 8개 테이블 + 인덱스 + 시퀀스 + 제약조건 추출 (read-only 쿼리)
+- `up()`: 추출한 DDL을 `queryRunner.query(...)` raw SQL로 나열
+- `down()`: **빈 함수** — 편도 베이스라인 (mobisell-back init과 동일 설계)
+- 기존 운영 DB에는 `pnpm db:migrate:fake`로 이력만 기록 (실행 안 함)
+
+**4. 운영 규칙 (CLAUDE.md에 반영)**
+
+- 신규 마이그레이션은 **멱등 작성** — Oracle은 `USER_TAB_COLUMNS`/`USER_INDEXES`/`USER_CONSTRAINTS` 존재 체크 (mobisell-back의 `INFORMATION_SCHEMA` 가드에 대응)
+- 파일명 컨벤션 최초부터 고정: `<timestamp>-PascalCase.ts` (mobisell-back은 도중에 camelCase→PascalCase로 바뀜 — 반면교사)
+- init 제외 모든 마이그레이션은 `down()` 작성 의무
+- **`up`/`revert` 실행은 담당자 직접 — AI·자동화 도구가 임의 실행 금지**
+
+### ⚠️ Oracle 특이사항 (mobisell-back MySQL과의 차이)
+
+- **DDL 비트랜잭션** (자동 커밋): 실패 시 부분 적용 상태로 남음 → 마이그레이션 1개 = 1목적으로 잘게 쪼개기 + 멱등 가드 필수. `migrationsTransactionMode`는 DDL에 무의미
+- **식별자 대문자**: 이력 테이블명은 `TYPEORM_MIGRATIONS` 대문자 — 기존 테이블(USERS, TEAMS 등) 컨벤션 일치, 수동 조회 시 따옴표 불필요
+- **QA DB 없음**: mobisell은 QA 선적용 후 상용 적용이 가능하지만 여긴 LOCAL/PROD 동일 DB → 실행 전 코드 리뷰가 유일한 안전망
+- **thick client**: CLI DataSource에도 wallet init 필요 (런타임 `app.module.ts:90` 로직과 동일하게)
+- **`migration:show`(=db:migrate:list)도 첫 실행 시 이력 테이블을 자동 생성** — TypeORM `MigrationExecutor.showMigrations()`가 `createMigrationsTableIfNotExist()`를 호출 (소스 확인). 따라서 **list 포함 모든 `db:migrate:*` DB 접속 명령은 담당자가 직접 실행**
+
+### 실행 체크리스트
+```
+[✓] migration-datasource.ts 생성 (Oracle thick client init 포함) — 2026-07-23
+[✓] package.json에 db:migrate:* 스크립트 5종 추가 (tsx 래핑)
+[✓] migrations/ 디렉토리 생성
+[✓] pnpm build — 루트 TS 파일이 앱 빌드에 안 섞이는지 확인 (dist 미포함 확인)
+[✓] CLI DataSource 접속 검증 — DDL 추출 스크립트가 migration-datasource.ts로 접속 성공, --fake 옵션은 CLI --help로 확인 (list는 이력 테이블 자동 생성 때문에 담당자 실행으로 재분류 — 아래 ⚠️ 참조)
+[✓] DBMS_METADATA.GET_DDL로 8개 테이블 DDL 추출 (read-only) — 트리거 0개, 독립 시퀀스 0개(전부 IDENTITY), *_BACKUP 테이블 4개 발견(init 제외)
+[✓] 추출 DDL ↔ Entity 8개 전수 대조 → 불일치 리포트 (D34 신규 등재 + D27 근거 정정)
+[✓] migrations/1784781522301-Init.ts 작성 (up: 풀 스키마 raw SQL, down: 빈 함수)
+[✓] 담당자가 pnpm db:migrate:fake 실행 → TYPEORM_MIGRATIONS에 Init 1행 기록 (2026-07-23 완료)
+[ ] pnpm db:migrate:list로 [X] Init 표시 확인 (선택 재확인 — fake 성공 출력으로 갈음 가능)
+[✓] CLAUDE.md에 마이그레이션 운영 규칙 추가 (멱등 작성, AI 실행 금지)
+[✓] D23/D27/D34-1을 후속 마이그레이션 1·2호 후보로 연계 (D34 등재 + 의존관계 문서화)
+```
+
+---
+
+## D34. Entity↔DB 정합화 (D33 DDL 대조 후속)
+
+- **난이도**: 쉬움~보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: Entity 3~4파일 + 마이그레이션 1~2개
+- **선행**: D33 (근거 데이터) | **연계**: D23, D27
+- **근거**: 2026-07-23 실제 DB(ONAM) DDL 추출 ↔ Entity 8개 전수 대조 결과
+
+### 확정 불일치 (런타임 영향 순)
+
+| # | 항목 | DB 실제 | Entity 선언 | 위험 | 권장 조치 |
+|---|------|---------|------------|------|----------|
+| 1 | `TEAM_INVITATIONS.TOKEN` | `VARCHAR2(255)` | `length: 500` | 토큰이 JWT(`team.service.ts:1047`) — 페이로드 증가 시 255 초과 → **ORA-12899 삽입 실패** | 마이그레이션으로 DB를 500 확장 (**첫 실전 마이그레이션 후보**, D23 유니크 인덱스와 함께) |
+| 2 | `USERS.KAKAO_ID` | `VARCHAR2(100) NOT NULL`, 유니크 제약 **없음** | `type: 'number'`, `unique: true` | 타입 불일치(암묵 변환으로 동작 중) + unique 선언이 허위 | Entity를 `varchar2`로 정정, unique는 DB 인덱스 추가 여부와 함께 결정 |
+| 3 | `USERS.KAKAO_REFRESH_TOKEN` | `VARCHAR2(255)` 존재 | **컬럼 없음** | 코드 전체 미사용 (grep 0건) — 죽은 컬럼 | ✅ **현상 유지 결정** (2026-07-23) — Entity 미선언·DB 보존. 추후 기능화 시 `select: false`로 추가 |
+| 4 | `TASK_COMMENTS.COMMENT_ID` | `GENERATED ALWAYS AS IDENTITY` | `@PrimaryColumn` | D27 참조 | **D27에서 처리** (근거 정정 완료) |
+
+### 경미 (런타임 무해 — 문서적 정합성, 일괄 정리)
+
+- nullable 표기 누락: `TEAMS.TEAM_DESCRIPTION`, `USER_TEAMS.ROLE`, `TEAM_TASKS.TASK_NAME`, `TEAM_INVITATIONS.TEAM_ID/USER_ID/TOKEN`, `TASK_COMMENTS.STATUS` (DB는 전부 nullable)
+- length 미표기: `USER_NAME(100)`, `TEAM_NAME(50)`, `TEAM_DESCRIPTION(100)`, `TASK_NAME(100)` 등
+- TypeORM은 런타임에 nullability를 강제하지 않으므로 동작 영향 없음 — Entity를 읽는 사람의 오해 방지 목적
+
+### 기록 (조치 보류 — 결정만 필요)
+
+- `TEAM_TELEGRAM_LINKS.TEAM_ID`: DB에 FK 없음 (타 테이블과 달리). 추가 여부 결정
+- `*_BACKUP` 테이블 4개 (TASK_COMMENTS/TEAM_INVITATIONS/TEAM_TASKS/TEAM_TELEGRAM_LINKS_BACKUP): 수동 백업 산물로 추정, init 제외됨. 정리 여부 결정
+- PK 자동 생성 방식이 테이블마다 혼재: `BY DEFAULT`(USERS, TEAMS, TEAM_TASKS, TEAM_INVITATIONS) vs `ALWAYS`(TASK_COMMENTS, TEAM_TELEGRAM_LINKS) — 통일은 선택
+
+### 실행 체크리스트
+```
+[✓] (마이그레이션) TEAM_INVITATIONS.TOKEN VARCHAR2(255→500) 확장 — 멱등 가드 포함
+    → migrations/1784784515184-ExpandTeamInvitationsToken.ts 작성 완료 (2026-07-23). 실행(pnpm db:migrate:up)은 담당자
+[✓] User.ts: kakaoId number → varchar2(100) 정정 + 허위 unique 제거 (2026-07-23)
+    → 호출처 전수 grep: auth.service 내부 3곳(UserType/getKakaoId/getUserBy) String 변환 경계 적용, spec 2곳 수정, 외부 호출처 없음
+[✓] KAKAO_REFRESH_TOKEN 처리 방향 결정 — **현상 유지** (Entity 미선언, DB 컬럼 보존. 2026-07-23 사용자 결정 — 민감정보라 Entity 노출이 더 위험)
+[✓] 경미 항목 일괄 정리 (nullable/length) — Entity 7개 반영 (TelegramLink는 대조 결과 이미 정확, 변경 없음)
+[✓] tsc(빌드) + lint 통과 — 신규 에러 0건 (기존 경고 7건 외 없음)
+[✓] 담당자: pnpm db:migrate:up 실행 (2026-07-23) — 실측 확인: TOKEN char_length 255→500, 이력 테이블 2건(Init + ExpandTeamInvitationsToken)
+[✓] 앱 부팅 스모크 테스트 (2026-07-23) — 변경 Entity로 기동(포트 3999), Oracle Client initialized + Nest started, health-check 200 {database: up}. 에러 로그는 Redis 미기동(로컬 환경 특성)뿐
+[ ] 수동 테스트 (인증 필요 — 담당자): 카카오 로그인(kakaoId 변환), 팀 초대 생성/수락(TOKEN), 댓글 생성(D27 PK)
+```
+
+---
+
 ## 위험도 요약
 
 | 작업 | 위험도 | 핵심 이유 |
@@ -2047,10 +2139,11 @@ app.use(helmet({
 | D13 NestJS 비정석 패턴 | 🟢 낮음 | process.env→ConfigService, WsExceptionFilter DI 전환 |
 | D8 Rate Limiting | 🟢 낮음 | 추가만, IP/userId 기반 선택 필요. X-Forwarded-For 처리 주의 |
 | D9 응답 압축 | 🟢 낮음 | 1줄 추가, CPU +1~3% (OCI 4 OCPU에서 무시 가능) |
-| D10 메트릭 수집 | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 3개 추가 (Prometheus + Grafana + node_exporter global). RAM ~360MB |
+| D10 메트릭 수집 → [`tasks-monitoring.md`](./tasks-monitoring.md) | 🟢 낮음 | /metrics 보안 설정 필수. Docker 컨테이너 3개 추가 (Prometheus + Grafana + node_exporter global). RAM ~360MB |
 | D14 ResponseInterceptor | ⏸ 보류 | API별 code/message/action 커스텀 예정 → 인터셉터 불적합 |
 | D15 @CurrentUser | 🟢 낮음 | 데코레이터 추가 + 27곳 시그니처 교체. 로직 무변경 |
 | D16 하드코딩 상수화 | 🟢 낮음 | 상수 파일 추가 + 8곳 참조 교체. 값 무변경 |
+| D32 Redis userName invalidation | 🟢 낮음 | OnlineUserService 메서드 1개 추가 + users.service에서 호출. 멀티 팀/탭 시나리오 수동 검증 필요 |
 | D17 as any 타입 개선 | 🟢 낮음 | 타입 정의 추가 (6곳). 런타임 무변경 |
 | D18 PaginationDto | 🟢 낮음 | 공통 DTO 추가. 추후 목록 API 확장 시 |
 | D19 StreamableFile 전환 | 🟡 중간 | Express @Res() 제거. 스트림 에러 처리 방식 변경 |
@@ -2066,4 +2159,6 @@ app.use(helmet({
 | D29 Raw 매핑 타입 | 🟢 낮음 | 타입 안전성 추가, 동작 변경 없음 |
 | D30 LOW 품질 개선 | 🟢 낮음 | 소규모 개선 모음 |
 | D31 환경 검증 | 🟢 낮음 | 검증 추가만, 기존 .env 통과 필요 |
+| D33 DB 마이그레이션 환경 | 🟡 중간 | LOCAL/PROD 동일 DB — --fake 등록만 실 DB 접촉 (이력 테이블 + 1행). up/revert는 담당자 수동 실행 |
+| D34 Entity↔DB 정합화 | 🟡 중간 | kakaoId 타입 정정은 호출부 전수 확인 필요. TOKEN 확장은 DDL 1건 (멱등 가드) |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |
