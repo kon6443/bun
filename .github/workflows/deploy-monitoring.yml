@@ -15,7 +15,7 @@ on:
       - '.github/workflows/deploy-monitoring.yml'
   workflow_dispatch:
 
-# 같은 브랜치 동시 배포 충돌 방지 (mobisell-back 패턴 차용).
+# 같은 브랜치 동시 배포 충돌 방지 (레퍼런스 패턴 차용).
 # cancel-in-progress: false → 이미 진행 중인 배포는 완료까지 대기 (중간 취소 X)
 concurrency:
   group: deploy-monitoring-${{ github.ref_name }}
