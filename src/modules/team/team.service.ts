@@ -4,6 +4,7 @@ import { Repository, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { INVITE_MAX_EXPIRATION_MS, INVITE_TOKEN_EXPIRY_SECONDS } from '../../common/constants/app.constants';
 import { sign, verify, JwtPayload } from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
 import { TeamMember } from '../../entities/TeamMember';
 import { Team } from '../../entities/Team';
 import { TeamTask } from '../../entities/TeamTask';
@@ -1036,9 +1037,13 @@ export class TeamService {
       throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
 
+    // jti(nonce)가 없으면 payload가 {teamId, userId, iat, exp}뿐이고 iat/exp는 초 단위이므로,
+    // 같은 팀·같은 유저가 1초 안에 두 번 요청하면 완전히 동일한 JWT가 만들어진다.
+    // TOKEN에 유니크 인덱스(IDX_INVITE_TOKEN)가 있으므로 그 경우 ORA-00001로 실패한다.
     const tokenPayload = {
       teamId,
       userId,
+      jti: randomBytes(16).toString('hex'),
     };
 
     // JWT 만료시간은 고정 8일로 설정

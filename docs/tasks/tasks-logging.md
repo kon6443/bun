@@ -3,7 +3,7 @@
 > 작성일: 2026-04-15
 > 브랜치: `feat-onam`
 > 상태: **Step 1~5 배포 완료 (2026-04-22)** — Step 6~8 (Drill-down/쿼리 카탈로그/알림) 미진행
-> 선행: [`tasks-swarm-stack-migration.md`](./tasks-swarm-stack-migration.md) → [`tasks-monitoring.md`](./tasks-monitoring.md) Grafana 배포 → 본 문서
+> 선행: [`tasks-swarm-stack-migration.md`](./archive/tasks-swarm-stack-migration.md) → [`tasks-monitoring.md`](./tasks-monitoring.md) Grafana 배포 → 본 문서
 > 본 문서는 마이그레이션 완료 후 상태 기준 (서비스 DNS: `prod_nest_app`)
 
 ---
@@ -33,7 +33,7 @@
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음
 - **선행**: 모니터링 스택 배포 완료 (`tasks-monitoring.md` Step 3 완료)
 - **프론트 영향**: 없음
-- **참고 프로젝트**: `../mobisell/mobisell-back` — Loki 미적용 (gcplogs 대체). 우리는 OCI라 gcplogs 불가 → Loki가 더 필요
+- **참고 프로젝트**: 사내 NestJS 레퍼런스 프로젝트 — Loki 미적용 (gcplogs 대체). 우리는 OCI라 gcplogs 불가 → Loki가 더 필요
 
 ---
 
@@ -73,7 +73,7 @@
 
 | 도구 | 버전 | 역할 |
 |------|-----------|------|
-| Loki | `grafana/loki:3.4.2` | 로그 저장·쿼리 서버 (mobisell prod 검증 버전) |
+| Loki | `grafana/loki:3.4.2` | 로그 저장·쿼리 서버 (레퍼런스 prod 검증 버전) |
 | Promtail | `grafana/promtail:3.4.2` | 로그 수집 에이전트 (docker discovery) |
 
 **앱 레벨 추가 설치 없음** — Pino 이미 도입되어 stdout JSON 출력 중.
@@ -579,8 +579,8 @@ docker stack deploy -c docker-stack.monitoring.yml prod_monitor
 ## 📚 참고
 
 - 모니터링 스택: [`tasks-monitoring.md`](./tasks-monitoring.md) — Prometheus + Grafana 선행
-- 아키텍처: [`architecture.md`](./architecture.md)
-- 배포 환경: [`deploy.md`](./deploy.md)
+- 아키텍처: [`architecture.md`](../architecture.md)
+- 배포 환경: [`deploy.md`](../deploy.md)
 - Pino 도입 이력: `tasks-nestjs-improvements.md` Phase 1~4 `[✓] C1 Pino 도입`
 
 **구현 시 수정 대상 파일**:

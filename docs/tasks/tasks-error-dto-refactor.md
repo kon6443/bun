@@ -3,7 +3,7 @@
 > 작성일: 2026-04-28 · 최종 갱신: 2026-07-22 (Phase 2~4 구현 + QA 리뷰 2회 통과)
 > 브랜치: `feat-onam`
 > 상태: **구현·검증·커밋 완료 (커밋 `73adc28` Phase 2 / `61de433` Phase 3 / `cb35d3f` Phase 4 / `8b678c4` docs)** — 잔여: ① 인증 필요한 수동 E2E 2건(팀 미존재 404 / 유효 토큰 WS의 FORBIDDEN·CHAT_NOT_JOINED), ② blog-api-throttling.md 429 서술 정정(후속). 하단 Results 참조
-> 참고 구현: `../mobisell/mobisell-back` (NestJS 4.0 현행 — 패턴만 차용, 도메인 코드는 우리 프로젝트 기준으로 재정의)
+> 참고 구현: 사내 NestJS 레퍼런스 프로젝트 (NestJS 4.0 현행 — 패턴만 차용, 도메인 코드는 우리 프로젝트 기준으로 재정의)
 > 연관 파일: `src/common/dto/api-error.dto.ts`, `src/common/filters/http-exception.filter.ts`, `src/modules/*/[*-]error.dto.ts`
 
 ---
@@ -17,9 +17,9 @@
 | Q3. 미이전 영역 정리 | **포함** — file-share, users, telegram, WS guards 전부 도메인 에러 DTO로 통일 | 한 번에 끝내야 하이브리드 상태 종료 |
 | Q4. `details` 필드 도입 방식 | **(c) 인프라만 구축, 점진 도입** — 베이스 클래스 + filter 직렬화만 미리 구현, 신규 에러는 details 없이 정의 | 즉시 모든 에러를 details 처리할 필요 없음. 향후 프론트 요청 들어오는 케이스부터 추가 |
 | 베이스 클래스 시그니처 | ~~2인자 단순화~~ → **[계획 변경, Phase 1 구현] 기존 3인자 유지 + 4번째 옵셔널 `details` 추가** | 후방 호환 우선 — 기존 31개 DTO의 `super(status, msg, code)` 호출 무변경. 2인자 단순화는 Phase 2 마이그레이션 완료 후 재검토 |
-| 팩토리 함수 위치 | `src/common/dto/define-domain-error.ts` (신규 파일) | mobisell 동일 경로 |
+| 팩토리 함수 위치 | `src/common/dto/define-domain-error.ts` (신규 파일) | 레퍼런스 동일 경로 |
 | 도메인 에러 파일 분리 | 모듈별 `*-error.dto.ts` (현행 유지) | 순환 참조 방지, 이미 적용 중인 컨벤션 |
-| 공통 데코레이터 유틸 | `ApiThrottledResponse` 같은 반복 패턴은 `applyDecorators`로 묶음 | mobisell 패턴. 컨트롤러 보일러플레이트 감소 |
+| 공통 데코레이터 유틸 | `ApiThrottledResponse` 같은 반복 패턴은 `applyDecorators`로 묶음 | 레퍼런스 패턴. 컨트롤러 보일러플레이트 감소 |
 | `oneOf` 활용 (동일 status 다중 에러) | **필요 시만 도입**, 강제 X | 현재 동일 status에 여러 에러 던지는 케이스가 적음. 우선순위 낮음 |
 | **D1**: file-share 인증 에러 코드 정책 | **단일 코드 `FILE_SHARE_UNAUTHORIZED` + message만 차이** | 프론트 연동 계획 없음 → 코드 분기 가치 0. 키 불일치 메시지 단일화는 보안상 유리 (공격자 단서 차단) |
 | **D2**: users `NotFoundException` 통합 | **`UserNotFoundErrorResponseDto` 1개로 통합** | 같은 의미 에러는 DTO 1개에서 정의, throw는 여러 곳 가능 (현업 표준) |
@@ -49,7 +49,7 @@
 - **선행**: 없음
 - **프론트 영향**: 없음 (응답 JSON 포맷 `{ code, message, timestamp }` 동일 유지)
 
-mobisell-back은 `defineDomainError()` 팩토리로 도메인 에러를 1줄에 정의하고, Swagger `@ApiProperty` 자동 부착, 클래스명 자동 설정까지 일괄 처리한다. 우리 프로젝트는 동일 컨셉을 클래스 수동 선언(~10줄/에러)으로 구현 중이라 보일러플레이트가 많고, 일부 모듈(file-share, users, telegram, WS guards)은 아직 NestJS 기본 예외/일반 Error를 던지고 있어 응답 포맷이 비일관 상태.
+레퍼런스 프로젝트는 `defineDomainError()` 팩토리로 도메인 에러를 1줄에 정의하고, Swagger `@ApiProperty` 자동 부착, 클래스명 자동 설정까지 일괄 처리한다. 우리 프로젝트는 동일 컨셉을 클래스 수동 선언(~10줄/에러)으로 구현 중이라 보일러플레이트가 많고, 일부 모듈(file-share, users, telegram, WS guards)은 아직 NestJS 기본 예외/일반 Error를 던지고 있어 응답 포맷이 비일관 상태.
 
 본 작업은 **(1) 팩토리 도입으로 보일러플레이트 80% 감소**, **(2) 미이전 영역 통일**, **(3) Swagger 에러 명세 type 보강**, **(4) details 인프라 구축** 4가지를 한 번에 정리한다.
 
@@ -133,7 +133,7 @@ mobisell-back은 `defineDomainError()` 팩토리로 도메인 에러를 1줄에 
   ```ts
   defineDomainError({ code: string, status: number, message: string }): typeof ApiErrorResponseDto
   ```
-- **내부 동작** (mobisell 참고):
+- **내부 동작** (레퍼런스 참고):
   - `ApiErrorResponseDto`를 상속한 익명 클래스 생성
   - `@ApiProperty({ example: code, enum: [code] })` 자동 부착
   - `Object.defineProperty(cls, 'name', { value: codeToClassName(code) })`로 클래스명 자동 (예: `TEAM_NOT_FOUND` → `TeamNotFoundErrorResponseDto`)
@@ -169,7 +169,7 @@ mobisell-back은 `defineDomainError()` 팩토리로 도메인 에러를 1줄에 
     timestamp: new Date().toISOString(),
   };
   ```
-- **mobisell 미완성 부분 보완**: mobisell은 클래스에 `details`만 정의하고 filter에서 직렬화 안 함. 우리는 처음부터 직렬화까지 끝낸다.
+- **레퍼런스 미완성 부분 보완**: 레퍼런스는 클래스에 `details`만 정의하고 filter에서 직렬화 안 함. 우리는 처음부터 직렬화까지 끝낸다.
 - **신규 에러는 details 없이 정의** (Phase 2). 향후 케이스별로 점진 추가.
 
 ### 1-4. 공통 데코레이터 유틸
@@ -376,7 +376,7 @@ export const TeamNotFoundErrorResponseDto = defineDomainError({
 | 429 code 변경 `UNKNOWN_ERROR`→`TOO_MANY_REQUESTS` (Phase 4, D11) | 낮음 | 낮음 | 프론트 code 분기 없음 확인. status 429 자체는 불변 |
 | `details` 필드 직렬화 시 보안 정보 노출 | 낮음 | 높음 | filter는 `details` 그대로 직렬화하지만, 각 에러 정의 시 의식적으로 검증 (코드 리뷰 체크리스트) |
 | `ApiErrorResponseDto` 시그니처 변경으로 미발견 사용처 컴파일 에러 | 낮음 | 낮음 | Phase 1에서 grep 전수 + tsc로 잡힘 |
-| Swagger 빌드 시 `defineDomainError` 동적 클래스가 인식 안 됨 | 중간 | 중간 | mobisell에서 정상 동작 확인됨. 우리 환경(NestJS 11)에서 PoC 1개로 사전 검증 |
+| Swagger 빌드 시 `defineDomainError` 동적 클래스가 인식 안 됨 | 중간 | 중간 | 레퍼런스에서 정상 동작 확인됨. 우리 환경(NestJS 11)에서 PoC 1개로 사전 검증 |
 
 ### 롤백 전략
 - 각 Phase는 독립적인 커밋으로 분리

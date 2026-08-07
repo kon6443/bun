@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { Team } from './Team';
 import { User } from './User';
 import { ActStatus } from '../common/enums/task-status.enum';
@@ -16,8 +16,9 @@ export class TeamInvitation {
   userId: number;
 
   // DB는 마이그레이션(ExpandTeamInvitationsToken) 적용 후 VARCHAR2(500)
+  // 유니크 제약은 DB 인덱스 IDX_INVITE_TOKEN이 강제 (AddTokenUniqueIndexes 마이그레이션)
+  @Index('IDX_INVITE_TOKEN', { unique: true })
   @Column({ name: 'TOKEN', type: 'varchar2', length: 500, nullable: true })
-  // @Index('IDX_INVITE_TOKEN', { unique: true })
   token: string;
 
   @Column({ name: 'USAGE_CUR_CNT', type: 'number', default: 0, nullable: false })
