@@ -1121,6 +1121,8 @@ export class TeamService {
     }
 
     // 2. 데이터베이스에서 초대 정보 조회
+    // teamId를 조회 조건에 포함하는 것이 곧 "토큰의 teamId 검증"이다 —
+    // 위조된 teamId면 매칭되는 초대가 없어 아래 404로 걸러진다. 이 조건을 빼면 검증도 함께 사라진다.
     const invite = await this.teamInvitationRepository.findOne({
       where: { teamId: payload.teamId, token, actStatus: ActStatus.ACTIVE },
     });
@@ -1144,12 +1146,7 @@ export class TeamService {
       throw new TeamNotFoundErrorResponseDto('팀을 찾을 수 없거나 비활성 상태입니다.');
     }
 
-    // 5. JWT payload의 teamId와 DB의 teamId 일치 확인 (보안 강화)
-    if (payload.teamId !== invite.teamId) {
-      throw new TeamInviteExpiredErrorResponseDto('유효하지 않은 초대 링크입니다.');
-    }
-
-    // 6. 사용 횟수 확인
+    // 5. 사용 횟수 확인
     if (invite.usageCurCnt >= invite.usageMaxCnt) {
       throw new TeamInviteExpiredErrorResponseDto('초대 링크의 사용 횟수가 초과되었습니다.');
     }

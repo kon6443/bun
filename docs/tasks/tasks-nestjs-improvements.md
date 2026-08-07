@@ -370,7 +370,7 @@ export class MockNotificationAdapter {
 | **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
 | D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
 
-**진행 결과** — 전체 328/328 통과, 커버리지 8.73% → **31.29%**
+**진행 결과** — 전체 371/371 통과, 커버리지 8.73% → **35.07%**
 
 | 파일 | 커버리지 | 고정한 핵심 계약 |
 |---|---:|---|
@@ -488,6 +488,38 @@ return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
 
 **확인된 의도(테스트로 고정)**: `deleteTaskComment`·`updateTaskActiveStatus`는 알림을 보내지 않는다. 삭제·보관 토글은 팀 전체에 알릴 사건이 아니라는 판단이며, 대칭 분기로 고정해 두어 나중에 알림이 추가되면 테스트가 먼저 깨진다.
 
+---
+
+### C-3 결과 (2026-08-07) — 권한·토큰 경계 + 알림 분기
+
+C-2 이후 실측으로 잡은 우선순위 1·2번을 처리하고, 그 과정에서 찾은 죽은 코드를 제거했다.
+**43케이스 추가, 328 → 371/371 통과.** `team.service.ts` 56.48% → **70.49%**, 전체 31.29% → **35.07%**.
+
+| 대상 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---|
+| `verifyTeamInviteToken` (invite.spec에 추가) | 13 | JWT_SECRET 부재 시 **DB 조회 전 차단** / 위조·만료·형식오류를 **모두 같은 에러로** 응답(토큰 탐색 방지) / 초대 조회에 `teamId`+`token`+`actStatus` **3조건 전수** / **JWT가 유효해도 DB `endAt`이 지나면 만료**(만료 시각의 SSOT는 DB) / 팀 비활성 차단 / 사용 횟수 경계(cur=max 차단, cur<max 통과) |
+| `updateMemberStatus` (신규 `team.service.member-status.spec.ts`) | 23 | 본인 차단(조회 전) / 정책 5조합 / MASTER 대상 불가 / **대상 조회에 `userActStatus` 필터 없음**(재활성화 경로) / 동일 상태 차단 / 해당 행만 `update` / `select: ['userName']`만 조회 / 이름 없으면 ID로 대체 / 활성화·비활성화 알림 문구 |
+| `NotificationAdapter` (신규 spec) | 7 | **두 채널 모두 호출**(한쪽 누락 방지) / 채널별 파라미터 이름 변환(`message`↔`content`) / url→텔레그램 버튼 변환 / **url 없으면 `buttons` 키 자체 없음** / fire-and-forget(즉시 반환) / 미연동 팀도 그대로 위임 |
+
+**회귀 방어 포인트 — `updateMemberStatus`의 대상 조회**: 요청자는 활성 멤버만 찾지만 **대상은 비활성 멤버까지 찾아야 한다**. 여기에 `userActStatus: [ACTIVE]`를 무심코 추가하면 "한 번 비활성화된 멤버는 영원히 되살릴 수 없는" 상태가 되고, 증상은 404("대상 사용자가 팀 멤버가 아닙니다")로 나와 원인 추적이 어렵다. 쿼리 인자를 통째로 비교해 고정했다.
+
+**`NotificationAdapter`를 먼저 잡은 이유**: 호출부가 결과를 확인하지 않는 fire-and-forget이라, 한 채널이 빠져도 **예외도 로그도 남지 않는다**. 증상이 "알림이 안 온다"뿐이라 가장 추적이 어려운 종류의 회귀다.
+
+**🔴 발견 → ✅ 제거 완료 — `verifyTeamInviteToken`의 도달 불가능한 분기** (구 `team.service.ts:1147-1150`)
+
+```ts
+// 조회에서 이미 payload.teamId로 걸었으므로
+where: { teamId: payload.teamId, token, actStatus: ActStatus.ACTIVE }
+// 이 조건은 항상 false — "보안 강화" 주석이 붙어 있었지만 실행되지 않는 코드였다
+if (payload.teamId !== invite.teamId) throw ...
+```
+
+**도달 불가 근거**: ①TypeORM이 `teamId = payload.teamId` 조건으로 필터링하므로 반환된 `invite.teamId`는 항상 `payload.teamId`와 같다. ②타입 불일치(`"7" !== 7`)로 걸릴 여지도 없다 — 토큰은 이 서비스가 `sign({ teamId, ... })`로 만들고 `teamId`는 `ParseIntPipe`를 거친 number이며, Oracle NUMBER도 JS number로 돌아온다. ③커버리지 미커버 라인이 실증했다(12케이스를 넣어도 그 줄만 미실행). 제거 후 미커버 목록에서 사라진 것으로 재확인.
+
+**제거하면서 방어는 유지**: `teamId` 검증은 사라진 게 아니라 **조회 조건이 담당**한다(위조 시 매칭 없음 → 404). 그 사실을 조회 지점 주석에 남기고, **위조 teamId 토큰이 404로 걸러지는 행위 테스트**를 추가했다(`findOne` mock이 where의 teamId를 실제로 반영하도록 구성). 조회 조건에서 `teamId`를 빼면 이 테스트가 깨진다 — 죽은 분기를 지우면서 생기는 반대 방향 실수를 막기 위해서다.
+
+죽은 분기를 그대로 두면 "뒤에서 한 번 더 검증하니 조회 조건은 느슨해도 된다"는 착각을 부른다. 없는 방어선이 있는 것처럼 읽히는 쪽이 실제 위험이었다.
+
 ### 실행 체크리스트
 
 ```
@@ -498,30 +530,36 @@ Guard/Filter (6개): ✅ 완료 (2026-08-05)
 권한 정책 (순수 함수):
   [✓] role.constants — 27조합 전수 검증 (64케이스), isValidRole 프로토타입 누수 버그 수정
 
-Service — 완료 5 / 잔여 5:
-  [✓] AuthService (22), SchedulerService (21), UsersService (5), FileShareService (6)
-  [✓] TeamService — 초대(24) + 역할 변경(18) + 태스크 상태(21) + 댓글 CRUD(28). 조회 계열·팀/태스크 생성수정은 잔여
-  [ ] OnlineUserService, FishingOnlineService
-  [ ] TelegramService, DiscordService, NotificationAdapter
+Service:
+  [✓] AuthService (22, 100%), SchedulerService (21, 97.87%)
+  [✓] UsersService (5, 100%), FileShareService (6, 100%)
+  [✓] NotificationAdapter (7, 100%)
+  [~] TeamService (70.49%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(25) + 댓글(30)
+      잔여: updateTask, getTeamMembersBy/getTeamTasksBy 조립, 조회 계열, insertTeam/updateTeam
+  [ ] OnlineUserService(317줄), FishingOnlineService(320줄)
+  [ ] TelegramService(468줄), DiscordService(184줄)
 
-Service (10개) — 원 계획:
-  [ ] AuthService, TeamService (핵심), OnlineUserService, FishingOnlineService
-  [ ] SchedulerService, NotificationService, TelegramService, DiscordService
-  [ ] FileShareService, UsersService (기존 spec 보완)
-
-Controller (8개, 33 엔드포인트):
-  [ ] TeamController (24), AuthController (1), UsersController (2)
-  [ ] TelegramController (1), FileShareController (2)
-  [ ] MainController (1), HealthController (1), UsersController-auth (1)
+Controller (8개, 33 엔드포인트) — UsersController만 완료:
+  [✓] UsersController (100%)
+  [ ] TeamController (24 엔드포인트), AuthController, TelegramController
+  [ ] FileShareController, MainController, HealthController
 
 Guard/Filter (6개): ✅ 완료
   [✓] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
   [✓] HttpExceptionFilter, WsExceptionFilter
 
-Gateway (8개):
-  [ ] TeamGateway (joinTeam, leaveTeam)
-  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult)
+Gateway (8개) — 전부 0%:
+  [ ] TeamGateway (joinTeam, leaveTeam) — 485줄
+  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 357줄
 ```
+
+**다음 착수 순서** (2026-08-07 실측 기준 — 비용 대비 보안·회귀 효과順)
+
+1. ✅ **`updateMemberStatus`·`verifyTeamInviteToken`** — 완료 (2026-08-07, 아래 결과 참조)
+2. ✅ **`NotificationAdapter`** — 완료 (2026-08-07)
+3. **`TeamGateway`** ◀ **다음 작업** — WS 권한 경계. HTTP와 **별도 구현**이라 한쪽만 고치는 실수가 실제로 가능하다(Phase A의 가드 2개 사례와 동일 구조)
+4. `OnlineUserService`·`TelegramService`·`DiscordService`·`FishingOnlineService`
+5. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
 
 ---
 
