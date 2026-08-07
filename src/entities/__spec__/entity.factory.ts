@@ -8,6 +8,7 @@ import { TelegramLink } from '../TelegramLink';
 import { FileShare } from '../FileShare';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import type { RoleKey } from '../../common/constants/role.constants';
+import type { TeamMemberType } from '../../modules/team/team.service';
 
 /**
  * 테스트용 Entity Factory.
@@ -145,5 +146,36 @@ export const createTelegramLink = (overrides: Partial<TelegramLink> = {}): Teleg
 export const createFileShare = (overrides: Partial<FileShare> = {}): FileShare => ({
   shareId: 'test-share-id',
   apiKey: 'test-api-key',
+  ...overrides,
+});
+
+/**
+ * `TeamService.getTeamMembersBy()`의 반환 형태(`TeamMemberType`).
+ *
+ * Entity가 아니라 **팀+멤버를 flatten한 쿼리 결과 타입**이므로 `createTeamMember`(Entity)와
+ * 혼용하면 안 된다. 특히 필드명이 겹치면서 의미가 다르다:
+ *  - `actStatus`     → **팀**의 활성 상태
+ *  - `userActStatus` → **멤버**의 활성 상태
+ *
+ * 이 타입을 쓰는 서비스 메서드를 테스트할 때는 반드시 이 factory를 사용한다
+ * (Entity factory를 캐스팅해 넣으면 shape 불일치가 조용히 숨는다).
+ */
+export const createTeamMemberView = (
+  overrides: Partial<TeamMemberType> = {},
+): TeamMemberType => ({
+  // 팀 정보
+  teamId: 1,
+  teamName: '테스트팀',
+  teamDescription: null,
+  crtdAt: FIXED_DATE,
+  actStatus: ActStatus.ACTIVE,
+  leaderId: 1,
+  telegramChatId: null,
+  discordWebhookUrl: null,
+  // 멤버 정보
+  userId: 1,
+  joinedAt: FIXED_DATE,
+  role: 'MEMBER' satisfies RoleKey,
+  userActStatus: ActStatus.ACTIVE,
   ...overrides,
 });
