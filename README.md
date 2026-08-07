@@ -154,7 +154,7 @@ Docker Swarm 기반. `main` 브랜치 push 시 GitHub Actions가 빌드 후 배�
 |---|---|
 | `infra` | caddy + redis + registry |
 | `prod_nest` | NestJS (3 replicas) — DNS `prod_nest_app:3500` |
-| `prod_next` | Next.js (20 replicas) — DNS `prod_next_app:3000` |
+| `prod_next` | Next.js (10 replicas) — DNS `prod_next_app:3000` |
 
 - 이미지 태그는 git SHA 7자 (`latest` 없음), 배포는 `docker stack deploy`로 통일
 - 배포 서버: fs-01 (ARM64, Manager) / fs-02 (registry) / fs-03 (모니터링)
