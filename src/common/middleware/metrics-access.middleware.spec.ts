@@ -1,5 +1,5 @@
-import { ForbiddenException } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ApiForbiddenErrorResponseDto } from '../dto/api-error.dto';
 import { MetricsAccessMiddleware } from './metrics-access.middleware';
 
 type BuildRequestInit = {
@@ -53,13 +53,13 @@ describe('MetricsAccessMiddleware', () => {
         { 'x-forwarded-for': '203.0.113.5', 'x-real-ip': '10.0.0.1' },
       ],
       ['XFF 배열 (Express 파싱)', { 'x-forwarded-for': ['203.0.113.5', '10.0.0.1'] }],
-    ])('%s → ForbiddenException', (_desc, headers) => {
+    ])('%s → ApiForbiddenErrorResponseDto', (_desc, headers) => {
       const req = buildRequest({
         headers,
         socket: { remoteAddress: '10.0.0.1' },
       });
 
-      expect(() => middleware.use(req, res, next)).toThrow(ForbiddenException);
+      expect(() => middleware.use(req, res, next)).toThrow(ApiForbiddenErrorResponseDto);
       expect(next).not.toHaveBeenCalled();
     });
   });
@@ -75,10 +75,10 @@ describe('MetricsAccessMiddleware', () => {
       ['1로 시작하는 공인 IPv4', '1.2.3.4'],
       ['빈 문자열', ''],
       ['옥텟 4자리 (잘못된 포맷)', '10.1234.5.6'],
-    ])('%s(%s) → ForbiddenException', (_desc, ip) => {
+    ])('%s(%s) → ApiForbiddenErrorResponseDto', (_desc, ip) => {
       const req = buildRequest({ socket: { remoteAddress: ip } });
 
-      expect(() => middleware.use(req, res, next)).toThrow(ForbiddenException);
+      expect(() => middleware.use(req, res, next)).toThrow(ApiForbiddenErrorResponseDto);
       expect(next).not.toHaveBeenCalled();
     });
   });
@@ -87,7 +87,7 @@ describe('MetricsAccessMiddleware', () => {
     it('remoteAddress가 undefined → 차단', () => {
       const req = buildRequest({ socket: {} });
 
-      expect(() => middleware.use(req, res, next)).toThrow(ForbiddenException);
+      expect(() => middleware.use(req, res, next)).toThrow(ApiForbiddenErrorResponseDto);
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -107,7 +107,7 @@ describe('MetricsAccessMiddleware', () => {
         socket: { remoteAddress: '127.0.0.1' },
       });
 
-      expect(() => middleware.use(req, res, next)).toThrow(ForbiddenException);
+      expect(() => middleware.use(req, res, next)).toThrow(ApiForbiddenErrorResponseDto);
       expect(next).not.toHaveBeenCalled();
     });
   });
