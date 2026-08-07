@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { Team } from './Team';
 import { ActStatus } from '../common/enums/task-status.enum';
 
@@ -12,6 +12,8 @@ export class TelegramLink {
   teamId: number;
 
   // 텔레그램 연동 토큰
+  // 유니크 제약은 DB 인덱스 IDX_TELEGRAM_LINK_TOKEN이 강제 (AddTokenUniqueIndexes 마이그레이션)
+  @Index('IDX_TELEGRAM_LINK_TOKEN', { unique: true })
   @Column({ name: 'TOKEN', type: 'varchar2', length: 500 })
   token: string;
 

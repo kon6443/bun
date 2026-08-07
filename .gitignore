@@ -14,3 +14,5 @@ dist/
 
 # pino-roll 로그 파일
 logs/
+# Claude Code 로컬 설정 백업
+.claude/settings.local.json.bak-*
