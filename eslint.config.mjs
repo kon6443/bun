@@ -26,6 +26,7 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', '*.js', '*.mjs', '**/*.spec.ts'],
+    // 테스트 코드도 린트 대상이다 — 프로덕션 코드와 같은 품질 기준을 적용한다.
+    ignores: ['dist/', 'node_modules/', '*.js', '*.mjs'],
   },
 );

@@ -16,3 +16,6 @@ dist/
 logs/
 # Claude Code 로컬 설정 백업
 .claude/settings.local.json.bak-*
+
+# 테스트 커버리지 리포트 (pnpm test:cov 산출물)
+coverage/
