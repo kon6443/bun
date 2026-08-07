@@ -21,8 +21,8 @@
 ## 진행률
 
 ```
-완료: 27/50  |  남은: 21  |  보류: 2
-(D27은 구현·배포 완료 — 댓글 생성 수동 확인만 잔여)
+완료: 28/51  |  남은: 21  |  보류: 2
+(D23은 구현 완료 — 담당자 db:migrate:up 실행만 잔여)
 ```
 
 ---
@@ -53,11 +53,11 @@
 | 28 | **D20 Swagger 리다이렉트 NestMiddleware 전환** | 쉬움 | 🟢 | 보통 | 없음 |
 | 29 | **D21 파일 다운로드 에러 응답 통일** | 쉬움 | 🟢 | 보통 | D19 |
 | 30 | **D22 TelegramService 비관적 락** | 쉬움 | 🟢 | 높음 | 없음 |
-| 31 | **D23 TeamInvitation 토큰 Unique Index** | 쉬움 | 🟡 | 높음 | DB DDL |
+| 31 | **D23 TeamInvitation 토큰 Unique Index** | 쉬움 | 🟡 | 높음 | ⏳ 구현 완료 — up 실행 잔여 |
 | 32 | **D24 하드코딩 설정값 → ConfigService** | 쉬움 | 🟢 | 보통 | 없음 |
 | 33 | **D25 DTO 검증 누락 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | 34 | **D26 중복 Controller 클래스명 수정** | 쉬움 | 🟢 | 낮음 | 없음 |
-| 35 | **D27 TaskComment PK 자동 생성** | 보통 | 🟡 | 보통 | ⏳ 구현·배포 완료 — 댓글 생성 확인만 잔여 |
+| ~~35~~ | ~~D27 TaskComment PK 자동 생성~~ | — | — | — | **✅ 완료** |
 | 36 | **D28 N+1 쿼리 최적화** | 쉬움 | 🟢 | 보통 | 없음 |
 | 37 | **D29 QueryBuilder Raw 매핑 타입 안전성** | 보통 | 🟢 | 보통 | 없음 |
 | 38 | **D30 LOW 품질 개선 모음** | 쉬움~보통 | 🟢 | 낮음~보통 | 없음 |
@@ -65,6 +65,7 @@
 | 40 | **D32 Redis 캐시 userName invalidation** | 쉬움 | 🟢 | 보통 | 없음 |
 | ~~41~~ | ~~D33 DB 마이그레이션 환경 구축 (TypeORM migrations)~~ | — | — | — | **✅ 완료** |
 | ~~42~~ | ~~D34 Entity↔DB 정합화 (DDL 대조 후속)~~ | — | — | — | **✅ 완료** |
+| 43 | **D35 초대 링크 경로 불일치 (inviteLink 죽은 값)** | 쉬움 | 🟢 | 보통 | 프론트 협의 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -90,7 +91,7 @@ D19 (StreamableFile) ──→ 독립 (Express @Res 제거)
 D20 (Swagger NestMiddleware) ──→ 독립 (Express 인라인 미들웨어 제거)
 D21 (에러 응답 통일) ──→ D19 완료 시 자동 해결
 D22 (Telegram 비관적 락) ──→ 독립 (trigger: acceptTeamInvite 동일 패턴)
-D23 (토큰 Unique Index) ──→ 독립 (DB DDL 수동)
+D23 (토큰 Unique Index) ──→ 독립 (D33 마이그레이션으로 수행)
 D24 (하드코딩 설정값 ConfigService) ──→ 독립 (.env 추가)
 D25 (DTO 검증 보완) ──→ 독립
 D26 (Controller 클래스명) ──→ 독립
@@ -102,6 +103,7 @@ D31 (환경 검증) ──→ D24 (CORS_ORIGINS 등 D24 신규 변수 검증 포
 D32 (Redis userName invalidation) ──→ 독립
 ✅ D33 (DB 마이그레이션 환경) ──→ 완료 (이후 모든 DB DDL 작업은 마이그레이션으로 수행)
 D34 (Entity↔DB 정합화) ──→ D33 (DDL 대조 결과 기반) — D23/D27과 연계
+D35 (초대 링크 경로) ──→ 독립 (프론트 next-bun 협의 필요)
 ```
 
 ---
@@ -1384,7 +1386,7 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 작업 목록 (완료 11 + 미완료 22 + 보류 2)
+Phase 5 — 작업 목록 (완료 13 + 미완료 21 + 보류 2)
   [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
@@ -1407,18 +1409,19 @@ Phase 5 — 작업 목록 (완료 11 + 미완료 22 + 보류 2)
   [ ] D20 Swagger 리다이렉트 NestMiddleware 전환
   [ ] D21 파일 다운로드 에러 응답 통일 (D19 완료 시 자동 해결)
   [ ] D22 TelegramService 비관적 락 (verifyAndLinkTeam에 pessimistic_write 추가)
-  [ ] D23 TeamInvitation/TelegramLink 토큰 Unique Index (DB DDL + Entity)
+  [ ] D23 토큰 Unique Index — 마이그레이션·Entity 작성 완료, 담당자 up 실행 잔여 (2026-07-31)
   [ ] D24 하드코딩 설정값 → ConfigService (online-user, scheduler, cors)
   [ ] D25 DTO 검증 누락 보완 (5개 DTO)
   [ ] D26 중복 Controller 클래스명 수정 (auth/UsersController → AuthUsersController)
-  [ ] D27 TaskComment PK 자동 생성 (⚡ 우선도 높음 — Entity/DB 불일치)
+  [✓] D27 TaskComment PK 자동 생성 — @PrimaryGeneratedColumn 전환, 배포 후 댓글 생성 확인 (2026-07-31)
   [ ] D28 N+1 쿼리 최적화 (getTasksByTeamId 중복 쿼리 제거)
   [ ] D29 QueryBuilder Raw 매핑 타입 안전성 (.getRawMany → .getMany)
   [ ] D30 LOW 품질 개선 모음 (as any, WS throttle, Helmet, Dockerfile, .env.example)
   [ ] D31 환경 검증 보완 (JWT_SECRET MinLength 등)
   [ ] D32 Redis 캐시 userName invalidation (PUT /users/me 후 Redis Hash 갱신)
   [✓] D33 DB 마이그레이션 환경 구축 — CLI DataSource + db:migrate:* 5종 + init 베이스라인 fake 등록 완료 (2026-07-23)
-  [ ] D34 Entity↔DB 정합화 (TOKEN 길이, kakaoId 타입, 죽은 컬럼 등 — DDL 대조 리포트 기반)
+  [✓] D34 Entity↔DB 정합화 — TOKEN 500 확장, kakaoId varchar2 정정, nullable/length 표기 (2026-07-28, 커밋 f9d2a35·669e338)
+  [ ] D35 초대 링크 경로 불일치 — 백엔드 inviteLink가 존재하지 않는 라우트를 가리킴 (프론트 협의)
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -1485,7 +1488,9 @@ await this.dataSource.transaction(async (manager) => {
 
 ## D23. TeamInvitation 토큰 Unique Index 활성화
 
-- **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 1파일 + DB DDL
+- **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: Entity 2파일 + 마이그레이션 1개
+- **상태**: ⏳ **구현 완료** (2026-07-31) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개. **잔여: 담당자 `pnpm db:migrate:up` 실행**
+- ⚠️ 원안은 "DDL 직접 실행"이었으나 D33 이후 **마이그레이션 파일로 수행**하도록 변경됨
 
 ### 현재 문제 (`TeamInvitation.ts:19`)
 
@@ -1522,15 +1527,34 @@ CREATE UNIQUE INDEX IDX_INVITE_TOKEN ON TEAM_INVITATIONS(TOKEN);
 
 - 기존 데이터에 중복 토큰이 있으면 인덱스 생성 실패 → 먼저 중복 확인 필수
 - `TelegramLink.ts`의 `TOKEN` 컬럼에도 동일한 유니크 인덱스 필요 (확인 후 함께 적용)
+- **Oracle 유니크 인덱스는 다중 NULL을 허용** — `TEAM_INVITATIONS.TOKEN`이 nullable이어도 문제없음
+- 멱등 가드는 **인덱스명이 아니라 컬럼 기준**으로 판정 — 다른 이름의 인덱스가 이미 TOKEN에 걸려 있으면 `CREATE INDEX`가 ORA-01408로 실패하므로
+- 🔴 **초대 토큰은 JWT다 (randomBytes 아님)** — payload가 `{teamId, userId}` + `iat`/`exp`(초 단위)뿐이어서 **같은 팀·같은 유저가 1초 안에 두 번 요청하면 동일한 토큰**이 생성된다. 유니크 인덱스만 걸면 더블클릭이 ORA-00001 → 500이 된다. 초당 5회 rate limit으로도 막히지 않음
+  → **해결**: `createTeamInvite`의 payload에 `jti: randomBytes(16).toString('hex')` 추가 (2026-07-31). `verifyTeamInviteToken`은 `payload.teamId`만 사용하고 `jti`는 JWT 표준 필드라 검증 로직 무영향. 기존 발급 토큰도 계속 유효
+- 텔레그램 토큰은 `randomBytes(32)` 기반이라 충돌 무시 가능. 해제는 soft delete(`actStatus: INACTIVE`, 행 유지)이고 재연동 시 새 토큰이라 유니크 인덱스와 무충돌
+- 유니크 위반 시 응답은 `http-exception.filter.ts:71`이 "서버 내부 오류가 발생했습니다."로 통일 — Oracle 에러 원문은 서버 로그에만 남음 (확인 완료)
+
+### 사전 확인 실측 (2026-07-31, read-only)
+
+| 테이블 | 행 수 | distinct TOKEN | NULL | 최대 길이 | TOKEN 기존 인덱스 |
+|---|---:|---:|---:|---:|---|
+| `TEAM_INVITATIONS` | 21 | 21 | 0 | 204 | 없음 (PK만) |
+| `TEAM_TELEGRAM_LINKS` | 3 | 3 | 0 | 64 | 없음 (PK만) |
+
+→ 중복 0건. 문자셋 `AL32UTF8`이라 VARCHAR2(500)의 최대 키 길이는 2000바이트로 Oracle 인덱스 키 한계 이내.
 
 ### 실행 체크리스트
 ```
-[ ] DB에서 TEAM_INVITATIONS.TOKEN 중복 확인
-[ ] DB에서 TEAM_TELEGRAM_LINKS.TOKEN 중복 확인
-[ ] 중복 없으면 유니크 인덱스 생성 (두 테이블)
-[ ] TeamInvitation.ts: @Index 주석 해제
-[ ] TelegramLink.ts: @Index 추가 (없으면)
-[ ] tsc --noEmit + 앱 시작 확인
+[✓] DB에서 TEAM_INVITATIONS.TOKEN 중복 확인 — 21/21 distinct, 중복 0건
+[✓] DB에서 TEAM_TELEGRAM_LINKS.TOKEN 중복 확인 — 3/3 distinct, 중복 0건
+[✓] 유니크 인덱스 마이그레이션 작성 — migrations/1785464744654-AddTokenUniqueIndexes.ts
+    (IDX_INVITE_TOKEN, IDX_TELEGRAM_LINK_TOKEN — 컬럼 기준 멱등 가드 + down 존재 가드)
+[✓] TeamInvitation.ts: @Index 주석 해제 (Index import 추가)
+[✓] TelegramLink.ts: @Index 신규 추가
+[✓] team.service.ts: JWT payload에 jti(nonce) 추가 — 동일 초 중복 토큰 차단 (리뷰에서 발견)
+[✓] pnpm build + lint 통과 (에러 0건), 마이그레이션 클래스 로드 확인
+[ ] 담당자: pnpm db:migrate:up 실행 → 인덱스 2개 생성 확인
+[ ] 초대 생성 1회 수동 테스트 (인덱스 적용 후 정상 동작)
 ```
 
 ---
@@ -1643,7 +1667,7 @@ NestJS DI는 모듈 단위라 런타임 충돌은 없지만, 디버깅 시 스�
 
 - **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 2~3파일
 - **⚡ 우선도 높음**: 동시 요청 시 ID 충돌로 댓글 생성 실패 가능 — 사용자가 늘어나면 바로 문제됨
-- **상태**: ⏳ **구현·커밋 완료** (2026-07-23, 커밋 `669e338`) — 잔여: 댓글 생성 수동 테스트 1건
+- **상태**: ✅ **완료** (2026-07-31) — 커밋 `669e338`, 배포 후 댓글 생성 정상 확인
 
 ### 현재 문제
 
@@ -1687,7 +1711,7 @@ commentId: number;
 ```
 [✓] TaskComment.ts: @PrimaryColumn → @PrimaryGeneratedColumn (2026-07-23 — commentId 수동 할당처 grep 0건 확인)
 [✓] tsc(빌드) 통과
-[ ] 댓글 생성 수동 테스트 (ID 자동 생성 확인)
+[✓] 댓글 생성 수동 테스트 (ID 자동 생성 확인) — 2026-07-31 배포 환경에서 정상 확인
 ```
 
 ---
@@ -2129,6 +2153,56 @@ export default new DataSource({
 
 ---
 
+## D35. 초대 링크 경로 불일치 (`inviteLink` 죽은 값)
+
+- **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 백엔드 1줄 또는 응답 DTO
+- **발견 경로**: 2026-07-31 D23 리뷰 중 `jti` 추가의 프론트 파급을 확인하다가 발견
+- **선행**: 없음 (단, 수정 방향 결정에 프론트 협의 필요)
+
+### 현재 문제
+
+`POST /teams/:teamId/invite` 응답의 `inviteLink`가 **존재하지 않는 프론트 라우트**를 가리킨다.
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| 백엔드 생성 링크 | `${NEXT_PUBLIC_DOMAIN}/teams/invitation?token=...` | `team.service.ts:1077` |
+| 프론트 실제 라우트 | `/teams/invite/accept` | `next-bun`의 `page.tsx` 전수 조회 — `teams/invitation` 라우트 **없음** |
+| rewrite/redirect 보정 | 없음 | `next.config`에 `rewrites`/`redirects` 미설정 |
+
+### 왜 지금까지 문제가 없었나
+
+프론트가 백엔드의 `inviteLink`를 **사용하지 않고** 자체적으로 URL을 조립한다:
+
+```tsx
+// next-bun: src/app/teams/[teamId]/components/TeamManagementSection.tsx:449
+}/teams/invite/accept?token=${encodeURIComponent(invite.token)}`;
+```
+
+`src/services/teamService.ts:254`에 `inviteLink: string` 타입 선언은 있으나 UI는 무시한다.
+→ 사용자 영향 없음. 다만 API가 **열면 404가 되는 값**을 계속 반환하고 있어, 이 필드를 신뢰하는 새 클라이언트(모바일 앱, 외부 연동 등)가 생기면 바로 깨진다.
+
+### 수정 방향 (택 1 — 결정 필요)
+
+| 방향 | 내용 | 트레이드오프 |
+|---|---|---|
+| **A. 백엔드 경로 수정** | `/teams/invitation` → `/teams/invite/accept` (1줄) | 프론트 라우트가 SSOT가 됨. 프론트가 경로를 바꾸면 다시 깨짐 |
+| **B. `inviteLink` 필드 제거** | 응답에서 삭제, 토큰만 반환 | 링크 조립 책임이 클라이언트로 명확히 이동. 응답 DTO·Swagger·프론트 타입 수정 필요 (프론트는 이미 미사용이라 실질 영향 없음) |
+
+### ⚠️ 주의
+
+- 프론트가 `invite.token`을 목록 응답에서 받아 쓰고 있으므로, 토큰 자체를 응답에서 빼면 안 된다 (B 선택 시 `inviteLink`만 제거)
+- 방향 결정 전 프론트에서 `inviteLink` 사용처가 정말 없는지 재확인 (현재 grep 결과 타입 선언 1곳뿐)
+
+### 실행 체크리스트
+```
+[ ] 수정 방향 결정 (A: 경로 수정 / B: 필드 제거)
+[ ] 프론트 inviteLink 사용처 재확인 (grep 전수)
+[ ] 백엔드 수정 + Swagger 응답 예시 갱신
+[ ] 초대 생성 → 링크 직접 열기 수동 테스트 (404 해소 확인)
+```
+
+---
+
 ## 위험도 요약
 
 | 작업 | 위험도 | 핵심 이유 |
@@ -2166,4 +2240,5 @@ export default new DataSource({
 | D31 환경 검증 | 🟢 낮음 | 검증 추가만, 기존 .env 통과 필요 |
 | D33 DB 마이그레이션 환경 | 🟡 중간 | LOCAL/PROD 동일 DB — --fake 등록만 실 DB 접촉 (이력 테이블 + 1행). up/revert는 담당자 수동 실행 |
 | D34 Entity↔DB 정합화 | 🟡 중간 | kakaoId 타입 정정은 호출부 전수 확인 필요. TOKEN 확장은 DDL 1건 (멱등 가드) |
+| D35 초대 링크 경로 | 🟢 낮음 | 현재 프론트가 자체 URL을 조립해 우회 중이라 사용자 영향 없음. 수정 방향만 결정 필요 |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |

@@ -108,8 +108,9 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **팀 단위 실시간 채팅**: 백엔드+프론트 구현 완료 (저장 없음, 빌드/타입체크/코드리뷰 통과) — 수동 E2E·배포 대기. `docs/tasks/tasks-team-chat.md`
 - **에러 DTO 리팩토링 (defineDomainError)**: ✅ 구현·검증·커밋 완료 (2026-07-22, 커밋 `73adc28`~`8b678c4`) — 잔여: 인증 필요 수동 E2E 2건 (팀 미존재 404, WS FORBIDDEN/CHAT_NOT_JOINED)
 - **DB 마이그레이션 환경 (D33)**: ✅ 완료 (2026-07-23, 커밋 `169ee9a`) — init fake 등록 + TOKEN 확장 up 실행까지 검증
-- **Entity↔DB 정합화 (D34)**: ✅ 완료 (2026-07-28, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락 검증. **D27(TaskComment PK)만 댓글 생성 수동 확인 잔여**
-- **다음 후보**: D23 토큰 Unique Index (중복 0건 확인 완료) 또는 D2 테스트 인프라 — `docs/tasks/tasks-nestjs-improvements.md`
+- **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
+- **토큰 Unique Index (D23)**: ⏳ 구현 완료 (2026-07-31) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개. **잔여: 담당자 `pnpm db:migrate:up`**
+- **다음 후보**: D2 테스트 인프라 (문서 권고 1순위) — `docs/tasks/tasks-nestjs-improvements.md`
 
 ## Docs
 
