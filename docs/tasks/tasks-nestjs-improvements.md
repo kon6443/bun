@@ -21,8 +21,7 @@
 ## 진행률
 
 ```
-완료: 28/51  |  남은: 21  |  보류: 2
-(D23은 구현 완료 — 담당자 db:migrate:up 실행만 잔여)
+완료: 30/51  |  남은: 19  |  보류: 2
 ```
 
 ---
@@ -32,7 +31,7 @@
 | 순서 | 태스크 | 난이도 | 위험도 | 효과 | 선행 |
 |:---:|--------|:---:|:---:|:---:|:---:|
 | ~~9~~ | ~~D3 Port/Adapter~~ | — | — | — | **✅ 완료** |
-| 10 | **D2 테스트 인프라 구축** | 어려움 | 🟢 | 매우 높음 | 없음 |
+| ~~10~~ | ~~D2 테스트 인프라 구축~~ | — | — | — | **✅ 완료** |
 | ~~11~~ | ~~D7 매직 문자열 enum화~~ | — | — | — | **✅ 완료** |
 | ~~12~~ | ~~D11 ESLint 설정~~ | — | — | — | **✅ 완료** |
 | 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
@@ -53,7 +52,7 @@
 | 28 | **D20 Swagger 리다이렉트 NestMiddleware 전환** | 쉬움 | 🟢 | 보통 | 없음 |
 | 29 | **D21 파일 다운로드 에러 응답 통일** | 쉬움 | 🟢 | 보통 | D19 |
 | 30 | **D22 TelegramService 비관적 락** | 쉬움 | 🟢 | 높음 | 없음 |
-| 31 | **D23 TeamInvitation 토큰 Unique Index** | 쉬움 | 🟡 | 높음 | ⏳ 구현 완료 — up 실행 잔여 |
+| ~~31~~ | ~~D23 TeamInvitation 토큰 Unique Index~~ | — | — | — | **✅ 완료** |
 | 32 | **D24 하드코딩 설정값 → ConfigService** | 쉬움 | 🟢 | 보통 | 없음 |
 | 33 | **D25 DTO 검증 누락 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | 34 | **D26 중복 Controller 클래스명 수정** | 쉬움 | 🟢 | 낮음 | 없음 |
@@ -71,7 +70,7 @@
 ### 의존 관계
 
 ```
-D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
+✅ D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
            ──→ D6 (E2E 테스트)
 ✅ D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
 D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검증만)
@@ -91,7 +90,7 @@ D19 (StreamableFile) ──→ 독립 (Express @Res 제거)
 D20 (Swagger NestMiddleware) ──→ 독립 (Express 인라인 미들웨어 제거)
 D21 (에러 응답 통일) ──→ D19 완료 시 자동 해결
 D22 (Telegram 비관적 락) ──→ 독립 (trigger: acceptTeamInvite 동일 패턴)
-D23 (토큰 Unique Index) ──→ 독립 (D33 마이그레이션으로 수행)
+✅ D23 (토큰 Unique Index) ──→ 완료
 D24 (하드코딩 설정값 ConfigService) ──→ 독립 (.env 추가)
 D25 (DTO 검증 보완) ──→ 독립
 D26 (Controller 클래스명) ──→ 독립
@@ -111,6 +110,7 @@ D35 (초대 링크 경로) ──→ 독립 (프론트 next-bun 협의 필요)
 ## D2. 테스트 인프라 구축
 
 - **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟢 낮음 | **범위**: 설정 + 유틸 파일 다수
+- **상태**: ✅ **완료 (2026-08-05)** — 38/38 통과, 빌드·린트 정합. 상세는 아래 실행 체크리스트
 
 ### 현재 상태
 
@@ -193,18 +193,54 @@ export class MockNotificationAdapter {
 - **fetch 모킹**: `jest.spyOn(global, 'fetch')` (Node 18+ 내장 fetch)
 - **typeorm-transactional mock**: D4 도입 후 no-op 모킹 필요
 
+### ⚠️ 착수 시점 실태 조사 결과 (2026-08-05) — 위 계획서보다 상황이 나았음
+
+| 계획서 서술 | 실제 |
+|---|---|
+| 테스트 패키지 ❌ 미설치 | ✅ 이미 설치됨 (`jest@30`, `ts-jest`, `@nestjs/testing`, `@types/jest`) |
+| test 스크립트 ❌ 없음 | ✅ `test`/`test:watch`/`test:cov` 존재 |
+| 기존 테스트 2개 "스캐폴딩 수준" | **3개**, 그중 `metrics-access.middleware.spec.ts`는 `it.each` 파라미터화로 IP·XFF 에지 23케이스를 덮는 양질 테스트 |
+| 실패 20건 = 인프라 미비 | **아님.** 에러 DTO 리팩토링(2026-07-22) 때 테스트를 함께 갱신하지 않아 기대 예외 클래스가 어긋난 것 + D15(`@CurrentUser`) 전환으로 컨트롤러 시그니처가 바뀐 것. **프로덕션 코드는 정상** |
+
+→ "0에서 구축"이 아니라 **"정비 + 표준 수립"**으로 방향 조정. 검증된 케이스를 버리지 않기 위해 **① 최소 수정으로 녹색화 → ② 표준 수립 후 리팩터** 2단계로 진행했다.
+
+### 결정 사항 (2026-08-05)
+
+| 결정 | 선택 | 근거 |
+|---|---|---|
+| 기존 실패 20건 | **고쳐서 살림** (삭제·재작성 아님) | 실패 원인이 전부 동일 패턴이라 수정이 저렴하고, 검증된 에지 케이스 23개를 보존 |
+| 테스트 의존성 | **0개 추가** — 순수 TS Factory 함수 | `Partial<T>` 기반이라 타입 안전성이 완전하고(rosie는 제네릭 추론 약함), faker의 랜덤값은 재현성을 해침. `supertest`는 D6 착수 시 추가 |
+| 커버리지 임계값 | **미설정** | 현재 커버리지가 사실상 0이라 지금 걸면 무조건 실패. D5로 쌓은 뒤 실측치 기준으로 설정 (`coverageThreshold` 5줄) |
+| CI 게이트 | **미적용** | 지금 붙이면 PR이 전부 막힘. 테스트 녹색화 직후 `ci.yml` 12줄로 추가 예정 |
+
 ### 실행 체크리스트
 ```
-[ ] 테스트 패키지 설치
-[ ] package.json 스크립트 추가
-[ ] jest.config.js 업데이트 (transformIgnorePatterns, @config + @/* alias 추가)
-[ ] test/jest-e2e.json 생성
-[ ] src/entities/__spec__/ — Entity Factory 구현 (8개)
-[ ] test/helpers/mock-repository.ts
-[ ] test/helpers/create-testing-app.ts
-[ ] test/helpers/e2e-auth.ts
-[ ] 기존 spec 파일 실행 가능 확인
-[ ] jest 정상 동작 확인
+1단계 — 기준선 확보 (녹색화)
+  [✓] 실패 20건 원인 규명 — 에러 DTO 리팩토링·@CurrentUser 전환 후 테스트 미갱신
+  [✓] users.service.spec: NotFoundException → UserNotFoundErrorResponseDto
+  [✓] metrics-access.middleware.spec: ForbiddenException → ApiForbiddenErrorResponseDto
+  [✓] users.controller.spec: mockRequest → User 객체 (@CurrentUser 시그니처 반영)
+  [✓] jest.config.js moduleNameMapper에 @config/*, @/* 추가 (tsconfig paths와 1:1 정합)
+  [✓] 32/32 통과 확인
+
+2단계 — 표준 수립 + 리팩터
+  [✓] src/common/__spec__/mock-repository.ts — createMockRepository / createMockQueryBuilder
+      (QueryBuilder 체이닝 mock 포함 — TeamService 테스트(D5) 대비)
+  [✓] src/entities/__spec__/entity.factory.ts — Entity 8개 Factory + FIXED_DATE
+      (고정값만 사용 / 관계 프로퍼티 기본 미설정 / Partial override)
+  [✓] 기존 spec 3개를 표준으로 리팩터 (케이스 보존, 32/32 유지)
+  [✓] 표준 검증용 신규 테스트 1개 작성 — file-share.service.spec.ts (6케이스)
+  [✓] 38/38 통과
+
+3단계 — 툴체인 정합화 (2단계 중 발견해 함께 처리)
+  [✓] tsconfig.build.json 신설 + build 스크립트를 `tsc -p tsconfig.build.json`으로 변경
+      → 프로덕션 빌드에서 테스트·마이그레이션 제외 (dist 오염 방지 확인)
+  [✓] tsconfig.json은 테스트를 포함하도록 변경 → eslint 타입 인지 린팅·IDE가 테스트도 검사
+  [✓] eslint ignores에서 `**/*.spec.ts` 제거 — **테스트 코드도 린트 대상**으로 전환
+      (기존엔 테스트가 린트에서 완전히 빠져 있었음. 신규 경고 0건으로 통과)
+
+잔여 (D6 착수 시)
+  [ ] supertest 설치 + test/jest-e2e.json + E2E 헬퍼 (create-testing-app, e2e-auth)
 ```
 
 ---
@@ -1386,8 +1422,8 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 작업 목록 (완료 13 + 미완료 21 + 보류 2)
-  [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
+Phase 5 — 작업 목록 (완료 15 + 미완료 19 + 보류 2)
+  [✓] D2  테스트 인프라 구축 — Factory·Mock 헬퍼 표준 + 기존 테스트 정비 + 툴체인 정합화 (2026-08-05, 38/38 통과)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
   [✓] D11 ESLint 설정 — Flat Config + Prettier + 경고 0건 달성
@@ -1409,7 +1445,7 @@ Phase 5 — 작업 목록 (완료 13 + 미완료 21 + 보류 2)
   [ ] D20 Swagger 리다이렉트 NestMiddleware 전환
   [ ] D21 파일 다운로드 에러 응답 통일 (D19 완료 시 자동 해결)
   [ ] D22 TelegramService 비관적 락 (verifyAndLinkTeam에 pessimistic_write 추가)
-  [ ] D23 토큰 Unique Index — 마이그레이션·Entity 작성 완료, 담당자 up 실행 잔여 (2026-07-31)
+  [✓] D23 토큰 Unique Index — jti 선행 수정 + 인덱스 2개 생성 완료 (2026-08-05)
   [ ] D24 하드코딩 설정값 → ConfigService (online-user, scheduler, cors)
   [ ] D25 DTO 검증 누락 보완 (5개 DTO)
   [ ] D26 중복 Controller 클래스명 수정 (auth/UsersController → AuthUsersController)
@@ -1489,7 +1525,7 @@ await this.dataSource.transaction(async (manager) => {
 ## D23. TeamInvitation 토큰 Unique Index 활성화
 
 - **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: Entity 2파일 + 마이그레이션 1개
-- **상태**: ⏳ **구현 완료** (2026-07-31) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개. **잔여: 담당자 `pnpm db:migrate:up` 실행**
+- **상태**: ✅ **완료** (2026-08-05) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개 + jti 선행 수정(`02aefd8`). 배포 후 `db:migrate:up` 실행 완료
 - ⚠️ 원안은 "DDL 직접 실행"이었으나 D33 이후 **마이그레이션 파일로 수행**하도록 변경됨
 
 ### 현재 문제 (`TeamInvitation.ts:19`)
@@ -1553,8 +1589,7 @@ CREATE UNIQUE INDEX IDX_INVITE_TOKEN ON TEAM_INVITATIONS(TOKEN);
 [✓] TelegramLink.ts: @Index 신규 추가
 [✓] team.service.ts: JWT payload에 jti(nonce) 추가 — 동일 초 중복 토큰 차단 (리뷰에서 발견)
 [✓] pnpm build + lint 통과 (에러 0건), 마이그레이션 클래스 로드 확인
-[ ] 담당자: pnpm db:migrate:up 실행 → 인덱스 2개 생성 확인
-[ ] 초대 생성 1회 수동 테스트 (인덱스 적용 후 정상 동작)
+[✓] 담당자: pnpm db:migrate:up 실행 (2026-08-05) — 실측 확인: IDX_INVITE_TOKEN / IDX_TELEGRAM_LINK_TOKEN 둘 다 TOKEN에 UNIQUE로 생성, 이력 3건
 ```
 
 ---
