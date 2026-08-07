@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
-import { verify, JwtPayload } from 'jsonwebtoken';
+import { sign, verify, JwtPayload } from 'jsonwebtoken';
 import { TeamService } from './team.service';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
@@ -13,6 +13,7 @@ import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import {
+  createTeam,
   createTeamInvitation,
   createTeamMember,
   createTeamMemberView,
@@ -28,8 +29,10 @@ import {
   TeamInviteExpiredErrorResponseDto,
   TeamInviteNotFoundErrorResponseDto,
   TeamMemberAlreadyExistsErrorResponseDto,
+  TeamNotFoundErrorResponseDto,
   TeamTaskBadRequestErrorResponseDto,
 } from './team-error.dto';
+import { AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
 const SECRET = 'test-jwt-secret';
 const CONFIG: Record<string, string> = {
@@ -48,14 +51,18 @@ const hoursFromNow = (hours: number) => new Date(Date.now() + hours * 60 * 60 * 
  */
 describe('TeamService — 초대 플로우', () => {
   let service: TeamService;
+  let teamRepository: MockRepository<Team>;
   let teamMemberRepository: MockRepository<TeamMember>;
   let teamInvitationRepository: MockRepository<TeamInvitation>;
+  let configService: { get: jest.Mock };
   let manager: { createQueryBuilder: jest.Mock; update: jest.Mock; create: jest.Mock; save: jest.Mock };
   let dataSource: { transaction: jest.Mock };
 
   beforeEach(async () => {
+    teamRepository = createMockRepository<Team>();
     teamMemberRepository = createMockRepository<TeamMember>();
     teamInvitationRepository = createMockRepository<TeamInvitation>();
+    configService = { get: jest.fn((k: string) => CONFIG[k]) };
 
     manager = {
       createQueryBuilder: jest.fn(),
@@ -74,13 +81,13 @@ describe('TeamService — 초대 플로우', () => {
       providers: [
         TeamService,
         { provide: getDataSourceToken(), useValue: dataSource as unknown as DataSource },
-        { provide: getRepositoryToken(Team), useValue: createMockRepository<Team>() },
+        { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepository },
         { provide: getRepositoryToken(TeamTask), useValue: createMockRepository<TeamTask>() },
         { provide: getRepositoryToken(TaskComment), useValue: createMockRepository<TaskComment>() },
         { provide: getRepositoryToken(TeamInvitation), useValue: teamInvitationRepository },
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
-        { provide: ConfigService, useValue: { get: jest.fn((k: string) => CONFIG[k]) } },
+        { provide: ConfigService, useValue: configService },
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
       ],
     }).compile();
@@ -270,6 +277,149 @@ describe('TeamService — 초대 플로우', () => {
       expect(teamInvitationRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ usageCurCnt: 0, usageMaxCnt: 5, actStatus: ActStatus.ACTIVE }),
       );
+    });
+  });
+
+  /**
+   * 초대 링크를 연 사람에게 팀 정보를 보여주기 전 관문이다.
+   * JWT만 통과하면 되는 게 아니라 **DB 상태(활성 초대·만료·팀 활성·사용 횟수)** 를 모두 본다 —
+   * 토큰은 발급 후 바뀌지 않으므로, 초대 회수·팀 비활성화가 먹히려면 DB 검증이 살아 있어야 한다.
+   */
+  describe('verifyTeamInviteToken', () => {
+    const TEAM_ID = 7;
+    const INVITER_ID = 3;
+
+    const makeToken = (payload: Record<string, unknown> = {}, options = {}) =>
+      sign({ teamId: TEAM_ID, userId: INVITER_ID, ...payload }, SECRET, {
+        expiresIn: '1h',
+        ...options,
+      });
+
+    /** DB에 유효한 초대 + 활성 팀이 있는 상태로 고정 */
+    const mockValidInvite = (overrides: Partial<TeamInvitation> = {}) => {
+      // factory 기본 endAt은 FIXED_DATE 기준이라 이미 과거다 — 유효 케이스는 반드시 덮어쓴다
+      const invite = createTeamInvitation({
+        teamId: TEAM_ID,
+        userId: INVITER_ID,
+        endAt: hoursFromNow(24),
+        ...overrides,
+      });
+      teamInvitationRepository.findOne.mockResolvedValue(invite);
+      teamRepository.findOne.mockResolvedValue(
+        createTeam({ teamId: TEAM_ID, teamName: '초대팀' }),
+      );
+      return invite;
+    };
+
+    it('JWT_SECRET이 없으면 DB를 보기 전에 차단해야 함', async () => {
+      configService.get.mockReturnValue(undefined);
+
+      await expect(service.verifyTeamInviteToken(makeToken())).rejects.toThrow(
+        AuthInvalidTokenErrorResponseDto,
+      );
+      expect(teamInvitationRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['다른 시크릿으로 서명된 토큰', sign({ teamId: TEAM_ID, userId: INVITER_ID }, 'other-secret')],
+      ['만료된 토큰', sign({ teamId: TEAM_ID, userId: INVITER_ID }, SECRET, { expiresIn: '-1h' })],
+      ['토큰 형식이 아닌 문자열', 'not-a-jwt'],
+    ])('%s는 만료로 처리해야 함', async (_desc, token) => {
+      await expect(service.verifyTeamInviteToken(token)).rejects.toThrow(
+        TeamInviteExpiredErrorResponseDto,
+      );
+      // 위조와 만료를 구분해 알려주지 않는다 (토큰 유효성 탐색 방지)
+      expect(teamInvitationRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('초대 조회는 payload의 teamId + 토큰 + 활성 상태를 모두 걸어야 함', async () => {
+      mockValidInvite();
+
+      await service.verifyTeamInviteToken(makeToken());
+
+      // actStatus가 빠지면 회수(비활성화)된 초대가 되살아난다
+      expect(teamInvitationRepository.findOne).toHaveBeenCalledWith({
+        where: { teamId: TEAM_ID, token: expect.any(String), actStatus: ActStatus.ACTIVE },
+      });
+    });
+
+    it('토큰의 teamId를 위조하면 조회 단계에서 걸러져야 함', async () => {
+      // findOne이 teamId 조건을 실제로 반영하도록 흉내낸다.
+      // 서비스가 조회 조건에서 teamId를 빼면 위조 토큰으로도 초대가 반환되어 이 테스트가 깨진다 —
+      // teamId 검증은 별도 분기가 아니라 이 조회 조건 자체가 담당한다.
+      const invite = createTeamInvitation({ teamId: TEAM_ID, endAt: hoursFromNow(24) });
+      teamInvitationRepository.findOne.mockImplementation(async (options) => {
+        const where = options?.where as { teamId: number };
+        return where.teamId === TEAM_ID ? invite : null;
+      });
+
+      await expect(service.verifyTeamInviteToken(makeToken({ teamId: 999 }))).rejects.toThrow(
+        TeamInviteNotFoundErrorResponseDto,
+      );
+    });
+
+    it('DB에 초대가 없으면 NOT_FOUND를 던져야 함', async () => {
+      teamInvitationRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.verifyTeamInviteToken(makeToken())).rejects.toThrow(
+        TeamInviteNotFoundErrorResponseDto,
+      );
+    });
+
+    it('JWT가 유효해도 DB의 endAt이 지났으면 만료여야 함', async () => {
+      // 두 만료가 독립이라는 것이 핵심 — 만료 시각은 DB가 SSOT다
+      mockValidInvite({ endAt: hoursFromNow(-1) });
+
+      await expect(service.verifyTeamInviteToken(makeToken())).rejects.toThrow(
+        TeamInviteExpiredErrorResponseDto,
+      );
+      expect(teamRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('팀이 없거나 비활성이면 차단해야 함', async () => {
+      mockValidInvite();
+      teamRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.verifyTeamInviteToken(makeToken())).rejects.toThrow(
+        TeamNotFoundErrorResponseDto,
+      );
+      expect(teamRepository.findOne).toHaveBeenCalledWith({
+        where: { teamId: TEAM_ID, actStatus: ActStatus.ACTIVE },
+      });
+    });
+
+    it.each([
+      ['정확히 소진', 1, 1],
+      ['초과 상태', 3, 2],
+    ])('사용 횟수 %s(cur=%i, max=%i)면 만료로 처리해야 함', async (_desc, cur, max) => {
+      mockValidInvite({ usageCurCnt: cur, usageMaxCnt: max });
+
+      await expect(service.verifyTeamInviteToken(makeToken())).rejects.toThrow(
+        TeamInviteExpiredErrorResponseDto,
+      );
+    });
+
+    it('남은 횟수가 있으면 통과해야 함 (경계값 cur < max)', async () => {
+      mockValidInvite({ usageCurCnt: 1, usageMaxCnt: 2 });
+
+      await expect(service.verifyTeamInviteToken(makeToken())).resolves.toMatchObject({
+        usageCurCnt: 1,
+        usageMaxCnt: 2,
+      });
+    });
+
+    it('통과 시 DB 기준 팀 정보와 토큰의 초대자 ID를 반환해야 함', async () => {
+      const invite = mockValidInvite();
+
+      await expect(service.verifyTeamInviteToken(makeToken())).resolves.toEqual({
+        teamId: TEAM_ID,
+        teamName: '초대팀',
+        userId: INVITER_ID,
+        endAt: invite.endAt,
+        usageMaxCnt: invite.usageMaxCnt,
+        usageCurCnt: invite.usageCurCnt,
+        actStatus: ActStatus.ACTIVE,
+      });
     });
   });
 
