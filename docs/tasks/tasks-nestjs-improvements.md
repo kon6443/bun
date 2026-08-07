@@ -286,7 +286,7 @@ export class MockNotificationAdapter {
 ## D5. 단위 테스트 작성 (Unit Test)
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **선행**: D2 완료
-- **상태**: 🔄 **진행 중** — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할) 완료, C-2·D 예정
+- **상태**: 🔄 **진행 중** — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할) + C-2(태스크 상태·댓글 CRUD) 완료, D 예정
 
 ### Service 테스트 (10개)
 
@@ -367,10 +367,10 @@ export class MockNotificationAdapter {
 | **A** | Guard 4개 + Filter 2개 (인증·에러 경계) | ✅ **완료** (2026-08-05, 78케이스) |
 | **B** | AuthService, SchedulerService | ✅ **완료** (2026-08-05, 43케이스) |
 | **C** | 권한 정책 + TeamService 초대·역할 변경 | ✅ **완료** (2026-08-05, 106케이스) |
-| C-2 | TeamController + TeamService 태스크·댓글 | ⏳ **다음 작업 — 아래 실행 계획 참조** |
-| D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ 예정 |
+| **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
+| D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
 
-**진행 결과** — 전체 273/273 통과, 커버리지 8.73% → **27.97%**
+**진행 결과** — 전체 328/328 통과, 커버리지 8.73% → **31.29%**
 
 | 파일 | 커버리지 | 고정한 핵심 계약 |
 |---|---:|---|
@@ -418,7 +418,7 @@ return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
 
 ---
 
-### C-2 실행 계획 (2026-08-05 코드 조사 완료 — 새 세션은 여기서 바로 시작)
+### C-2 실행 계획 (2026-08-05 수립 → ✅ 2026-08-07 완료. 결과는 이 절 아래 "C-2 결과" 참조)
 
 **전제**: 인프라·표준은 이미 갖춰져 있다. 새로 조사할 것 없이 아래 계약만 테스트로 옮기면 된다.
 - Factory: `src/entities/__spec__/entity.factory.ts` (`createTaskComment`, `createTeamTask`, `createTeamMemberView` 사용)
@@ -447,6 +447,47 @@ return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
 
 **작성 중 발견**: `defineDomainError`의 throw 옵션은 `(message)` 또는 `({ message, details })` 두 형태만 받는다(`(message, details)` 아님). 테스트를 쓰면서 실제 계약을 확인했다.
 
+---
+
+### C-2 결과 (2026-08-07)
+
+신규 spec 2개 · **55케이스**. 전체 273 → **328/328 통과**, `team.service.ts` 커버리지 30.86% → **56.48%**, 전체 27.97% → **31.29%**.
+
+| 파일 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---|
+| `team.service.task.spec.ts` | 25 | `verifyTeamMemberAccess`의 **4개 조회 조건 전수**(팀·유저 ACTIVE 둘 다) / 3단 검증 순서(멤버 → 존재 → `task.teamId` 대조) / **`completedAt` 5개 상태 전수**(COMPLETED·CANCELLED만 설정) / **완료 되돌리면 `completedAt` null 초기화** / 알림 메시지·URL / `updateTaskActiveStatus`는 알림 미전송 |
+| `team.service.comment.spec.ts` | 30 | 생성·수정·삭제 **모두 팀 멤버 검증 선행**(아래 수정 사항) + `findOne({taskId, teamId})` 팀 격리 / **`commentId` 미할당**(D27 회귀 방어) / 멤버 → 작성자 → 소속 검증 순서 / 삭제된 댓글 재수정·재삭제 차단 / **소프트 삭제**(`delete`·`remove` 미호출) / 삭제는 알림 미전송 / 알림 팀 정보는 `getTeamTasksBy` 결과에서 취득 |
+
+**회귀 방어 포인트**: `completedAt`은 SchedulerService 자동 아카이브(14일)의 유일한 기준값인데, "완료를 되돌리면 null로 초기화"를 지키는 테스트가 없었다. 이 한 줄이 사라지면 **진행중 태스크가 14일 뒤 조용히 보관함으로 사라진다** — 사용자에게는 데이터 유실로 보이고 로그에도 남지 않는다. 5개 상태 전수 + 되돌리기 케이스로 고정했다.
+
+**Factory 추가**: `createTeamTaskView` (`getTeamTasksBy`의 flatten 반환 shape). 타입을 `Awaited<ReturnType<TeamService['getTeamTasksBy']>>[number]`로 잡아 서비스 반환 shape이 바뀌면 Factory에서 컴파일이 깨지게 했다. `createTeamTask`(Entity)를 캐스팅해 쓰면 알림 대상 필드(`telegramChatId`·`discordWebhookUrl`)가 조용히 undefined가 된다.
+
+**🔴 발견 → ✅ 수정 완료 — 댓글 수정·삭제에 팀 멤버 검증이 없었다** (2026-08-07)
+
+`updateTaskComment`·`deleteTaskComment`가 `verifyTeamMemberAccess`를 호출하지 않고 **작성자 확인만** 해서 다음이 통과했다:
+- 팀에서 **탈퇴(또는 강제 비활성)된 사용자**가 재직 중 작성한 댓글을 계속 수정·삭제
+- **비활성 팀**(`TEAMS.ACT_STATUS = 0`)의 댓글 수정·삭제
+
+생성(`createTaskComment`)과 조회(`getCommentsByTaskId`·`getTaskWithComments`)는 멤버 검증을 하므로 **같은 리소스인데 수정·삭제만 구멍**이었다.
+
+**수정**: 두 메서드 맨 앞에 `verifyTeamMemberAccess(teamId, userId)` 추가. **작성자 검증보다 앞**에 둔 것이 핵심이다 — 뒤에 두면 남의 팀 댓글이 "없음(404)"인지 "권한 없음(403)"인지가 응답으로 새어나간다. 이 순서를 지키는 테스트도 함께 넣었다(멤버가 아니면 `findOne`조차 호출하지 않음).
+
+부수 효과로 수정·삭제 403의 코드가 경우에 따라 `TEAM_COMMENT_FORBIDDEN` → `TEAM_FORBIDDEN`으로 바뀐다. 프론트(`next-bun/src/types/api.ts`)는 두 코드 모두 메시지 매핑만 하고 분기 로직이 없어 영향 없음. Swagger 403 description도 두 코드를 함께 표기하도록 갱신했다.
+
+**사용자 영향 없음의 근거**: 조회 경로가 이미 멤버 검증을 하므로 탈퇴자·비활성 팀 사용자는 애초에 댓글 화면에 진입할 수 없었다. 즉 UI 흐름을 막는 변화가 아니라 API 직접 호출 경로를 닫은 것이다.
+
+**🔴 발견 → ✅ 수정 완료 — `createTask`에도 팀 멤버 검증이 없었다** (2026-08-07, 위 수정 후 대칭 검증에서 발견)
+
+`createTask`는 **팀 존재·활성만** 확인하고(`teamRepository.findOne`) 요청자가 그 팀 멤버인지 보지 않았다. 컨트롤러 가드는 `JwtAuthGuard`뿐이라, 인증된 아무 사용자나 임의 `teamId`로 **남의 팀에 태스크를 만들고 `emitTaskCreated` WS 브로드캐스트 + 텔레그램/디스코드 알림까지 발생**시킬 수 있었다. `updateTask`·`updateTaskStatus`·`updateTaskActiveStatus`는 모두 멤버 검증이 있어 **생성만 비대칭**이었다.
+
+**프론트는 이미 멤버 검증을 전제하고 있었다** — `next-bun/src/services/teamService.ts:436-440`이 403에 "팀 멤버만 태스크를 생성할 수 있습니다."를 매핑해 두고 404 매핑은 두지 않았다. 백엔드만 스펙을 못 지킨 상태였다.
+
+**수정**: `teamRepository.findOne` + 404 분기를 `verifyTeamMemberAccess`로 **대체**(추가가 아님). 멤버 검증이 활성 팀만 조인하므로 팀 존재·활성 확인을 이미 포함하고, 남겨두면 도달할 수 없는 404 분기가 된다. 알림 대상 팀 정보도 멤버 검증 반환값에서 얻어 `updateTask`와 같은 형태가 됐다. 쿼리 수는 1회로 동일.
+
+**API 계약 변경**: 팀 미존재·비활성 시 `404 TEAM_NOT_FOUND` → `403 TEAM_FORBIDDEN`. 팀의 존재 여부를 비멤버에게 알려주지 않게 되는 부수 효과도 있다. Swagger 명세도 403으로 갱신했다.
+
+**확인된 의도(테스트로 고정)**: `deleteTaskComment`·`updateTaskActiveStatus`는 알림을 보내지 않는다. 삭제·보관 토글은 팀 전체에 알릴 사건이 아니라는 판단이며, 대칭 분기로 고정해 두어 나중에 알림이 추가되면 테스트가 먼저 깨진다.
+
 ### 실행 체크리스트
 
 ```
@@ -459,7 +500,7 @@ Guard/Filter (6개): ✅ 완료 (2026-08-05)
 
 Service — 완료 5 / 잔여 5:
   [✓] AuthService (22), SchedulerService (21), UsersService (5), FileShareService (6)
-  [✓] TeamService — 초대(24) + 역할 변경(18). 태스크·댓글·조회는 잔여
+  [✓] TeamService — 초대(24) + 역할 변경(18) + 태스크 상태(21) + 댓글 CRUD(28). 조회 계열·팀/태스크 생성수정은 잔여
   [ ] OnlineUserService, FishingOnlineService
   [ ] TelegramService, DiscordService, NotificationAdapter
 

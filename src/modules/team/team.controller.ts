@@ -268,7 +268,7 @@ export class TeamController {
   @ApiBody({ type: CreateTeamTaskDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamTaskResponseDto })
   @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
+  @ApiResponse({ status: 403, description: '팀 멤버만 태스크를 생성할 수 있습니다. (팀이 없거나 비활성인 경우도 동일)', type: TeamForbiddenErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
   @ApiCommonValidationResponse()
   async createTask(
@@ -471,7 +471,7 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTaskCommentResponseDto })
   @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '댓글 작성자만 수정할 수 있습니다.', type: TeamCommentForbiddenErrorResponseDto })
+  @ApiResponse({ status: 403, description: '팀 멤버가 아니거나(TEAM_FORBIDDEN) 댓글 작성자가 아닙니다(TEAM_COMMENT_FORBIDDEN).', type: TeamCommentForbiddenErrorResponseDto })
   @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.', type: TeamCommentNotFoundErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
   @ApiCommonValidationResponse()
@@ -512,7 +512,7 @@ export class TeamController {
   @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTaskCommentResponseDto })
   @ApiResponse({ status: 400, description: '댓글이 해당 태스크/팀에 속하지 않거나 이미 삭제된 댓글입니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '댓글 작성자만 삭제할 수 있습니다.', type: TeamCommentForbiddenErrorResponseDto })
+  @ApiResponse({ status: 403, description: '팀 멤버가 아니거나(TEAM_FORBIDDEN) 댓글 작성자가 아닙니다(TEAM_COMMENT_FORBIDDEN).', type: TeamCommentForbiddenErrorResponseDto })
   @ApiResponse({ status: 404, description: '댓글을 찾을 수 없습니다.', type: TeamCommentNotFoundErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
   async deleteTaskComment(

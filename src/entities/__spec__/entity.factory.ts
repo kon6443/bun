@@ -8,7 +8,7 @@ import { TelegramLink } from '../TelegramLink';
 import { FileShare } from '../FileShare';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import type { RoleKey } from '../../common/constants/role.constants';
-import type { TeamMemberType } from '../../modules/team/team.service';
+import type { TeamMemberType, TeamService } from '../../modules/team/team.service';
 
 /**
  * 테스트용 Entity Factory.
@@ -146,6 +146,41 @@ export const createTelegramLink = (overrides: Partial<TelegramLink> = {}): Teleg
 export const createFileShare = (overrides: Partial<FileShare> = {}): FileShare => ({
   shareId: 'test-share-id',
   apiKey: 'test-api-key',
+  ...overrides,
+});
+
+/**
+ * `TeamService.getTeamTasksBy()`의 반환 형태.
+ *
+ * `createTeamTask`(Entity)와 달리 **팀+태스크+생성자를 flatten한 쿼리 결과**다.
+ * 서비스가 이 결과에서 알림 대상 팀 정보(`telegramChatId`·`discordWebhookUrl`)를 꺼내 쓰므로,
+ * Entity factory를 캐스팅해 넣으면 그 필드들이 조용히 undefined가 된다.
+ *
+ * 타입은 서비스 시그니처에서 직접 끌어온다 — 반환 shape이 바뀌면 여기서 컴파일이 깨져야 한다.
+ */
+type TeamTaskView = Awaited<ReturnType<TeamService['getTeamTasksBy']>>[number];
+
+export const createTeamTaskView = (overrides: Partial<TeamTaskView> = {}): TeamTaskView => ({
+  // 팀 정보
+  teamId: 1,
+  teamName: '테스트팀',
+  teamDescription: null,
+  leaderId: 1,
+  telegramChatId: null,
+  discordWebhookUrl: null,
+  // 태스크 정보
+  taskId: 1,
+  taskName: '테스트 태스크',
+  taskDescription: null,
+  taskStatus: TaskStatus.CREATED,
+  actStatus: ActStatus.ACTIVE,
+  startAt: null,
+  endAt: null,
+  completedAt: null,
+  crtdAt: FIXED_DATE,
+  crtdBy: 1,
+  // 생성자 정보
+  userName: '홍길동',
   ...overrides,
 });
 
