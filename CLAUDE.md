@@ -111,7 +111,9 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
 - **토큰 Unique Index (D23)**: ✅ 완료 (2026-08-05, 커밋 `02aefd8`·`4f0260c`) — jti 선행 수정 후 인덱스 2개 생성. 실측 확인 완료
 - **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
-- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) 완료 (2026-08-05, 273/273 통과, 커버리지 27.97%). 다음은 C-2(TeamController·태스크·댓글) → D(Gateway·알림)
+- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) 완료 (2026-08-05, 커밋 `95faefe`~`c6affe0`, 273/273 통과, 커버리지 27.97%)
+  - **▶ 다음 작업: C-2** (TeamService 태스크 상태·댓글 CRUD). **코드 조사가 끝나 있으므로 `docs/tasks/tasks-nestjs-improvements.md`의 "C-2 실행 계획"을 먼저 읽을 것** — 검증할 계약이 메서드:줄 단위로 정리돼 있어 team.service.ts(1,520줄)를 다시 훑을 필요가 없다
+  - 테스트 작성 시 반드시 기존 표준 사용: Factory `src/entities/__spec__/entity.factory.ts`, Mock `src/common/__spec__/mock-repository.ts`. spec은 도메인별 분리(`team.service.<도메인>.spec.ts`)
 
 ## Docs
 

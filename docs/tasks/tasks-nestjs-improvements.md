@@ -367,7 +367,7 @@ export class MockNotificationAdapter {
 | **A** | Guard 4개 + Filter 2개 (인증·에러 경계) | ✅ **완료** (2026-08-05, 78케이스) |
 | **B** | AuthService, SchedulerService | ✅ **완료** (2026-08-05, 43케이스) |
 | **C** | 권한 정책 + TeamService 초대·역할 변경 | ✅ **완료** (2026-08-05, 106케이스) |
-| C-2 | TeamController + TeamService 태스크·댓글 | ⏳ 예정 |
+| C-2 | TeamController + TeamService 태스크·댓글 | ⏳ **다음 작업 — 아래 실행 계획 참조** |
 | D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ 예정 |
 
 **진행 결과** — 전체 273/273 통과, 커버리지 8.73% → **27.97%**
@@ -415,6 +415,35 @@ return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
 
 실측: `isValidRole('toString'|'constructor'|'valueOf'|'hasOwnProperty')`가 모두 `true`였고 `ROLE_HIERARCHY['toString']`은 함수를 반환했다.
 **현재 프로덕션 호출처는 0곳**(정의만 존재)이라 실제 장애는 없었지만, 나중에 이 함수로 사용자 입력을 검증하면 `'toString'`이 유효한 역할로 통과하는 잠재 함정이었다. `Object.hasOwn`은 ES2022라 target(ES2020)에서 못 써 `hasOwnProperty.call`로 수정.
+
+---
+
+### C-2 실행 계획 (2026-08-05 코드 조사 완료 — 새 세션은 여기서 바로 시작)
+
+**전제**: 인프라·표준은 이미 갖춰져 있다. 새로 조사할 것 없이 아래 계약만 테스트로 옮기면 된다.
+- Factory: `src/entities/__spec__/entity.factory.ts` (`createTaskComment`, `createTeamTask`, `createTeamMemberView` 사용)
+- Mock: `src/common/__spec__/mock-repository.ts` (`createMockRepository`, `createMockQueryBuilder`)
+- spec 파일은 도메인별로 분리 — 신규 파일명 `team.service.task.spec.ts`, `team.service.comment.spec.ts`
+- `jest.config.js`에 `restoreMocks: true`가 있으므로 `afterEach(restoreAllMocks)` 불필요
+- 서비스 생성 시 NestJS 모듈 초기화 로그가 `Logger.prototype.log` spy에 잡힌다 → 생성 직후 `mockClear()` (scheduler.service.spec.ts의 buildService 참고)
+
+**조사로 확인한 검증 대상 계약** (파일: `src/modules/team/team.service.ts`)
+
+| 메서드 | 줄 | 고정해야 할 계약 |
+|---|---|---|
+| `verifyTeamMemberAccess` | 731 | **활성 팀 멤버 + 활성 유저** 조건으로만 조회(`actStatus`·`userActStatus` 둘 다 ACTIVE), 없으면 `TeamForbiddenErrorResponseDto`. 모든 팀 API의 공통 진입점이라 여기가 뚫리면 팀 격리가 깨진다 |
+| `updateTaskStatus` | 468 | 멤버 검증 → 태스크 존재 → **`task.teamId !== teamId`면 차단**(팀 격리) → **`completedAt` 자동 관리: COMPLETED/CANCELLED면 현재시각, 그 외 상태면 `null`** → 저장 → 알림. ⚠️ `completedAt`은 **SchedulerService 자동 아카이브의 기준값**이므로 이 로직이 깨지면 아카이브가 안 되거나 잘못 실행된다 (5개 TaskStatus 전수 검증할 것) |
+| `updateTaskActiveStatus` | 529 | 동일한 3단 검증 후 `actStatus`만 변경. **알림을 보내지 않는다** — updateTaskStatus와의 차이가 의도인지 확인 |
+| `createTaskComment` | 564 | 멤버 검증 → `findOne({taskId, teamId})`로 태스크 확인 → `status: ACTIVE`로 생성 → 알림. **commentId를 할당하지 않는다**(D27: DB가 GENERATED ALWAYS AS IDENTITY) |
+| `updateTaskComment` | 608 | **작성자만 수정**(`comment.userId !== userId` → `TeamCommentForbiddenErrorResponseDto`), 태스크·팀 소속 검증, **삭제된 댓글(status INACTIVE)은 수정 불가**, `mdfdAt` 갱신, 알림 |
+| `deleteTaskComment` | 678 | **작성자만 삭제**, 소속 검증, 이미 삭제면 차단, **소프트 삭제**(`status = INACTIVE` + `mdfdAt`). 물리 삭제가 아님을 고정할 것 |
+
+**작업 중 판단할 항목 (조사에서 발견)**
+- `createTaskComment`·`updateTaskComment`는 팀 알림을 보내지만 `deleteTaskComment`는 **보내지 않는다**. 삭제 알림이 노이즈라 의도한 것으로 보이나 확인 후, 의도면 테스트로 "알림을 보내지 않는다"를 명시적으로 고정한다(대칭 분기).
+- `updateTaskComment`는 팀 멤버 검증(`verifyTeamMemberAccess`) 없이 **작성자 확인만** 한다. 작성자라면 이미 멤버였겠지만, 탈퇴 후에도 수정이 가능한 경로인지 확인 필요.
+
+**이번 Phase에서 다루지 않을 것** (D 또는 이후)
+`getTeamMembersBy`(126)·`getTeamTasksBy`(198)·`getTasksByTeamId`(752)·`getCommentsByTaskId`(799)·`getTaskWithComments`(850)·`getTeamUsers`(915) 등 조회 계열은 QueryBuilder 조립 검증이 주가 되어 가치가 낮다. `insertTeam`(308)·`updateTeam`(324)·`createTask`(357)·`updateTask`(402)는 C-2 이후.
 
 **작성 중 발견**: `defineDomainError`의 throw 옵션은 `(message)` 또는 `({ message, details })` 두 형태만 받는다(`(message, details)` 아님). 테스트를 쓰면서 실제 계약을 확인했다.
 
