@@ -34,7 +34,7 @@
 | ~~10~~ | ~~D2 테스트 인프라 구축~~ | — | — | — | **✅ 완료** |
 | ~~11~~ | ~~D7 매직 문자열 enum화~~ | — | — | — | **✅ 완료** |
 | ~~12~~ | ~~D11 ESLint 설정~~ | — | — | — | **✅ 완료** |
-| 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
+| 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | 🔄 Phase A·B·C 완료 |
 | 14 | **D1 TeamService 분리** | 어려움 | 🟡 | 높음 | D5 |
 | 15 | **D6 E2E 테스트 작성** | 어려움 | 🟡 | 매우 높음 | D2 |
 | 16 | **D4 typeorm-transactional** | 보통 | 🟡 | 보통 | 없음 |
@@ -286,6 +286,7 @@ export class MockNotificationAdapter {
 ## D5. 단위 테스트 작성 (Unit Test)
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **선행**: D2 완료
+- **상태**: 🔄 **진행 중** — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할) 완료, C-2·D 예정
 
 ### Service 테스트 (10개)
 
@@ -357,10 +358,83 @@ export class MockNotificationAdapter {
 - **1520줄, 의존성 9개** → D1 분리 전에는 핵심 메서드만
 - QueryBuilder mock 체이닝 필요: `select().where().innerJoinAndSelect().getMany()` 등
 
+### 진행 상황 (2026-08-05~)
+
+**우선순위 판단 근거**: 깨졌을 때 피해가 크고(보안·에러 경계) 의존성이 적어 지금 정확히 검증 가능한 것부터.
+
+| Phase | 대상 | 상태 |
+|---|---|---|
+| **A** | Guard 4개 + Filter 2개 (인증·에러 경계) | ✅ **완료** (2026-08-05, 78케이스) |
+| **B** | AuthService, SchedulerService | ✅ **완료** (2026-08-05, 43케이스) |
+| **C** | 권한 정책 + TeamService 초대·역할 변경 | ✅ **완료** (2026-08-05, 106케이스) |
+| C-2 | TeamController + TeamService 태스크·댓글 | ⏳ 예정 |
+| D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ 예정 |
+
+**진행 결과** — 전체 273/273 통과, 커버리지 8.73% → **27.97%**
+
+| 파일 | 커버리지 | 고정한 핵심 계약 |
+|---|---:|---|
+| `jwt-auth.guard.ts` | **100%** | cookie 우선 → Bearer 폴백 / **sub 없는 토큰(초대 토큰) 차단** / 활성 유저만 조회 / `request.user` 주입 |
+| `optional-jwt-auth.guard.ts` | **100%** | 토큰 없으면 익명 통과 / **잘못된 토큰은 익명이 아니라 차단** |
+| `ws-jwt-auth.guard.ts` | 97.67% | `auth.token` 우선 → Bearer 폴백 / WsException **code**별 분기 / `client.data.user` 주입 |
+| `fishing-ws.guard.ts` | **100%** | 인증↔게스트 분류 / **guestId 음수 불변식**(일반 userId와 충돌 방지) / socketId 결정적 / 중복 실행 시 상태 미덮어씀 |
+| `http-exception.filter.ts` | **100%** | 도메인 DTO·HttpException·알 수 없는 예외 3분기 / status→code 매핑 10종 / **알 수 없는 예외의 원본 비노출** / 4xx=warn·5xx=error |
+| `ws-exception.filter.ts` | **100%** | WsException 객체·문자열 / 누락 필드 보완 / **응답엔 고정 메시지·로그엔 원본** |
+
+**회귀 방어 포인트**: 이번 세션에서 "초대 토큰으로 인증 우회가 불가능한 근거"가 가드의 `payload?.sub` 검증이었는데 그걸 지키는 테스트가 없었다. HTTP·WS 양쪽에 각각 고정했다 — 가드가 2개 구현으로 나뉘어 있어 한쪽만 고치는 실수가 가능하기 때문이다.
+
+**Phase B 결과**
+
+| 파일 | 커버리지 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---:|---|
+| `auth.service.ts` | **100%** | 22 | **카카오 number id → string 변환**(D34 회귀 방어), fetch 실패 status별 분기, 조건 없으면 DB 미조회, 신규가입↔기존로그인 분기, 기본 닉네임, 발급 토큰의 `sub`·`loginType` |
+| `scheduler.service.ts` | 97.87% | 21 | **TASK_SLOT=1 리더만 실행**(멀티 레플리카 중복 방지), ENV 대소문자 정규화, 미설정 시 기본값 1, 14일 cutoff 계산, **DB 오류를 삼켜 크론이 죽지 않게** |
+
+**Phase B 회귀 방어 포인트**: `kakaoId`를 number→string으로 바꾼 것(D34)이 수동 테스트로만 확인돼 있었다. 이제 "카카오가 주는 number를 string으로 변환해 조회한다"가 테스트로 고정됐다 — 되돌아가면 Oracle 암묵 형변환으로 ORA-01722 장애가 재현될 수 있다.
+
+`SchedulerService`는 `ENV`·`TASK_SLOT`을 **생성자에서 읽으므로** 조합마다 인스턴스를 새로 만들어야 검증된다. 실행/미실행 12조합을 표로 고정했다.
+
+**Phase C 결과**
+
+| 파일 | 커버리지 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---:|---|
+| `role.constants.ts` | **100%** | 64 | **27조합 전수**(허용 5개만 true) / MASTER는 대상도 부여도 불가(팀당 1명) / MANAGER는 승격만 / 동급 관리 불가 |
+| `team.service.ts` (초대) | — | 24 | 권한 3역할, 만료 검증(과거·7일 초과), **jti로 토큰 유일성**(D23 회귀 방어), **`pessimistic_write` 락**, 재활성화 시 MEMBER 초기화, 사용 횟수 소진 |
+| `team.service.ts` (역할) | — | 18 | 본인 변경 차단(조회 전), 정책 6조합, 동일 역할 차단, 역할 대소문자 정규화, `select: ['userName']`만 조회, 알림 전송 |
+
+`team.service.ts` 전체 커버리지는 **30.86%** — 1,520줄 중 초대·역할 변경 영역만 덮었다. 나머지(태스크·댓글·팀원 조회)는 C-2에서.
+
+**🔴 Phase C에서 발견한 프로덕션 버그 — `isValidRole` 프로토타입 체인 누수**
+
+```ts
+// Before: `in`은 프로토타입 체인까지 검사한다
+return role in ROLE_HIERARCHY;   // isValidRole('toString') === true !!
+// After
+return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
+```
+
+실측: `isValidRole('toString'|'constructor'|'valueOf'|'hasOwnProperty')`가 모두 `true`였고 `ROLE_HIERARCHY['toString']`은 함수를 반환했다.
+**현재 프로덕션 호출처는 0곳**(정의만 존재)이라 실제 장애는 없었지만, 나중에 이 함수로 사용자 입력을 검증하면 `'toString'`이 유효한 역할로 통과하는 잠재 함정이었다. `Object.hasOwn`은 ES2022라 target(ES2020)에서 못 써 `hasOwnProperty.call`로 수정.
+
+**작성 중 발견**: `defineDomainError`의 throw 옵션은 `(message)` 또는 `({ message, details })` 두 형태만 받는다(`(message, details)` 아님). 테스트를 쓰면서 실제 계약을 확인했다.
+
 ### 실행 체크리스트
 
 ```
-Service (10개):
+Guard/Filter (6개): ✅ 완료 (2026-08-05)
+  [✓] JwtAuthGuard (14케이스), OptionalJwtAuthGuard (7), WsJwtGuard (11), FishingWsGuard (16)
+  [✓] HttpExceptionFilter (21), WsExceptionFilter (9)
+
+권한 정책 (순수 함수):
+  [✓] role.constants — 27조합 전수 검증 (64케이스), isValidRole 프로토타입 누수 버그 수정
+
+Service — 완료 5 / 잔여 5:
+  [✓] AuthService (22), SchedulerService (21), UsersService (5), FileShareService (6)
+  [✓] TeamService — 초대(24) + 역할 변경(18). 태스크·댓글·조회는 잔여
+  [ ] OnlineUserService, FishingOnlineService
+  [ ] TelegramService, DiscordService, NotificationAdapter
+
+Service (10개) — 원 계획:
   [ ] AuthService, TeamService (핵심), OnlineUserService, FishingOnlineService
   [ ] SchedulerService, NotificationService, TelegramService, DiscordService
   [ ] FileShareService, UsersService (기존 spec 보완)
@@ -370,9 +444,9 @@ Controller (8개, 33 엔드포인트):
   [ ] TelegramController (1), FileShareController (2)
   [ ] MainController (1), HealthController (1), UsersController-auth (1)
 
-Guard/Filter (6개):
-  [ ] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
-  [ ] HttpExceptionFilter, WsExceptionFilter
+Guard/Filter (6개): ✅ 완료
+  [✓] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
+  [✓] HttpExceptionFilter, WsExceptionFilter
 
 Gateway (8개):
   [ ] TeamGateway (joinTeam, leaveTeam)
@@ -1430,7 +1504,7 @@ Phase 5 — 작업 목록 (완료 15 + 미완료 19 + 보류 2)
   [✓] D9  응답 압축 — compression 미들웨어 적용 완료
   [✓] D12 Express 흔적 제거 — express-async-errors, swagger-jsdoc, data-source.ts 삭제
   [✓] D13 NestJS 비정석 수정 — process.env→ConfigService, WsExceptionFilter DI 전환
-  [ ] D5  단위 테스트 (Service 10 + Controller 9 + Guard/Filter 6 + Gateway 8)
+  [ ] D5  단위 테스트 — 🔄 Guard/Filter 6 + Service 5 + 권한 정책 완료 (2026-08-05, 273/273 통과 / 커버리지 27.97%). Controller·Gateway·나머지 Service 잔여
   [ ] D1  TeamService 분리 (1520줄 → 3~4 서비스)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)

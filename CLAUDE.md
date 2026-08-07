@@ -37,7 +37,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 명령어·환경변수 전체 목록은 [`README.md`](README.md)가 SSOT다. 작업 시 자주 쓰는 것만:
 
-- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (현재 38/38 통과 — 실패가 보이면 내 변경 탓이다)
+- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (현재 273/273 통과 — 실패가 보이면 내 변경 탓이다)
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
 
 ## Key Patterns
@@ -111,7 +111,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
 - **토큰 Unique Index (D23)**: ✅ 완료 (2026-08-05, 커밋 `02aefd8`·`4f0260c`) — jti 선행 수정 후 인덱스 2개 생성. 실측 확인 완료
 - **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
-- **다음 후보**: D5 단위 테스트 (Service 10 + Controller 9 + Guard/Filter 6 + Gateway 8) — `docs/tasks/tasks-nestjs-improvements.md`
+- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) 완료 (2026-08-05, 273/273 통과, 커버리지 27.97%). 다음은 C-2(TeamController·태스크·댓글) → D(Gateway·알림)
 
 ## Docs
 
