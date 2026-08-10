@@ -370,7 +370,7 @@ export class MockNotificationAdapter {
 | **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
 | D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
 
-**진행 결과** — 전체 564/564 통과, 커버리지 8.73% → **52.66%**
+**진행 결과** — 전체 639/639 통과, 커버리지 8.73% → **62.64%**
 
 | 파일 | 커버리지 | 고정한 핵심 계약 |
 |---|---:|---|
@@ -647,6 +647,38 @@ grep 전수 결과 **정의만 있고 호출하는 코드가 없다**. `insertTe
 
 죽은 코드에 테스트를 쓰는 건 낭비라 제외했다. 이 세션에서 나온 세 번째 같은 유형이다(`isValidRole` 프로토타입 누수 → 수정, `verifyTeamInviteToken`의 도달 불가 분기 → 제거). 제거 여부는 판단 대기 — 범위 밖이라 손대지 않음.
 
+---
+
+### C-9 결과 (2026-08-10) — Fishing 모듈 (마지막 0% 도메인)
+
+**91케이스, 564 → 639/639 통과.** `fishing-online.service.ts` 0% → **100%**, `fishing.gateway.ts` 0% → **99.11%**(미커버는 `afterInit` 로그 1줄), 전체 52.66% → **62.64%**.
+
+이로써 **Service·Guard·Filter·Gateway 전 계층이 완료**됐다. 남은 0%는 컨트롤러뿐이다.
+
+**`FishingOnlineService` (37케이스)** — 팀 프레즌스와 키 네임스페이스가 `fishing:` 프리픽스로 갈라져 있고, 유저당 **세 종류의 상태**(온라인·위치·낚시상태)를 함께 다룬다.
+
+| 계약 | 왜 중요한가 |
+|---|---|
+| **파이프라인 인덱스 매핑**(`i * 3`) | 유저 1명당 3개 명령(scard·hget position·hget state)을 넣고 오프셋으로 꺼낸다. 오프바이원이 나면 **A의 위치·낚시상태가 B에게 표시된다** — 예외도 로그도 없이. 2명×3필드를 실제 값으로 교차 검증했다 |
+| **완전 오프라인 시 위치·상태까지 삭제** | 온라인 해시만 지우면 **접속하지 않은 유령 캐릭터가 맵에 계속 서 있다**. `hdel` 3종 + `del` 1종을 전수 확인 |
+| 50명 절단 | 팀(100명)과 다른 상한. 잘라낸 만큼만 조회하는지(`scard` 50회)까지 확인 |
+| 깨진 위치 JSON 격리 | 한 명의 데이터 손상이 맵 전체 목록을 날리지 않는다 |
+| fire-and-forget | `updatePosition`·`updateFishingState`는 Redis 응답을 기다리지 않는다(이동은 초당 여러 번) |
+
+**`FishingGateway` (54케이스)** — `/teams`와 독립이며 **게스트도 접속한다**는 것이 가장 큰 차이다.
+
+| 계약 | 내용 |
+|---|---|
+| 신원 3분기 | 인증 유저 → 게스트 → 없음. **신원이 없으면 room에는 넣되 온라인 등록은 안 함**(관전만 가능) |
+| 조용한 무시 | `mapId` 미캐싱·신원 없음이면 move·상태·채팅·낚시결과 모두 **에러 없이 무시**. 공개 맵이라 차단이 아니라 무시가 정책(팀 채팅의 `CHAT_NOT_JOINED`와 대비) |
+| **브로드캐스트 우선** | `client.to().emit()`이 `updatePosition`보다 먼저 호출되는지 `invocationCallOrder`로 고정. 뒤집히면 Redis 지연이 그대로 게임 렉이 된다 |
+| emit 대상 구분 | 채팅만 `server.to`(본인 포함), 이동·낚시상태·**낚시결과**는 `client.to`(본인 제외 — 본인은 이미 UI에서 봤다) |
+| 입장 시 2종 전송 | 온라인 목록 + **전체 위치 스냅샷**. 목록만 보내면 새 접속자 화면에 캐릭터가 안 그려진다 |
+
+**작성 중 걸린 것**: `FishingStateDto.state`가 리터럴 유니온(`idle|casting|waiting|bite|challenge|success|fail`)이라 `'fishing'`은 **애초에 유효한 값이 아니었다**. 타입 체크가 잡아줘서 실제 상태값(`casting`)으로 고쳤다 — `pointId`도 number가 아니라 string이었다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
 ### 실행 체크리스트
 
 ```
@@ -664,7 +696,7 @@ Service:
   [✓] OnlineUserService (41, 100%), TelegramService (47, 100%), DiscordService (37, 100%)
   [~] TeamService (80.74%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(37) + 댓글(30) + 팀 CRUD(12)
       잔여: getTeamMembersBy/getTeamTasksBy 조립, 조회 계열(가치 낮음 판정), insertTeamMember(죽은 코드)
-  [ ] FishingOnlineService(320줄)
+  [✓] FishingOnlineService (37, 100%)
 
 Controller (8개, 33 엔드포인트) — UsersController만 완료:
   [✓] UsersController (100%)
@@ -675,9 +707,9 @@ Guard/Filter (6개): ✅ 완료
   [✓] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
   [✓] HttpExceptionFilter, WsExceptionFilter
 
-Gateway:
+Gateway: ✅ 완료
   [✓] TeamGateway (joinTeam, leaveTeam, chatMessage + 브로드캐스트 10종) — 46케이스, 99.29%
-  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 357줄, 0%
+  [✓] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 54케이스, 99.11%
 ```
 
 **다음 착수 순서** (2026-08-07 실측 기준 — 비용 대비 보안·회귀 효과順)
@@ -689,7 +721,7 @@ Gateway:
 5. ✅ **`TelegramService`** — 완료 (2026-08-07, 아래 결과 참조)
 6. ✅ **`DiscordService`** — 완료 (2026-08-07, 아래 결과 참조)
 7. ✅ **`team.service.ts` 잔여 mutation** — 완료 (2026-08-10, 아래 결과 참조)
-8. **`FishingOnlineService`(320줄)·`FishingGateway`(357줄)** ◀ **다음 작업** — 마지막 0% 도메인. 가드는 Phase A에서 16케이스로 이미 검증됨(게스트 ID 음수 불변식 등)
+8. ✅ **Fishing 모듈** — 완료 (2026-08-10, 아래 결과 참조). **Service·Guard·Filter·Gateway 전 계층 완료**
 9. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
 
 ---
