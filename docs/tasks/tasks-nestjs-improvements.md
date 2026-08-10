@@ -370,7 +370,7 @@ export class MockNotificationAdapter {
 | **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
 | D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
 
-**진행 결과** — 전체 505/505 통과, 커버리지 8.73% → **49.8%**
+**진행 결과** — 전체 564/564 통과, 커버리지 8.73% → **52.66%**
 
 | 파일 | 커버리지 | 고정한 핵심 계약 |
 |---|---:|---|
@@ -600,6 +600,53 @@ C-4에서 TeamGateway spec이 `wasAlreadyOnline`·`isFullyOffline`을 mock으로
 
 이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
 
+---
+
+### C-7 결과 (2026-08-10) — DiscordService (SSRF 관문)
+
+**37케이스, 505 → 542/542 통과.** `discord.service.ts` 0% → **100%**(statements·branches·functions·lines 전부), 전체 49.8% → **51.39%**.
+
+텔레그램과 결정적으로 다른 점: **팀이 직접 입력한 URL로 서버가 요청을 보낸다.** 그래서 이 서비스의 핵심은 전송이 아니라 `validateWebhookUrl`의 도메인 검증이다. 검증이 뚫리면 저장된 URL이 그대로 알림 전송 대상이 되어 **서버가 임의 주소로 POST하는 통로(SSRF)** 가 되고, 팀 알림 내용이 그쪽으로 새어나간다.
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| **`validateWebhookUrl`** | 14 | 허용 도메인 2개(`discord.com`·`discordapp.com`) / **거부 8종은 요청조차 보내지 않음** / 도메인 통과 시 GET으로 존재 확인 / 404는 무효(삭제된 webhook) / 이름 없어도 유효 / 네트워크 오류는 무효 |
+| `sendWebhookMessage` | 7 | URL·content 없으면 미전송 / **embed 없으면 `embeds` 키 자체 없음** / 실패는 상태 코드 담아 throw(본문을 못 읽어도) |
+| `sendTeamNotification` | 6 | 미연동 팀은 건너뛰되 경고 로그 / **url은 마크다운 링크로 본문에 덧붙임**(디스코드는 인라인 버튼이 없어 텔레그램과 다름) / API 실패·네트워크 단절 모두 예외 삼킴 |
+| 연동 관리 | 10 | 3개 메서드 모두 팀 없으면 404 + `update` 미호출 / 활성 팀만 조회 / 해당 팀에만 저장 / 채널 이전(덮어쓰기) 허용 / 해제 시 null |
+
+**거부 케이스 8종을 전수로 넣은 이유**: `startsWith` 한 줄이 방어의 전부라 우회 시도를 실제 문자열로 고정해야 의미가 있다. 검증한 것 — 임의 외부 도메인, **서브도메인 위장**(`discord.com.evil.test`), **인증정보 위장**(`discord.com@evil.test`), 평문 http, 경로 불일치(`/api/oauth2/`), **내부망 메타데이터 주소**(`169.254.169.254`), 로컬호스트, 빈 문자열. 8종 모두 `fetch` 호출 0회까지 확인했다 — **검증 전에 요청하면 응답을 안 쓰더라도 그 자체가 SSRF**이기 때문이다.
+
+**확인한 것 — 검증이 저장 경로에 실제로 걸려 있다**: `team.controller.ts:708-713`이 `validateWebhookUrl` → 실패 시 400 → `saveWebhookUrl` 순으로 호출한다. 서비스의 `saveWebhookUrl`은 검증을 전제하며 자체 검증은 하지 않는다.
+
+**텔레그램과의 비대칭 확인**: `unlinkTeam`이 텔레그램은 트랜잭션(chatId 제거 + 토큰 무효화)인데 디스코드는 단순 `update` 하나다. 디스코드는 연동 토큰 개념이 없어 무효화할 대상이 없으므로 정당한 차이다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
+---
+
+### C-8 결과 (2026-08-10) — team.service.ts 잔여 mutation
+
+**22케이스, 542 → 564/564 통과.** `team.service.ts` 70.49% → **80.74%**, 전체 51.39% → **52.66%**.
+
+| 대상 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `updateTask` (task.spec에 추가) | 12 | 3단 검증(멤버 → 존재 → `teamId` 대조) / **지정한 필드만 변경**(dto에 없는 키는 유지) / 빈 값(`''`·`null`)은 null로 지우기 — undefined(미지정)와 구분 / **`taskStatus`·`actStatus`는 이 API로 못 바꿈** / 알림 제목에 태스크명이 **안 붙음**(상태 변경과의 차이) |
+| `insertTeam` (신규 `team.service.team.spec.ts`) | 5 | **팀 + MASTER 멤버를 한 트랜잭션**(save 2회) / 생성자를 MASTER로 등록 / 멤버의 `teamId`는 **저장된 팀에서 취득**(DB 발번) / 트랜잭션 실패는 예외 전파 |
+| `updateTeam` | 7 | 멤버 아니면 조회 전 차단 / **역할 무관 — 모든 활성 멤버가 수정 가능**(현재 정책) / 팀 없으면 404 / 지정 필드만 변경 / 빈 설명은 null |
+
+**`insertTeam`의 트랜잭션이 왜 중요한가**: 팀 생성과 MASTER 멤버 등록이 갈라지면 "팀은 있는데 멤버가 아무도 없는" 상태가 된다. 모든 팀 API가 `verifyTeamMemberAccess`를 통과하지 못하므로 **생성자조차 접근할 수 없는 유령 팀**이 남고, 팀 삭제 API가 없어 수동 DB 조작 없이는 복구되지 않는다.
+
+**`updateTask`가 상태를 못 바꾸는 것도 계약이다**: `taskStatus`를 이 API로 바꿀 수 있으면 `updateTaskStatus`의 `completedAt` 자동 관리를 우회하게 되어 자동 아카이브(14일) 기준값이 어긋난다. DTO에 없는 필드를 억지로 넣어 호출해도 무시되는지 확인했다.
+
+**명시 고정 — `updateTeam`은 역할을 보지 않는다**: 초대 생성·역할 변경·멤버 상태는 관리 권한(MANAGER 이상)을 요구하는데 팀 이름·설명 수정만 **MEMBER도 가능**하다. 컨트롤러 Swagger도 "팀 멤버만 팀 정보를 수정할 수 있습니다"로 되어 있어 의도된 정책으로 판단하고 현재 동작을 고정했다. "MANAGER 이상"으로 바꾸려면 그 테스트가 먼저 깨진다.
+
+**🟡 발견 — `insertTeamMember`는 호출처가 0곳** (`team.service.ts:290-306`)
+
+grep 전수 결과 **정의만 있고 호출하는 코드가 없다**. `insertTeam`이 트랜잭션 안에서 `manager.create(TeamMember, ...)`로 직접 만들기 때문이고, 초대 수락도 `acceptTeamInvite`가 자체 처리한다. 커버리지 미커버 구간(137-305)에 포함된 것이 이를 뒷받침한다.
+
+죽은 코드에 테스트를 쓰는 건 낭비라 제외했다. 이 세션에서 나온 세 번째 같은 유형이다(`isValidRole` 프로토타입 누수 → 수정, `verifyTeamInviteToken`의 도달 불가 분기 → 제거). 제거 여부는 판단 대기 — 범위 밖이라 손대지 않음.
+
 ### 실행 체크리스트
 
 ```
@@ -614,10 +661,10 @@ Service:
   [✓] AuthService (22, 100%), SchedulerService (21, 97.87%)
   [✓] UsersService (5, 100%), FileShareService (6, 100%)
   [✓] NotificationAdapter (7, 100%), TeamGateway (46, 99.29%)
-  [✓] OnlineUserService (41, 100%), TelegramService (47, 100%)
-  [~] TeamService (70.49%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(25) + 댓글(30)
-      잔여: updateTask, getTeamMembersBy/getTeamTasksBy 조립, 조회 계열, insertTeam/updateTeam
-  [ ] DiscordService(184줄), FishingOnlineService(320줄)
+  [✓] OnlineUserService (41, 100%), TelegramService (47, 100%), DiscordService (37, 100%)
+  [~] TeamService (80.74%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(37) + 댓글(30) + 팀 CRUD(12)
+      잔여: getTeamMembersBy/getTeamTasksBy 조립, 조회 계열(가치 낮음 판정), insertTeamMember(죽은 코드)
+  [ ] FishingOnlineService(320줄)
 
 Controller (8개, 33 엔드포인트) — UsersController만 완료:
   [✓] UsersController (100%)
@@ -640,8 +687,10 @@ Gateway:
 3. ✅ **`TeamGateway`** — 완료 (2026-08-07, 아래 결과 참조)
 4. ✅ **`OnlineUserService`** — 완료 (2026-08-07, 아래 결과 참조)
 5. ✅ **`TelegramService`** — 완료 (2026-08-07, 아래 결과 참조)
-6. **`DiscordService`** ◀ **다음 작업** (184줄, 0%) — 텔레그램과 같은 알림 채널 쌍. Webhook URL 검증 로직이 있어 SSRF 관점도 함께 본다. 이후 `FishingOnlineService`·`FishingGateway`
-7. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
+6. ✅ **`DiscordService`** — 완료 (2026-08-07, 아래 결과 참조)
+7. ✅ **`team.service.ts` 잔여 mutation** — 완료 (2026-08-10, 아래 결과 참조)
+8. **`FishingOnlineService`(320줄)·`FishingGateway`(357줄)** ◀ **다음 작업** — 마지막 0% 도메인. 가드는 Phase A에서 16케이스로 이미 검증됨(게스트 ID 음수 불변식 등)
+9. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
 
 ---
 

@@ -198,6 +198,115 @@ describe('TeamService — 태스크 상태', () => {
     });
   });
 
+  describe('updateTask', () => {
+    const update = (
+      dto: { taskName?: string; taskDescription?: string; startAt?: Date; endAt?: Date },
+      { teamId = 1, taskId = 1, userId = 1 } = {},
+    ) => service.updateTask({ teamId, taskId, updateTaskDto: dto, userId });
+
+    it('팀 멤버가 아니면 태스크를 조회하기도 전에 차단해야 함', async () => {
+      mockMember(null);
+
+      await expect(update({ taskName: '변경' })).rejects.toThrow(TeamForbiddenErrorResponseDto);
+      expect(teamTaskRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('태스크가 없으면 TEAM_TASK_NOT_FOUND를 던져야 함', async () => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(null);
+
+      await expect(update({ taskName: '변경' })).rejects.toThrow(TeamTaskNotFoundErrorResponseDto);
+      expect(teamTaskRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('다른 팀의 태스크면 차단해야 함 (팀 격리)', async () => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(createTeamTask({ teamId: 99 }));
+
+      await expect(update({ taskName: '변경' }, { teamId: 1 })).rejects.toThrow(
+        TeamTaskBadRequestErrorResponseDto,
+      );
+      expect(teamTaskRepository.save).not.toHaveBeenCalled();
+      expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+    });
+
+    it('지정한 필드만 바꾸고 나머지는 유지해야 함', async () => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(
+        createTeamTask({ taskName: '원본', taskDescription: '원본 설명', startAt: FIXED_DATE }),
+      );
+
+      await update({ taskName: '변경' });
+
+      const saved = savedTask();
+      expect(saved.taskName).toBe('변경');
+      // dto에 없는 키는 undefined이므로 건드리면 안 된다
+      expect(saved.taskDescription).toBe('원본 설명');
+      expect(saved.startAt).toEqual(FIXED_DATE);
+    });
+
+    it.each([
+      ['설명', { taskDescription: '' }, 'taskDescription' as const],
+      ['시작일', { startAt: null }, 'startAt' as const],
+      ['종료일', { endAt: null }, 'endAt' as const],
+    ])('%s을 빈 값으로 보내면 null로 지워야 함', async (_desc, dto, field) => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(
+        createTeamTask({ taskDescription: '설명', startAt: FIXED_DATE, endAt: FIXED_DATE }),
+      );
+
+      // 빈 문자열·null은 "지우기" 의도 — undefined(미지정)와 구분된다
+      await update(dto as never);
+
+      expect(savedTask()[field]).toBeNull();
+    });
+
+    it('작업 상태와 활성 상태는 이 API로 바꿀 수 없어야 함', async () => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(
+        createTeamTask({ taskStatus: TaskStatus.IN_PROGRESS, actStatus: ActStatus.ACTIVE }),
+      );
+
+      // 상태 전용 API를 우회하면 completedAt 자동 관리가 건너뛰어져 자동 아카이브가 어긋난다
+      await update({
+        taskName: '변경',
+        taskStatus: TaskStatus.COMPLETED,
+        actStatus: ActStatus.INACTIVE,
+      } as never);
+
+      expect(savedTask().taskStatus).toBe(TaskStatus.IN_PROGRESS);
+      expect(savedTask().actStatus).toBe(ActStatus.ACTIVE);
+      expect(savedTask().completedAt).toBeNull();
+    });
+
+    it('수정 알림을 보내고 저장된 태스크를 반환해야 함', async () => {
+      const member = createTeamMemberView();
+      mockMember(member);
+      const task = createTeamTask({ teamId: 3, taskId: 8, startAt: null, endAt: null });
+      teamTaskRepository.findOne.mockResolvedValue(task);
+
+      const result = await update({ taskName: '변경' }, { teamId: 3, taskId: 8 });
+
+      expect(result).toBe(task);
+      expect(notificationPort.notifyTeam).toHaveBeenCalledWith({
+        team: member,
+        // 상태 변경 알림과 달리 제목에 태스크명이 붙지 않는다
+        message: ['[테스트팀]', '🔄 태스크 수정 🔄'].join('\n'),
+        url: `${DOMAIN}/teams/3/tasks/8`,
+      });
+    });
+
+    it('기간이 있으면 알림에 기간 줄을 포함해야 함', async () => {
+      mockMember();
+      teamTaskRepository.findOne.mockResolvedValue(createTeamTask({ endAt: FIXED_DATE }));
+
+      await update({ taskName: '변경' });
+
+      const { message } = notificationPort.notifyTeam.mock.calls[0][0] as { message: string };
+      expect(message).toContain('📅 기간');
+    });
+  });
+
   describe('updateTaskStatus — 접근 제어', () => {
     it('팀 멤버가 아니면 태스크를 조회하기도 전에 차단해야 함', async () => {
       mockMember(null);
