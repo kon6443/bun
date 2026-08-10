@@ -370,7 +370,7 @@ export class MockNotificationAdapter {
 | **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
 | D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
 
-**진행 결과** — 전체 371/371 통과, 커버리지 8.73% → **35.07%**
+**진행 결과** — 전체 505/505 통과, 커버리지 8.73% → **49.8%**
 
 | 파일 | 커버리지 | 고정한 핵심 계약 |
 |---|---:|---|
@@ -520,6 +520,86 @@ if (payload.teamId !== invite.teamId) throw ...
 
 죽은 분기를 그대로 두면 "뒤에서 한 번 더 검증하니 조회 조건은 느슨해도 된다"는 착각을 부른다. 없는 방어선이 있는 것처럼 읽히는 쪽이 실제 위험이었다.
 
+---
+
+### C-4 결과 (2026-08-07) — TeamGateway (WS 진입점)
+
+**46케이스, 371 → 417/417 통과.** `team.gateway.ts` 0% → **99.29%**(미커버는 `afterInit`의 로그 1줄 — 로직이 없어 제외), 전체 35.07% → **41.33%**.
+
+고정한 계약을 3축으로 묶었다.
+
+| 축 | 케이스 | 내용 |
+|---|---:|---|
+| **팀 격리** | 6 | room 참가 **전에** `verifyTeamMemberAccess` 호출 / 실패 시 `WsException(FORBIDDEN)` + `join`·`addUserToOnline` 미호출 / room명 `team-{teamId}` / `client.data.teamId` 캐싱 |
+| **채팅 권한의 출처** | 5 | 팀 미참여·인증정보 없음 → `CHAT_NOT_JOINED` / **DTO가 아니라 캐싱된 `teamId`로 room 결정** / 서버 시각 사용 / 기본 표시명 |
+| **중복 알림 방지** | 12 | `wasAlreadyOnline`이면 입장 알림 생략(다중 탭) / 본인에겐 목록 항상 전송 / `isSocketRegistered=false`면 `removeSocket` 생략(leave↔disconnect 경합) / `isFullyOffline`일 때만 퇴장 알림 / **제거 직후 재접속 시 알림 취소** |
+| 브로드캐스트 10종 | 10 | 메서드↔이벤트명 전수 대조 |
+| 라이프사이클·메트릭·위임 | 13 | 커넥션 게이지 증감 / 실패해도 `finally`로 타이머 종료 / 조회 위임 |
+
+**`client.to` vs `server.to`를 분리해 검증한 이유**: Socket.IO에서 전자는 본인 제외, 후자는 본인 포함이다. 입장 알림에 `server.to`를 쓰면 **본인에게 자기 입장 알림이 가고**, 채팅에 `client.to`를 쓰면 **자기 메시지가 자기 화면에 안 뜬다**. 둘 다 예외 없이 조용히 어긋나는 종류라 emit 경로를 각각 캡처했다.
+
+**🟡 발견 — `handleJoinTeam`의 인증 없음 폴백** (`team.gateway.ts:140`)
+
+```ts
+if (userId) {           // ← userId가 없으면 멤버십 검증을 통째로 건너뛰고
+  await this.teamService.verifyTeamMemberAccess(teamId, userId);
+}
+await client.join(roomName);   // ← room에는 그대로 참가한다
+```
+
+`@UseGuards(WsJwtGuard)`가 앞단에서 막으므로 **현재는 도달 불가**다(가드가 `client.data.user`를 세팅하지 못하면 연결 자체가 끊긴다). 다만 팀 격리가 **가드 한 겹에만** 의존한다는 뜻이고, 가드를 떼거나 `@UseGuards`를 실수로 지우면 아무나 임의 팀 room에 들어가 모든 태스크·댓글·채팅을 수신하게 된다. HTTP 쪽 `verifyTeamMemberAccess`가 방어 계층 2겹인 것과 대비된다.
+
+현재 동작을 테스트로 명시 고정했다(검증 미호출 + join 성공). 정책을 "userId 없으면 차단"으로 바꾸면 그 테스트가 먼저 깨진다. 판단 대기 — 범위 밖이라 손대지 않음.
+
+**테스트 작성 메모**: `@UseGuards`가 붙은 Gateway는 핸들러를 직접 호출해도 Nest가 가드의 의존성(User Repository 등)까지 해석하려 해 `.compile()`에서 실패한다. `.overrideGuard(WsJwtGuard)`로 끊었다. 가드 자체는 `ws-jwt-auth.guard.spec.ts`에서 11케이스로 이미 검증돼 있다.
+
+---
+
+### C-5 결과 (2026-08-07) — OnlineUserService (Redis 프레즌스)
+
+**41케이스, 417 → 458/458 통과.** `online-user.service.ts` 0% → **100%**, 전체 41.33% → **45.7%**.
+
+C-4에서 TeamGateway spec이 `wasAlreadyOnline`·`isFullyOffline`을 mock으로 가정했으므로, **그 값을 실제로 계산하는 로직은 여기서만 검증된다.** 두 판정이 틀리면 다중 탭 사용자에게 입퇴장 알림이 중복되거나(오탐) 아예 누락된다(미탐).
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `addUserToOnline` | 7 | **판정은 소켓 추가 "전"의 개수로**(호출 순서까지 검증 — 추가 후에 세면 첫 입장 알림이 영영 안 나간다) / 세 키를 한 파이프라인으로 / **전 키에 TTL**(socket·userSockets 3600s, teamOnline 7200s) |
+| `removeSocket` | 6 | 미등록 소켓은 `null` / 남은 소켓 0일 때만 온라인 해시·Set 정리 / **다중 탭이면 목록 미변경** / Redis Hash의 문자열 ID를 number로 복원 |
+| 조회 4종 | 12 | 이름 없으면 접속 수 조회 생략 / **100명 초과 시 절단**(조회도 100회만) / 파이프라인 결과 순서 매핑 / `exec()`가 비면 0 |
+| **Gauge 갱신** | 6 | 접속자 있으면 `set`, 0명이면 `remove` + 추적 해제 / **Redis 실패는 0으로 취급하지 않고 주기 skip** / 한 팀 실패해도 나머지는 갱신 |
+| **갱신 타이머** | 6 | `TASK_SLOT=1`만 60s 주기 등록 / 미설정·0·2는 미등록 / `onModuleDestroy`가 타이머 정리(2회 호출도 안전) |
+| 장애 격리 | 4+ | 메서드별 안전한 기본값(`{wasAlreadyOnline:false}`·`null`·`[]`·`0`·`false`) / **Redis 클라이언트 미주입 상태에서도 안 죽음** |
+
+**가장 값나가는 방어 — 실패와 0명의 구분**: `refreshTeamOnlineMetric`은 `hlen` 실패 시 그 팀을 **건너뛴다**(이전 Gauge 값 유지). 실패를 0으로 취급해 `remove`하면 **Redis 장애 중에 대시보드에서 지표가 통째로 사라져** 장애 판단을 방해한다. 원 구현에 주석으로만 남아 있던 의도를 테스트로 고정했다.
+
+**장애 격리 설계 확인**: 이 서비스는 모든 Redis 오류를 삼키고 안전한 기본값을 반환한다 — "Redis가 죽어도 HTTP는 정상, WS 프레즌스만 중단"이라는 결정을 지키기 위해서다. 메서드마다 "실패 시 무엇을 반환하는가"를 명시 고정했으므로, 누가 예외를 다시 던지도록 바꾸면 테스트가 먼저 깨진다.
+
+이번 Phase에서는 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
+---
+
+### C-6 결과 (2026-08-07) — TelegramService (외부 API + 연동)
+
+**47케이스, 458 → 505/505 통과.** `telegram.service.ts` 0% → **100%**(브랜치 98.27% — 미커버는 로그 문자열의 `chat.title` optional 하나), 전체 45.7% → **49.8%**.
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `sendMessageAsync` | 9 | 봇 토큰·chatId·message 없으면 **호출 자체를 안 함** / URL에 토큰 삽입 / `parse_mode: HTML` / 버튼→`inline_keyboard` 한 줄 / **버튼 없으면 `reply_markup` 키 자체 없음**(빈 키보드는 API가 400으로 거부) / 실패 응답은 상태 코드를 담아 throw(본문이 JSON이 아니어도) |
+| `sendTeamNotification` | 4 | 미연동 팀은 건너뛰되 **경고 로그는 남김** / **API 실패·네트워크 단절 모두 예외를 삼킴** |
+| `generateLinkToken` | 5 | **기존 활성 토큰 전부 무효화 후 발급**(순서까지 검증 — 남기면 옛 딥링크로 연동 가능) / 64자 hex / 매번 다른 값 / 만료 24시간 / 딥링크 동봉 |
+| `getDeepLink` | 2 | 봇 사용자명 없으면 설정 오류 + **구체 원인은 서버 로그에만** |
+| `verifyAndLinkTeam` | 7 | 활성·미만료 토큰만 조회 / **이미 다른 그룹과 연동됐으면 거부** / 같은 그룹은 재연동 허용 / chatId 저장과 토큰 소진을 **한 트랜잭션** / 실패 시 throw가 아니라 실패 결과 반환 |
+| `handleWebhook` | 9 | 봇 추가(member/administrator)는 대기 / **제거(left/kicked) 시 연동 해제** / `/start <token>` 성공·실패 각각 안내 / 토큰 없는 `/start`는 안내만 / `bot_command` 엔티티 없으면 무시 |
+| `getLinkStatus`·`unlinkTeam` | 11 | 팀 없으면 404 / 연동 시 대기 토큰 조회 생략 / 대기 토큰은 최신 1건 / 해제는 chatId 제거 + 토큰 무효화를 한 트랜잭션 |
+
+**연동/해제의 에러 처리가 비대칭인 이유**(테스트로 명시): `verifyAndLinkTeam`은 실패해도 **결과 객체를 반환**하고 `unlinkTeam`은 **throw**한다. 전자는 webhook 응답으로 사용자에게 문구를 보여줘야 하고, 후자는 사용자가 명시적으로 요청한 HTTP 액션이라 실패를 알려야 하기 때문이다. 둘을 통일하려는 리팩터가 들어오면 이 테스트가 먼저 깨진다.
+
+**확인한 것 — webhook 실패가 재시도 폭풍으로 번지지 않는다**: `handleWebhook`은 안내 메시지 전송(`sendMessageAsync`)의 예외를 잡지 않지만, `telegram.controller.ts:31-37`이 `try/catch`로 감싸 200 + `{success:false}`를 반환한다. 텔레그램이 재시도하지 않으므로 "연동은 됐는데 안내 실패 → 재시도 → 토큰 소진됨 → 실패 안내 반복" 시나리오는 발생하지 않는다.
+
+**테스트 작성 중 걸린 함정**: `buildService(botToken = BOT_TOKEN)` 형태의 기본값 파라미터를 쓰면 `buildService(undefined)`가 "미설정"이 아니라 **기본값으로 해석**되어 "토큰 없으면 전송 안 함" 테스트가 조용히 무력해진다(실제로 처음에 이 케이스만 실패해서 발견). 옵션 객체 + `'key' in overrides`로 바꿨다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
 ### 실행 체크리스트
 
 ```
@@ -533,11 +613,11 @@ Guard/Filter (6개): ✅ 완료 (2026-08-05)
 Service:
   [✓] AuthService (22, 100%), SchedulerService (21, 97.87%)
   [✓] UsersService (5, 100%), FileShareService (6, 100%)
-  [✓] NotificationAdapter (7, 100%)
+  [✓] NotificationAdapter (7, 100%), TeamGateway (46, 99.29%)
+  [✓] OnlineUserService (41, 100%), TelegramService (47, 100%)
   [~] TeamService (70.49%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(25) + 댓글(30)
       잔여: updateTask, getTeamMembersBy/getTeamTasksBy 조립, 조회 계열, insertTeam/updateTeam
-  [ ] OnlineUserService(317줄), FishingOnlineService(320줄)
-  [ ] TelegramService(468줄), DiscordService(184줄)
+  [ ] DiscordService(184줄), FishingOnlineService(320줄)
 
 Controller (8개, 33 엔드포인트) — UsersController만 완료:
   [✓] UsersController (100%)
@@ -548,18 +628,20 @@ Guard/Filter (6개): ✅ 완료
   [✓] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
   [✓] HttpExceptionFilter, WsExceptionFilter
 
-Gateway (8개) — 전부 0%:
-  [ ] TeamGateway (joinTeam, leaveTeam) — 485줄
-  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 357줄
+Gateway:
+  [✓] TeamGateway (joinTeam, leaveTeam, chatMessage + 브로드캐스트 10종) — 46케이스, 99.29%
+  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 357줄, 0%
 ```
 
 **다음 착수 순서** (2026-08-07 실측 기준 — 비용 대비 보안·회귀 효과順)
 
 1. ✅ **`updateMemberStatus`·`verifyTeamInviteToken`** — 완료 (2026-08-07, 아래 결과 참조)
 2. ✅ **`NotificationAdapter`** — 완료 (2026-08-07)
-3. **`TeamGateway`** ◀ **다음 작업** — WS 권한 경계. HTTP와 **별도 구현**이라 한쪽만 고치는 실수가 실제로 가능하다(Phase A의 가드 2개 사례와 동일 구조)
-4. `OnlineUserService`·`TelegramService`·`DiscordService`·`FishingOnlineService`
-5. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
+3. ✅ **`TeamGateway`** — 완료 (2026-08-07, 아래 결과 참조)
+4. ✅ **`OnlineUserService`** — 완료 (2026-08-07, 아래 결과 참조)
+5. ✅ **`TelegramService`** — 완료 (2026-08-07, 아래 결과 참조)
+6. **`DiscordService`** ◀ **다음 작업** (184줄, 0%) — 텔레그램과 같은 알림 채널 쌍. Webhook URL 검증 로직이 있어 SSRF 관점도 함께 본다. 이후 `FishingOnlineService`·`FishingGateway`
+7. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
 
 ---
 

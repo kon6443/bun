@@ -37,7 +37,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 명령어·환경변수 전체 목록은 [`README.md`](README.md)가 SSOT다. 작업 시 자주 쓰는 것만:
 
-- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (현재 371/371 통과 — 실패가 보이면 내 변경 탓이다)
+- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (현재 505/505 통과 — 실패가 보이면 내 변경 탓이다)
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
 
 ## Key Patterns
@@ -75,7 +75,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 4. **Entity의 `nullable`/`length`/`default`는 런타임에 아무 효과가 없다** — `synchronize: false` + `migration:generate` 미사용이므로 스키마에 반영되는 경로가 없다. 표기는 "읽는 사람을 위한 문서"일 뿐이고, 실제 제약은 DB가 강제한다.
 5. **PK 선언은 DB의 IDENTITY 종류와 맞춰야 한다** — `GENERATED ALWAYS AS IDENTITY` 컬럼에 명시 값을 INSERT하면 ORA-32795로 거부된다. `@PrimaryGeneratedColumn`을 써서 ID를 생략해야 한다 (예: `TASK_COMMENTS.COMMENT_ID`, `TEAM_TELEGRAM_LINKS.LINK_ID`).
 6. **문자열 컬럼을 number 타입으로 선언하지 말 것** — Oracle이 컬럼 쪽을 숫자로 암묵 변환해 비교하므로, 비숫자 값이 한 건이라도 생기면 ORA-01722로 해당 기능 전체가 깨진다 (`USERS.KAKAO_ID`가 이 사례였음). 외부 API 값은 도메인 진입 경계에서 한 번만 변환한다.
-7. **테스트는 현재 전부 통과한다 (371/371)** — 실패가 보이면 내 변경이 원인이다. ~~과거 20건 실패~~는 D2(2026-08-05)에서 해소됐고, 원인은 인프라가 아니라 **에러 DTO 리팩토링·`@CurrentUser` 전환 때 테스트를 함께 갱신하지 않은 것**이었다. 프로덕션 코드를 바꿀 때 그 코드를 검증하는 테스트도 같은 커밋에서 갱신한다.
+7. **테스트는 현재 전부 통과한다 (505/505)** — 실패가 보이면 내 변경이 원인이다. ~~과거 20건 실패~~는 D2(2026-08-05)에서 해소됐고, 원인은 인프라가 아니라 **에러 DTO 리팩토링·`@CurrentUser` 전환 때 테스트를 함께 갱신하지 않은 것**이었다. 프로덕션 코드를 바꿀 때 그 코드를 검증하는 테스트도 같은 커밋에서 갱신한다.
 8. **민감정보 컬럼은 Entity에 선언하지 않는 것이 안전하다** — TypeORM은 선언된 컬럼을 모든 `find`에서 SELECT하므로 응답·로그로 새어나갈 수 있다. 꼭 필요하면 `select: false`를 함께 쓴다 (`USERS.KAKAO_REFRESH_TOKEN`은 미선언 유지 결정).
 
 ## Rules
@@ -111,8 +111,8 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
 - **토큰 Unique Index (D23)**: ✅ 완료 (2026-08-05, 커밋 `02aefd8`·`4f0260c`) — jti 선행 수정 후 인덱스 2개 생성. 실측 확인 완료
 - **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
-- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) + **C-2(태스크·댓글) + C-3(초대 토큰·멤버 상태·NotificationAdapter)** 완료 (2026-08-07). **371/371 통과, 커버리지 35.07%** (`team.service.ts` 70.49%)
-  - **▶ 다음 작업: TeamGateway** (WS 권한 경계 — HTTP와 별도 구현이라 한쪽만 고치는 실수가 가능). 이후 OnlineUser·Telegram·Discord·FishingGateway. 착수 순서와 근거는 `docs/tasks/tasks-nestjs-improvements.md` D5 절의 "다음 착수 순서"
+- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) + **C-2(태스크·댓글) + C-3(초대 토큰·멤버 상태·NotificationAdapter) + C-4(TeamGateway) + C-5(OnlineUserService) + C-6(TelegramService)** 완료 (2026-08-07). **505/505 통과, 커버리지 49.8%** (`team.service.ts` 70.49%, `team.gateway.ts` 99.29%, `online-user.service.ts`·`telegram.service.ts` 100%)
+  - **▶ 다음 작업: DiscordService** (184줄, 0%). 텔레그램과 같은 알림 채널 쌍 — Webhook URL 검증 로직이 있어 SSRF 관점도 함께 본다. 이후 FishingOnline·FishingGateway. 착수 순서와 근거는 `docs/tasks/tasks-nestjs-improvements.md` D5 절
   - **부수 수정 (접근 제어 2건)**: ①댓글 수정·삭제에 팀 멤버 검증 누락 → 탈퇴 멤버·비활성 팀에서도 자기 댓글 수정·삭제 가능했음. ②`createTask`에 팀 멤버 검증 누락 → 인증된 아무 유저나 남의 팀에 태스크 생성 + WS·알림 발생 가능했음(프론트는 이미 403을 전제하고 있었음). 둘 다 `verifyTeamMemberAccess`로 해결. `createTask`는 팀 미존재 시 **404→403으로 계약 변경**. **수동 E2E 미검증**
   - 테스트 작성 시 반드시 기존 표준 사용: Factory `src/entities/__spec__/entity.factory.ts`(쿼리 결과용 `create*View` 포함), Mock `src/common/__spec__/mock-repository.ts`. spec은 도메인별 분리(`team.service.<도메인>.spec.ts`)
 
