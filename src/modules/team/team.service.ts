@@ -287,24 +287,6 @@ export class TeamService {
     }));
   }
 
-  async insertTeamMember({
-    userId,
-    teamId,
-    role,
-  }: {
-    userId: number;
-    teamId: number;
-    role: string;
-  }): Promise<void> {
-    const newTeamMember = this.teamMemberRepository.create({
-      userId,
-      teamId,
-      joinedAt: new Date(),
-      role,
-    });
-    await this.teamMemberRepository.save(newTeamMember);
-  }
-
   async insertTeam({ createTeamDto }: { createTeamDto: CreateTeamDto }): Promise<void> {
     await this.dataSource.transaction(async (manager: EntityManager) => {
       // 1. Team 생성

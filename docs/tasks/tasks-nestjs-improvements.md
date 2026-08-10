@@ -641,11 +641,15 @@ C-4에서 TeamGateway spec이 `wasAlreadyOnline`·`isFullyOffline`을 mock으로
 
 **명시 고정 — `updateTeam`은 역할을 보지 않는다**: 초대 생성·역할 변경·멤버 상태는 관리 권한(MANAGER 이상)을 요구하는데 팀 이름·설명 수정만 **MEMBER도 가능**하다. 컨트롤러 Swagger도 "팀 멤버만 팀 정보를 수정할 수 있습니다"로 되어 있어 의도된 정책으로 판단하고 현재 동작을 고정했다. "MANAGER 이상"으로 바꾸려면 그 테스트가 먼저 깨진다.
 
-**🟡 발견 — `insertTeamMember`는 호출처가 0곳** (`team.service.ts:290-306`)
+**🔴 발견 → ✅ 제거 완료 — `insertTeamMember`는 호출처가 0곳** (구 `team.service.ts:290-306`, 2026-08-10 제거)
 
-grep 전수 결과 **정의만 있고 호출하는 코드가 없다**. `insertTeam`이 트랜잭션 안에서 `manager.create(TeamMember, ...)`로 직접 만들기 때문이고, 초대 수락도 `acceptTeamInvite`가 자체 처리한다. 커버리지 미커버 구간(137-305)에 포함된 것이 이를 뒷받침한다.
+grep 전수 결과 **정의만 있고 호출하는 코드가 없었다**. 커버리지 미커버 구간에 포함된 것이 이를 뒷받침했다.
 
-죽은 코드에 테스트를 쓰는 건 낭비라 제외했다. 이 세션에서 나온 세 번째 같은 유형이다(`isValidRole` 프로토타입 누수 → 수정, `verifyTeamInviteToken`의 도달 불가 분기 → 제거). 제거 여부는 판단 대기 — 범위 밖이라 손대지 않음.
+**이력 추적 결과 — 태어날 때부터 죽어 있었다**: 도입 커밋 `43cac78`(2026-01-11, "/api/v1/teams")에서 **`insertTeam`의 트랜잭션 버전(`manager.create(TeamMember, ...)`)과 같은 커밋에 함께** 만들어졌고, 당시 컨트롤러도 이 메서드를 부르지 않았다. 팀 생성을 두 단계로 나눠 쓰려다 트랜잭션 방식으로 정리하면서 남은 잔재다.
+
+**지웠을 때 잃는 것이 없는 근거**: 멤버가 추가되는 경로는 두 곳뿐이고 둘 다 트랜잭션 안에서 직접 처리한다 — 팀 생성(`insertTeam`)과 초대 수락(`acceptTeamInvite`). 오히려 이 메서드는 **트랜잭션 밖에서 단독 INSERT**를 하므로, 썼다면 "팀은 만들어졌는데 멤버 등록만 실패" 같은 부분 적용 상태를 만들 수 있었다. `teamMemberRepository`는 다른 6곳에서 계속 쓰이므로 DI는 유지된다.
+
+이 세션에서 나온 세 번째 죽은 코드다(`isValidRole` 프로토타입 누수 → 수정, `verifyTeamInviteToken`의 도달 불가 분기 → 제거, `insertTeamMember` → 제거).
 
 ---
 
