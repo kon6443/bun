@@ -37,7 +37,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 명령어·환경변수 전체 목록은 [`README.md`](README.md)가 SSOT다. 작업 시 자주 쓰는 것만:
 
-- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (단위, 현재 639/639) · `pnpm test:e2e` (E2E, 현재 10/10) — 실패가 보이면 내 변경 탓이다
+- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (단위, 현재 639/639) · `pnpm test:e2e` (E2E, 현재 23/23 — **DB에 접속하지 않는다**) — 실패가 보이면 내 변경 탓이다
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
 
 ## Key Patterns
@@ -113,6 +113,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
 - **단위 테스트 (D5)**: 🔄 진행 중 — **Service·Guard·Filter·Gateway 전 계층 완료** (Phase A~C-9, 2026-08-05~08-10). **639/639 통과, 커버리지 8.73% → 62.7%**. 이력·근거·발견 사항은 `docs/tasks/tasks-nestjs-improvements.md` D5 절이 SSOT
   - **▶ 다음 작업은 결정이 필요하다**: Controller 8개(0%, `team.controller.ts` 858줄 포함)를 단위 테스트로 덮을지, E2E(D6)로 넘길지. 서비스 위임이라 단위 테스트 효용이 낮다는 판정 근거를 문서에 남겨 뒀다
+  - **E2E는 DB에 접속하지 않는다** — Repository를 mock으로 끊고 `AppModule`을 쓰지 않으며(`TypeOrmModule`이 부팅만으로 상용 DB에 붙는다), `test/setup/forbid-db.ts`가 oracledb 드라이버 레벨에서 차단한다. 롤백이 아니라 **연결 자체가 없다**. E2E 작성 시 `AppModule` import 금지 — `test/helpers/e2e-app.ts`의 `createE2eApp()`을 쓴다
   - **접근 제어 검증 자동화 (D6, 2026-08-12)**: 수동 대기였던 4건 중 **HTTP 3건을 E2E로 자동화**했다(`test/team-access-control.e2e-spec.ts`) — 비멤버의 태스크 생성 403, 탈퇴자의 댓글 수정·삭제 403. **잔여 수동 확인 1건**: WS `joinTeam` 인증 차단(소켓 핸드셰이크가 필요해 HTTP E2E로 덮이지 않음)
   - **⚠️ API 계약 변경 1건** (푸시 시 주의): 태스크 생성에서 팀 미존재·비활성 시 `404 TEAM_NOT_FOUND` → `403 TEAM_FORBIDDEN`. 프론트는 이미 403 문구를 갖고 있어 대응 불필요
   - 테스트 작성 시 반드시 기존 표준 사용: Factory `src/entities/__spec__/entity.factory.ts`(쿼리 결과용 `create*View` 포함), Mock `src/common/__spec__/mock-repository.ts`. spec은 도메인별 분리(`team.service.<도메인>.spec.ts`)

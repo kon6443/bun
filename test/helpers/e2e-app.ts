@@ -33,6 +33,14 @@ export interface CreateE2eAppOptions {
    * `undefined`면 `JwtAuthGuard`가 401을 던지는 동작을 재현한다(인증 실패 경로 검증용).
    */
   authUser?: User;
+  /**
+   * `true`면 `JwtAuthGuard`를 override하지 않고 **실제 가드**를 태운다.
+   *
+   * 인증 자체(토큰 추출·검증·유저 조회)를 검증할 때 쓴다 — 특히 "발급한 토큰으로
+   * 보호된 API에 접근된다"는 왕복은 이 옵션 없이는 확인할 수 없다.
+   * 이때 `providers`에 `ConfigService`(JWT_SECRET)와 User Repository를 넣어야 한다.
+   */
+  useRealAuthGuard?: boolean;
 }
 
 export interface E2eApp {
@@ -46,20 +54,22 @@ export const createE2eApp = async ({
   controllers,
   providers = [],
   authUser,
+  useRealAuthGuard = false,
 }: CreateE2eAppOptions): Promise<E2eApp> => {
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     controllers,
     providers: [
       ...providers,
       { provide: APP_FILTER, useClass: HttpExceptionFilter },
       { provide: APP_PIPE, useFactory: createGlobalValidationPipe },
     ],
-  })
+  });
+
+  if (!useRealAuthGuard) {
     // 실제 가드는 JWT 검증 + User Repository 조회를 하므로 DB가 필요하다.
     // 인증 자체는 jwt-auth.guard.spec.ts(14케이스)에서 검증했으므로 여기선 우회하고,
     // "인증된 사용자가 무엇을 할 수 있는가"에 집중한다.
-    .overrideGuard(JwtAuthGuard)
-    .useValue({
+    builder.overrideGuard(JwtAuthGuard).useValue({
       canActivate: (ctx: {
         switchToHttp: () => { getRequest: () => { user?: User } };
       }) => {
@@ -69,8 +79,10 @@ export const createE2eApp = async ({
         ctx.switchToHttp().getRequest().user = authUser;
         return true;
       },
-    })
-    .compile();
+    });
+  }
+
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication();
   app.use(cookieParser());

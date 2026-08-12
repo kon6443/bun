@@ -820,10 +820,15 @@ Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결�
   [✓] test/helpers/e2e-app.ts — 앱 조립 + main.ts 전역 설정 재현 + JwtAuthGuard override
   [✓] main.e2e-spec.ts (인프라 검증 3케이스 — prefix·응답 포맷·에러 필터)
 
+  [✓] test/setup/forbid-db.ts — oracledb 드라이버 차단 가드레일 (setupFiles 등록)
+  [✓] forbid-db.e2e-spec.ts — 가드레일이 살아 있는지 검증 (3케이스)
+
 플로우:
   [✓] 접근 제어 (7케이스) — 비멤버 태스크 생성 403, 탈퇴자 댓글 수정·삭제 403,
       정상 경로 대조 2건, ValidationPipe 422 2건
-  [ ] auth (카카오 → JWT → Cookie), team CRUD, invitation, file-share, health-check
+  [✓] auth (10케이스) — 신규 가입/기존 로그인, **발급 토큰으로 보호된 API 접근(왕복)**,
+      토큰 없음·위조 401, 카카오 실패 502, 검증 422
+  [ ] team CRUD, invitation, file-share, health-check
   [ ] WS: team-gateway, fishing-gateway (소켓 핸드셰이크 필요 — HTTP E2E와 별도 인프라)
 ```
 
@@ -848,6 +853,28 @@ Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결�
 **얻은 것 — 수동 검증 3건의 자동화**: 이번 세션에 고친 접근 제어는 "인증이 필요해 사람이 직접 확인해야 하는" 상태로 남아 있었다. 서비스 단위 테스트는 메서드를 직접 호출하지만 실제 사용자는 HTTP로 들어오고 그 사이에 가드·파이프·필터가 있다. 그 조합이 실제로 403을 돌려주는지를 이제 자동으로 확인한다.
 
 **작성 중 확인한 실제 계약**: 검증 실패는 **400이 아니라 422**(`VALIDATION_ERROR`)다. 처음에 400으로 기대했다가 실패해서 확인했고, 프론트도 422/`VALIDATION_ERROR`로 매핑하고 있었다(`next-bun/src/types/api.ts:28,60`).
+
+---
+
+### 결과 (2026-08-12) — DB 차단 가드레일 + 인증 플로우
+
+**13케이스 추가, 총 23케이스 통과.**
+
+**🔒 DB 차단 가드레일** (`test/setup/forbid-db.ts`, `setupFiles`에 등록)
+
+"지금 DB에 안 붙는다"와 "앞으로도 안 붙는다"는 다르다. 누군가 `AppModule`을 그대로 import하는 E2E를 추가하면 `TypeOrmModule.forRootAsync`가 부팅 중 **상용 DB에 커넥션 풀을 만든다**. 그래서 드라이버(oracledb) 레벨에서 `getConnection`·`createPool`·`initOracleClient`를 throw로 막았다 — TypeORM이 어떤 경로로 연결을 시도하든 결국 이 드라이버를 거치므로 가장 아래에서 한 번 막는 것이 확실하다.
+
+가드레일은 스스로를 검증하지 못하므로 `forbid-db.e2e-spec.ts`(3케이스)로 **살아 있는지 확인**한다. `setupFiles` 등록이 지워지면 이 테스트가 먼저 깨진다.
+
+**DB 무관 실측**: 접속 정보를 전부 잘못된 값으로 바꾸고(`ORACLE_DB_USER=INVALID`, `ORACLE_DB_CONNECT_STR=nonexistent-host.invalid:9999/NOPE`, `REDIS_HOST=…`, `JWT_SECRET=`) 실행해도 23/23 통과한다. 실제 연결을 시도했다면 여기서 깨진다.
+
+**인증 플로우** (`auth.e2e-spec.ts`, 10케이스) — 이 스펙만 `useRealAuthGuard: true`로 **진짜 가드**를 태운다.
+
+핵심은 **"발급한 토큰으로 보호된 API에 실제로 접근되는가"** 다. `auth.service.spec.ts`는 토큰 payload를, `jwt-auth.guard.spec.ts`는 가드 로직을 각각 검사하지만 **둘이 맞물리는지는 아무도 확인하지 않았다.** 발급 쪽이 `sub`를 빼거나 서명 비밀이 어긋나면 "로그인은 성공하는데 그 토큰으로 아무것도 못 하는" 상태가 되고, 단위 테스트는 양쪽 다 통과한다. 로그인 → 토큰 획득 → `Authorization: Bearer`로 `/users/me` 접근까지 한 테스트에서 왕복시켰다.
+
+그 외: 신규 가입 시 기본 표시명, 기존 로그인 시 **중복 계정 미생성**(`save` 미호출), 토큰 없음·위조 401, 카카오 거부 502, 검증 실패 422, 권한 필드(`isAdmin`) 주입 차단.
+
+**작성 중 걸린 것**: `AuthService.getUserBy`는 QueryBuilder가 아니라 `find({ where })`를 쓴다. QueryBuilder로 mock했다가 500이 나서 실제 구현을 확인하고 고쳤다.
 
 ---
 

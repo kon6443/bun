@@ -1,5 +1,9 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": "..",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec\\.ts$",
@@ -13,5 +17,8 @@
     "^@modules/(.*)$": "<rootDir>/src/modules/$1",
     "^@config/(.*)$": "<rootDir>/src/config/$1",
     "^@/(.*)$": "<rootDir>/src/$1"
-  }
+  },
+  "setupFiles": [
+    "<rootDir>/test/setup/forbid-db.ts"
+  ]
 }
