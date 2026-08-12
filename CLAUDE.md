@@ -37,7 +37,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 명령어·환경변수 전체 목록은 [`README.md`](README.md)가 SSOT다. 작업 시 자주 쓰는 것만:
 
-- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (단위, 현재 639/639) · `pnpm test:e2e` (E2E, 현재 65/65 — **DB·Redis에 접속하지 않는다**) — 실패가 보이면 내 변경 탓이다
+- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (단위, 현재 639/639) · `pnpm test:e2e` (E2E, 현재 79/79 — **DB·Redis에 접속하지 않는다**) — 실패가 보이면 내 변경 탓이다
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
 
 ## Key Patterns
