@@ -108,10 +108,9 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ## DB Migrations — AI 행동 규칙
 
-명령어·파일 규칙은 [`README.md`](README.md#db-마이그레이션) 참조. **여기서는 지켜야 할 것만 정의한다.**
+명령어·파일 규칙은 [`README.md`](README.md#db-마이그레이션) 참조. DB 접속 금지는 위 **Never 표**가 정의한다. **여기서는 파일을 작성할 때 지킬 것만**:
 
-- 🚫 **DB에 접속하는 명령을 직접 실행하지 않는다** — LOCAL/PROD가 동일 DB이므로 모든 `up`이 곧 상용 적용이다. `db:migrate:up/fake/revert`는 물론 **`list`도 첫 실행 시 이력 테이블을 생성**하므로 담당자에게 요청한다. AI는 **마이그레이션 파일 작성까지만**.
-  - `.claude/settings.json` deny로 기술적 차단도 걸려 있으나, deny는 prefix 매칭이라 우회 변형(스크립트로 DataSource 직접 실행 등)까지 막지 못한다 → **이 행동 규칙이 우선**이다.
+- ⚠️ **deny 규칙은 서브프로세스를 막지 못한다** — 공식 문서 기준 permission 규칙은 Claude Code가 인식하는 명령에만 적용되고, 스크립트가 직접 파일·DB를 여는 경우(`tsx`/`node`로 DataSource 생성 등)에는 걸리지 않는다. 그래서 Never 표의 행동 규칙이 최후 방어선이다.
 - 스키마 변경은 항상 **Entity 수정 + 마이그레이션 파일을 세트로** 제출한다 (드리프트 방지).
 - 마이그레이션은 **멱등 작성**(`USER_TAB_COLUMNS` 등 존재 체크), **1개 = 1목적**, `down()` 필수(init 제외).
 - 결정 이력·대조 결과: `docs/tasks/tasks-nestjs-improvements.md` D33/D34
@@ -128,7 +127,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 4. **Entity의 `nullable`/`length`/`default`는 런타임에 아무 효과가 없다** — `synchronize: false` + `migration:generate` 미사용이므로 스키마에 반영되는 경로가 없다. 표기는 "읽는 사람을 위한 문서"일 뿐이고, 실제 제약은 DB가 강제한다.
 5. **PK 선언은 DB의 IDENTITY 종류와 맞춰야 한다** — `GENERATED ALWAYS AS IDENTITY` 컬럼에 명시 값을 INSERT하면 ORA-32795로 거부된다. `@PrimaryGeneratedColumn`을 써서 ID를 생략해야 한다 (예: `TASK_COMMENTS.COMMENT_ID`, `TEAM_TELEGRAM_LINKS.LINK_ID`).
 6. **문자열 컬럼을 number 타입으로 선언하지 말 것** — Oracle이 컬럼 쪽을 숫자로 암묵 변환해 비교하므로, 비숫자 값이 한 건이라도 생기면 ORA-01722로 해당 기능 전체가 깨진다 (`USERS.KAKAO_ID`가 이 사례였음). 외부 API 값은 도메인 진입 경계에서 한 번만 변환한다.
-7. **테스트는 현재 전부 통과한다 (639/639)** — 실패가 보이면 내 변경이 원인이다. ~~과거 20건 실패~~는 D2(2026-08-05)에서 해소됐고, 원인은 인프라가 아니라 **에러 DTO 리팩토링·`@CurrentUser` 전환 때 테스트를 함께 갱신하지 않은 것**이었다. 프로덕션 코드를 바꿀 때 그 코드를 검증하는 테스트도 같은 커밋에서 갱신한다.
+7. **프로덕션 코드를 바꿀 때 그 코드를 검증하는 테스트도 같은 커밋에서 갱신한다** — 과거 테스트가 대량 실패했을 때 원인은 인프라가 아니라 에러 DTO 리팩토링·`@CurrentUser` 전환에서 테스트를 함께 고치지 않은 것이었다.
 8. **에러 경로 테스트는 status·code를 정확히 고정한다** — `expect([403, 404]).toContain(status)`처럼 느슨하게 받으면 **그 차이가 곧 방어의 유무일 때 테스트가 조용히 무력해진다**. 실제로 파일 공유 경로 탐색 테스트가 방어를 통째로 제거해도 통과했다(2026-08-12, D6). 방어를 걷어내고 테스트가 깨지는지 확인하는 것이 유일한 검증법이다.
 9. **민감정보 컬럼은 Entity에 선언하지 않는 것이 안전하다** — TypeORM은 선언된 컬럼을 모든 `find`에서 SELECT하므로 응답·로그로 새어나갈 수 있다. 꼭 필요하면 `select: false`를 함께 쓴다 (`USERS.KAKAO_REFRESH_TOKEN`은 미선언 유지 결정).
 
@@ -154,7 +153,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 글로벌 DoD(`~/.claude/CLAUDE.md`)에 더해 이 프로젝트에서 추가로 요구되는 항목:
 
-1. **`pnpm ci:core` 통과** (= lint → test → build) — 에러 0건, 경고는 기존 수준 유지(현재 7건). PR 직전에는 `pnpm ci:all`(+ 스텁 검사 + E2E)
+1. **`pnpm ci:core` 통과** (= lint → test → build) — 에러 0건, **경고 수를 늘리지 않는다**(기준선은 [`README.md`](README.md#주요-명령어)). PR 직전에는 `pnpm ci:all`(+ 스텁 검사 + E2E)
 2. **변경 심볼 grep 전수 확인** — 호출처를 빠뜨리지 않았음을 증거로 제시
 3. **DB 변경이 있으면** 마이그레이션 파일 + Entity 수정을 세트로 제출. 실행은 담당자에게 요청하고, **실행 여부를 완료 조건에서 분리해 명시**
 4. **인증이 필요해 검증 못 한 경로는 "미검증"으로 명시** — 빌드 통과를 동작 검증으로 포장하지 않는다
@@ -165,5 +164,4 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 스택 구성·노드·볼륨·서비스 DNS·이미지 태그는 [`docs/deploy.md`](docs/deploy.md)가 SSOT다. **코드를 쓸 때 지켜야 할 것만**:
 
 - **멀티 레플리카 전제** (NestJS 3 replicas) — 인메모리 상태·타이머·스케줄러는 레플리카별로 중복 실행된다. 공유 상태는 Redis, 단일 실행이 필요한 작업은 `TASK_SLOT` 가드를 쓴다.
-- **Caddyfile은 Git에 커밋하지 않는다** (공개 저장소 보안 정책 — 서버에서 직접 관리)
 
