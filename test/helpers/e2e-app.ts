@@ -84,7 +84,12 @@ export const createE2eApp = async ({
 
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication({
+    // 에러 경로 테스트(502·403 등)가 정상 동작으로 error 로그를 남긴다.
+    // 실패처럼 보이는 노이즈가 쌓이면 진짜 문제를 놓치므로 앱 로거를 끈다.
+    // 로그 정책 자체는 http-exception.filter.spec.ts(21케이스)가 검증한다.
+    logger: false,
+  });
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
   await app.init();
