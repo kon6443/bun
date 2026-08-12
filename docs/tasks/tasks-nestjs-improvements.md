@@ -3,7 +3,7 @@
 > 작성일: 2026-04-03 | 최종 수정: 2026-07-23 (D33 ✅ 완료 / D27·D34 구현·커밋 완료 — 수동 테스트만 잔여. 커밋 `169ee9a`~`802ebfa`)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
-> 참고 프로젝트: 사내 NestJS 레퍼런스 프로젝트 (Pino, Port/Adapter, 테스트 Factory 등)
+> 참고 구현 (Pino, Port/Adapter, 테스트 Factory 등)
 
 ---
 
@@ -132,7 +132,7 @@ pnpm add -D ioredis-mock                          # Redis 모킹
 pnpm add -D socket.io-client                      # WS E2E 테스트
 ```
 
-> **`rosie` 도입 근거** (레퍼런스 프로젝트 검증됨): `Factory.build()`, `Factory.buildList(5)` 패턴으로 기본값+override 지원.
+> **`rosie` 도입 근거** (선행 구현 검증됨): `Factory.build()`, `Factory.buildList(5)` 패턴으로 기본값+override 지원.
 
 **2. package.json 스크립트 추가**
 ```json
@@ -249,7 +249,7 @@ export class MockNotificationAdapter {
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 4~6파일
 
-> **레퍼런스 프로젝트 검증**: 6개 Port/Adapter 운영 중. `MockAdapter.build()` 패턴으로 테스트에서 완전 교체 가능.
+> **선행 구현 검증**: 6개 Port/Adapter 운영 중. `MockAdapter.build()` 패턴으로 테스트에서 완전 교체 가능.
 
 ### 현재 외부 의존성
 
@@ -989,7 +989,7 @@ expect([403, 404]).toContain(res.status);
 
 - **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 3~5파일
 
-> **레퍼런스 프로젝트 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
+> **선행 구현 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
 
 ### 현재 트랜잭션 사용 (전수 확인 — 4곳)
 
@@ -1029,7 +1029,7 @@ expect([403, 404]).toContain(res.status);
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 4파일
 - **선행**: 없음 (독립 실행 가능)
 
-> **레퍼런스 패턴**: TypeScript enum + const object as const + Record 변환 테이블 3가지 병용. 이 프로젝트는 이미 `ROLE_HIERARCHY` const object 패턴을 사용 중이므로, 기존 패턴을 유지하면서 문자열 리터럴만 상수 참조로 교체.
+> **검증된 패턴**: TypeScript enum + const object as const + Record 변환 테이블 3가지 병용. 이 프로젝트는 이미 `ROLE_HIERARCHY` const object 패턴을 사용 중이므로, 기존 패턴을 유지하면서 문자열 리터럴만 상수 참조로 교체.
 
 ### 현재 문제 (전수 확인)
 
@@ -1683,7 +1683,7 @@ export const LOG_ROTATION_COUNT = 7;
 
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
 - **상태**: 추후 — 목록 API 확장 시 적용
-- **참고**: 레퍼런스 프로젝트에서 `PaginationQueryDto` + `PaginationMeta` 패턴 운영 중
+- **참고**: 선행 구현에서 `PaginationQueryDto` + `PaginationMeta` 패턴 운영 중
 
 ### 구현 방법
 
@@ -2545,7 +2545,7 @@ async updateProfile(userId: number, dto: UpdateUserDto) {
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 신규 파일 2~3개 + package.json + CLAUDE.md
 - **상태**: ✅ **완료 (2026-07-23)** — init 베이스라인 fake 등록까지 완료. 이후 모든 스키마 변경은 Entity 수정 + 마이그레이션 파일 세트로 수행
 - **선행**: 없음 (독립) | **후속 연계**: D34(Entity↔DB 정합화), D23(토큰 Unique Index), D27(TaskComment PK) — 도입 후 DB DDL 작업은 마이그레이션으로 수행
-- **참고 구현**: 사내 NestJS 레퍼런스 프로젝트 — `migration-datasource.ts` + `db:migrate:*` 스크립트 + init 풀 덤프 패턴 (MySQL, TypeORM 0.3.28 동일 버전)
+- **참고 구현**: `migration-datasource.ts` + `db:migrate:*` 스크립트 + init 풀 덤프 패턴 (MySQL, TypeORM 0.3.28 동일 버전)
 
 ### 배경
 
@@ -2559,8 +2559,8 @@ async updateProfile(userId: number, dto: UpdateUserDto) {
 |------|------|------|
 | init 스키마 소스 | **실제 DB DDL 덤프** (`DBMS_METADATA.GET_DDL`) | Entity↔실 DB 드리프트(D27 등) 존재 → 실 DB가 source of truth |
 | 베이스라인 등록 | **`migration:run --fake`** | 기존 DB에 init 실행 없이 이력만 기록. 실 DB 변경은 이력 테이블 생성 + 행 1개뿐 |
-| 이후 작성 방식 | **수동 작성 only** (`migration:create`) | generate는 live DB(=상용) 대조라 드리프트 노이즈 발생. 레퍼런스 컨벤션 동일 |
-| 실행 주체 | **담당자가 CLI 수동 실행** | LOCAL/PROD 동일 DB → 모든 `up`이 곧 상용 적용. **AI는 마이그레이션 파일 작성까지만** (레퍼런스 규칙 이식) |
+| 이후 작성 방식 | **수동 작성 only** (`migration:create`) | generate는 live DB(=상용) 대조라 드리프트 노이즈 발생. 일반 컨벤션 동일 |
+| 실행 주체 | **담당자가 CLI 수동 실행** | LOCAL/PROD 동일 DB → 모든 `up`이 곧 상용 적용. **AI는 마이그레이션 파일 작성까지만** (선행 구현 규칙 이식) |
 | 앱 자동 실행 | **금지** (`migrationsRun: false`, 런타임 설정에 migrations 키 자체를 두지 않음) | Swarm 3 replicas — 동시 기동 시 중복 실행 위험 |
 | Entity 정합화 | **DB 기준으로 Entity 수정** — 런타임 영향 항목만(D27 등), init 이후 별도 진행 | 실 데이터를 가진 DB가 source of truth. 인덱스·트리거·FK 등 DB 전용 객체는 Entity 선언 불요 (generate 미사용이라 효과 없음) |
 
@@ -2612,21 +2612,21 @@ export default new DataSource({
 
 - `DBMS_METADATA.GET_DDL`로 8개 테이블 + 인덱스 + 시퀀스 + 제약조건 추출 (read-only 쿼리)
 - `up()`: 추출한 DDL을 `queryRunner.query(...)` raw SQL로 나열
-- `down()`: **빈 함수** — 편도 베이스라인 (레퍼런스 init과 동일 설계)
+- `down()`: **빈 함수** — 편도 베이스라인 (선행 구현 init과 동일 설계)
 - 기존 운영 DB에는 `pnpm db:migrate:fake`로 이력만 기록 (실행 안 함)
 
 **4. 운영 규칙 (CLAUDE.md에 반영)**
 
-- 신규 마이그레이션은 **멱등 작성** — Oracle은 `USER_TAB_COLUMNS`/`USER_INDEXES`/`USER_CONSTRAINTS` 존재 체크 (레퍼런스(MySQL)의 `INFORMATION_SCHEMA` 가드에 대응)
-- 파일명 컨벤션 최초부터 고정: `<timestamp>-PascalCase.ts` (레퍼런스는 도중에 camelCase→PascalCase로 바뀜 — 반면교사)
+- 신규 마이그레이션은 **멱등 작성** — Oracle은 `USER_TAB_COLUMNS`/`USER_INDEXES`/`USER_CONSTRAINTS` 존재 체크 (MySQL 환경의 `INFORMATION_SCHEMA` 가드에 대응)
+- 파일명 컨벤션 최초부터 고정: `<timestamp>-PascalCase.ts` (선행 구현은 도중에 camelCase→PascalCase로 바뀜 — 반면교사)
 - init 제외 모든 마이그레이션은 `down()` 작성 의무
 - **`up`/`revert` 실행은 담당자 직접 — AI·자동화 도구가 임의 실행 금지**
 
-### ⚠️ Oracle 특이사항 (레퍼런스(MySQL)와의 차이)
+### ⚠️ Oracle 특이사항 (MySQL 환경과의 차이)
 
 - **DDL 비트랜잭션** (자동 커밋): 실패 시 부분 적용 상태로 남음 → 마이그레이션 1개 = 1목적으로 잘게 쪼개기 + 멱등 가드 필수. `migrationsTransactionMode`는 DDL에 무의미
 - **식별자 대문자**: 이력 테이블명은 `TYPEORM_MIGRATIONS` 대문자 — 기존 테이블(USERS, TEAMS 등) 컨벤션 일치, 수동 조회 시 따옴표 불필요
-- **QA DB 없음**: 레퍼런스는 QA 선적용 후 상용 적용이 가능하지만 여긴 LOCAL/PROD 동일 DB → 실행 전 코드 리뷰가 유일한 안전망
+- **QA DB 없음**: 선행 구현은 QA 선적용 후 상용 적용이 가능하지만 여긴 LOCAL/PROD 동일 DB → 실행 전 코드 리뷰가 유일한 안전망
 - **thick client**: CLI DataSource에도 wallet init 필요 (런타임 `app.module.ts:90` 로직과 동일하게)
 - **`migration:show`(=db:migrate:list)도 첫 실행 시 이력 테이블을 자동 생성** — TypeORM `MigrationExecutor.showMigrations()`가 `createMigrationsTableIfNotExist()`를 호출 (소스 확인). 따라서 **list 포함 모든 `db:migrate:*` DB 접속 명령은 담당자가 직접 실행**
 

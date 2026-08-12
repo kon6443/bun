@@ -24,7 +24,7 @@
 | Pino 보안 | **redact** 설정 (password, token, authorization) | 로그 중앙 수집 시 민감 정보 유출 방지 |
 | Pino 직렬화 | **serializers** (req, res, err 구조 통일) | LogQL 필터링 안정성 |
 | 메트릭-로그 연동 | **Grafana Data Links** (`${__from}`/`${__to}` 변수) | 메트릭 이상 발견 → 원클릭 로그 drill-down |
-| 쿼리 카탈로그 | **LogQL 샘플 쿼리** 문서화 | 운영 시 자주 쓰는 쿼리 레퍼런스 |
+| 쿼리 카탈로그 | **LogQL 샘플 쿼리** 문서화 | 운영 시 자주 쓰는 쿼리 모음 |
 
 ---
 
@@ -33,7 +33,7 @@
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음
 - **선행**: 모니터링 스택 배포 완료 (`tasks-monitoring.md` Step 3 완료)
 - **프론트 영향**: 없음
-- **참고 프로젝트**: 사내 NestJS 레퍼런스 프로젝트 — Loki 미적용 (gcplogs 대체). 우리는 OCI라 gcplogs 불가 → Loki가 더 필요
+- **참고**: Loki 미적용 (gcplogs 대체). 우리는 OCI라 gcplogs 불가 → Loki가 더 필요
 
 ---
 
@@ -73,7 +73,7 @@
 
 | 도구 | 버전 | 역할 |
 |------|-----------|------|
-| Loki | `grafana/loki:3.4.2` | 로그 저장·쿼리 서버 (레퍼런스 prod 검증 버전) |
+| Loki | `grafana/loki:3.4.2` | 로그 저장·쿼리 서버 (prod 검증 버전) |
 | Promtail | `grafana/promtail:3.4.2` | 로그 수집 에이전트 (docker discovery) |
 
 **앱 레벨 추가 설치 없음** — Pino 이미 도입되어 stdout JSON 출력 중.
@@ -424,7 +424,7 @@ Step 4에서 Prometheus + Loki 모두 provisioning으로 등록했으므로 추�
 
 ### Step 7 — LogQL 샘플 쿼리 카탈로그 ⭐
 
-운영 시 자주 쓰는 쿼리 레퍼런스 (Grafana Explore 저장 또는 대시보드 패널용):
+운영 시 자주 쓰는 쿼리 모음 (Grafana Explore 저장 또는 대시보드 패널용):
 
 ⚠️ LogQL 주의:
 - 숫자 비교 연산자 앞뒤 **공백 필수**: `field > 3000` (O), `field>3000` (X)

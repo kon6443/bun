@@ -4,7 +4,7 @@
 > 완료일: **2026-04-18** ✅
 > 브랜치: `feat-onam` → main merged
 > 선행: 이 작업 완료 후 → 모니터링 스택(`tasks-monitoring.md`) 진행 (서비스 DNS 이름 의존)
-> 연관 문서: [`tasks-monitoring.md`](./tasks-monitoring.md), [`deploy.md`](./deploy.md)
+> 연관 문서: [`tasks-monitoring.md`](../tasks-monitoring.md), [`deploy.md`](../../deploy.md)
 
 ---
 
@@ -46,41 +46,31 @@ Phase A — Swarm 서비스 정비: ✅ 완료
 
 ---
 
-## 🟡 잔여 작업 (미실행, 언제든 진행 가능)
+## 🟢 잔여 작업 — 완료 (2026-04-20)
 
-Phase A 완료 후에도 남아있는 사소한 정리 작업. **현재 운영에는 영향 없음**. 시간 있을 때 진행.
+Phase A 본체 완료 후 남은 사소한 정리 작업 전부 완료.
 
-### [잔여-1] sys_caddy 라벨 rename → infra_caddy — 🟠 진행 중
+### [잔여-1] sys_caddy 라벨 rename → infra_caddy — ✅ 완료
 
 **배경**: fs-01에 아직 `sys_caddy=1` 라벨 잔존. caddy만 `infra_*` 패턴 이탈.
 
-**현재 상태** (2026-04-20):
-- ✅ fs-01에 `infra_caddy=1` 라벨 추가됨 (sys_caddy 병행 유지 중)
-- ✅ `infra/docker-stack.yml`의 caddy constraint `infra_caddy == 1`로 수정 + 로컬 커밋 `16a23ad`
-- ✅ 관련 docs 수정 (`deploy.md`, `tasks-monitoring.md`, `tasks-logging.md`)
-- ⏳ **push + merge 대기** — merge 시 CI/CD가 infra 스택 재배포, caddy 여전히 fs-01에 유지 (재배치 없음)
-- ⏳ merge 완료 후 `sys_caddy` 라벨 제거
+**완료 이력** (2026-04-20):
+- `16a23ad` — `infra/docker-stack.yml` constraint `sys_caddy == 1` → `infra_caddy == 1`
+- `9bf9961` — sys_caddy 관련 정리
+- main merge 후 CI/CD가 infra 스택 재배포 → service spec 반영
+- fs-01 라벨 `map[infra_caddy:1 infra_redis:1 prod_nest:1 prod_next:1]` 확정 (sys_caddy 제거)
+- Caddy 2/2 Running 유지, 외부 트래픽 영향 없음
 
-**남은 순서**:
+### [잔여-2] Registry 쓰레기 태그/이미지 정리 — ✅ 완료 (2026-04-20)
 
-```bash
-# 1. push (커밋 16a23ad + docs 업데이트 포함)
-cd /Users/onamkwon/Desktop/Desktop/source_code/node/bun
-git push origin feat-onam
+**실행 결과**:
+- `sys_express/`, `sys_next/` 레포 전체 삭제
+- `prod_nest:migrate`, `prod_next:migrate` 태그 삭제
+- 남은 레포: `prod_nest` (태그 `949195f/a53eb5c/1af088e`), `prod_next` (`5872035/2c89031/7e831aa`)
+- repositories/ 크기: 1.7M → 1.1M (manifest 기준, blob은 그대로)
+- 운영 영향 0 (현재 운영 중 SHA 태그 보존)
 
-# 2. PR merge → deploy-infra.yml 자동 실행 → infra 스택 재배포
-#    - constraint가 `infra_caddy == 1`로 바뀌지만 fs-01에 이미 해당 라벨 있어 재배치 없음
-
-# 3. 재배포 완료 확인
-docker service ps infra_caddy   # 2/2 Running on fs-01
-
-# 4. 구 라벨 제거
-docker node update --label-rm sys_caddy fs-01
-docker node inspect --format '{{.Spec.Labels}}' fs-01
-#   최종: [infra_caddy:1 infra_redis:1 prod_nest:1 prod_next:1]
-```
-
-### [잔여-2] Registry 쓰레기 태그/이미지 정리
+**참고 (원본 상세 가이드)**: 
 
 **배경**: Phase 1 임시 태그 `:migrate`, 구 `sys_express:latest`, `sys_next:latest` 아직 registry에 남음 (~수백 MB 낭비).
 
@@ -128,9 +118,9 @@ docker pull fivesouth.duckdns.org/prod_nest:migrate     # manifest not found
 
 **참고**: manifest/tag 삭제만 하고 blob은 남음 (디스크 공간 완전 회수 안 됨). 완전 회수 원하면 registry에 `REGISTRY_STORAGE_DELETE_ENABLED=true` 환경변수 추가 후 `registry garbage-collect` 실행. 현재는 생략 권장 (운영 무해).
 
-### [잔여-3] docker-compose.yml 완전 삭제 여부 결정
+### [잔여-3] docker-compose.yml — ✅ 유지 결정 (2026-04-20)
 
-현재 `DEPRECATED` 헤더만 남김. 실제 사용 없으면 `git rm docker-compose.yml` 고려.
+현재 `DEPRECATED` 헤더만 남긴 상태로 **유지**. 실사용자 영향 없고 참고용 존재로 문제 없음.
 
 ### ✅ 완료 사항 요약
 
@@ -150,19 +140,19 @@ docker pull fivesouth.duckdns.org/prod_nest:migrate     # manifest not found
 - fs-02: `infra_registry=1` 추가 (sys_registry 구 라벨 유지 중)
 - fs-03: 비어있음 (모니터링 Phase에 추가 예정)
 
-### ⏳ 다음 즉시 작업: Step 2 (YAML/CI/CD 파일 작성)
+### 📦 생성/수정된 파일 목록 (완료 이력)
 
-작성할 파일 (bun 레포):
-1. `infra/docker-stack.app.yml` — prod_nest 스택 YAML
-2. `infra/docker-stack.yml` 수정 — registry 서비스 추가 (기존 caddy + redis에)
-3. `.github/workflows/deploy-to-oci.yml` 변경 — docker stack deploy 방식
-4. `.github/workflows/deploy-infra.yml` 신규 — infra 자동 배포
+**bun 레포**:
+1. ✅ `infra/docker-stack.app.yml` — prod_nest 스택 YAML
+2. ✅ `infra/docker-stack.yml` — registry 서비스 추가 (영속 bind mount 포함)
+3. ✅ `.github/workflows/deploy-to-oci.yml` — `docker stack deploy --detach=false`
+4. ✅ `.github/workflows/deploy-infra.yml` — infra 자동 배포
 
-작성할 파일 (next-bun 레포):
-5. `infra/docker-stack.app.yml` — prod_next 스택 YAML
-6. 배포 워크플로우 수정
+**next-bun 레포**:
+5. ✅ `infra/docker-stack.app.yml` — prod_next 스택 YAML (`HOSTNAME=0.0.0.0`, Bun fetch healthcheck)
+6. ✅ `.github/workflows/oci_build_and_deploy_next.yml` — 배포 워크플로우 개편
 
-> **다음 세션 재개**: 이 문서 "📦 생성/수정할 파일" 섹션 기반으로 실제 파일 작성 시작. inspect 결과(아래 "🖥️ 노드 현황" 섹션 참조)와 1:1 비교하며 작성.
+> 아래는 당시 플래닝/실행 상세 — 이력 보관용.
 
 ---
 
@@ -170,7 +160,7 @@ docker pull fivesouth.duckdns.org/prod_nest:migrate     # manifest not found
 
 | 항목 | 결정 | 근거 |
 |------|------|------|
-| 앱 서비스 관리 | **스택 per 서비스** — 각 앱이 독립 스택 (1 service each) | mobisell 동일 패턴. YAML이 설정 원천, `docker stack deploy`로 통일 |
+| 앱 서비스 관리 | **스택 per 서비스** — 각 앱이 독립 스택 (1 service each) | 동일 패턴. YAML이 설정 원천, `docker stack deploy`로 통일 |
 | 마이그레이션 대상 | `sys_express` → `prod_nest_app`, `sys_next` → `prod_next_app` | 스택명\_서비스명 자동 생성 DNS |
 | 스택 YAML | `infra/docker-stack.app.yml` (각 레포에 1개씩) | 레포별 독립 관리, 서로 영향 없음 |
 | infra 스택 | `infra` **유지** (caddy + redis) + `sys_registry` 합류 → `infra_registry` | QA/PROD 공통 인프라 |
@@ -285,15 +275,14 @@ docker service ls:
 배포: docker stack deploy (전부 통일)
 ```
 
-### mobisell과 비교
+### 검증된 패턴과 비교
 
 ```
-mobisell:
-  mobisell-back-prod      1 service (app)     ← 스택 per 서비스
-  mobisell-back-qa        1 service (app)
-  mobisell-front-develop  2 services
-  mobisell-monitoring-shared  3 services
-  mobisell-monitoring-qa      3 services
+선행 구현 (스택 per 서비스):
+  <앱>-<환경>             1 service (app)     ← 앱 1개 = 스택 1개
+  <프론트>-<환경>          2 services
+  <모니터링>-shared        3 services          ← global 서비스 분리
+  <모니터링>-<환경>        3 services
 
 우리 (목표):
   prod_nest               1 service (app)     ← 동일 패턴
@@ -1007,55 +996,57 @@ Step 1.5 — 노드 라벨 병행 추가 (완료):
   [x] fs-01에 prod_nest=1, prod_next=1 추가 완료
   [x] fs-02에 infra_registry=1 추가 완료
   [x] 3개 노드 라벨 확인 완료 (fs-01: 6개, fs-02: 2개, fs-03: 비어있음)
-  [ ] ⚠️ 구 라벨 제거는 Phase 4/5 이후 (지금 제거하면 구 서비스 Pending)
+  [x] ⚠️ 구 라벨 제거 — Phase 4/5 이후 안전하게 수행됨
 
 Step 2 — YAML/CI/CD 작성:
-  [ ] infra/docker-stack.app.yml 작성 (inspect 1:1 반영 + healthcheck 추가)
-  [ ] infra/docker-stack.yml에 registry 추가 (bind mount 2개, REGISTRY_CONFIGURATION_PATH env)
-  [ ] deploy-to-oci.yml 변경 (docker stack deploy 방식)
-  [ ] deploy-infra.yml 신규 작성
-  [ ] (next-bun) docker-stack.app.yml 작성
-  [ ] (next-bun) src/app/api/health/route.ts 생성 (healthcheck 엔드포인트)
-  [ ] (next-bun) 배포 워크플로우 수정
-  [ ] inspect 결과와 YAML 1:1 비교 검증
+  [x] infra/docker-stack.app.yml 작성 (inspect 1:1 반영 + healthcheck 추가)
+  [x] infra/docker-stack.yml에 registry 추가 (bind mount 2개, REGISTRY_CONFIGURATION_PATH env)
+  [x] deploy-to-oci.yml 변경 (docker stack deploy --detach=false 방식)
+  [x] deploy-infra.yml 신규 작성
+  [x] (next-bun) docker-stack.app.yml 작성 (HOSTNAME=0.0.0.0, Bun fetch healthcheck)
+  [x] (next-bun) src/app/api/health/route.ts — 기존 존재 확인, 추가 생성 불필요
+  [x] (next-bun) 배포 워크플로우 수정
+  [x] inspect 결과와 YAML 1:1 비교 검증
 
 Step 3 — 마이그레이션 실행:
-  [ ] Phase 0: 팀에 merge freeze 공지 (Slack/Discord)
-  [ ] Phase 0: GitHub Actions 중단 (Settings → Actions → Disable)
-  [ ] Phase 0: 진행 중인 CI/CD job 완료 대기
-  [ ] Phase 1: 이미지 re-tag + push (prod_nest:migrate, prod_next:migrate)
-  [ ] Phase 2: docker stack deploy prod_nest / prod_next
-  [ ] Phase 2 검증: prod_nest_app, prod_next_app healthy 상태 확인
-  [ ] Phase 3: Caddyfile 전환 (서버 직접 — sys_express → prod_nest_app, sys_next → prod_next_app)
-  [ ] Phase 3 검증: /api/v1/health-check 200 응답 + 프론트 정상 접근
-  [ ] Phase 4: 구 서비스 삭제 (sys_express, sys_next)
-  [ ] Phase 4: 구 노드 라벨 제거 (fs-01: sys_express, sys_next)
-  [ ] Phase 5-0: fs-02에서 /home/ubuntu/desktop/deploy/sys/registry/data 디렉터리 생성
-  [ ] Phase 5-0: 기존 컨테이너 /var/lib/registry 내용을 data/로 docker cp (무손실)
-  [ ] Phase 5: sys_registry 삭제 + infra 스택 재배포
-  [ ] Phase 5: Caddyfile /v2/* 경로 변경 (sys_registry → infra_registry)
-  [ ] Phase 5 검증: curl fivesouth.duckdns.org/v2/ 응답 확인
-  [ ] Phase 5 검증: 컨테이너 재시작 후 이미지 유지 확인 (docker service update --force infra_registry)
-  [ ] Phase 5: 구 노드 라벨 제거 (fs-02: sys_registry)
-  [ ] Phase 6: docker stack ls + service ls 최종 확인
-  [ ] Phase 7: GitHub Actions 재개 + merge freeze 해제 공지
+  [x] Phase 0: merge freeze (Actions 비활성화 대신 merge 통제 방식으로 진행)
+  [x] Phase 1: 이미지 re-tag + push (prod_nest:migrate, prod_next:migrate) — fs-01 로컬 캐시 기반
+  [x] Phase 2: docker stack deploy prod_nest / prod_next
+  [x] Phase 2 검증: prod_nest_app 3/3 healthy, prod_next_app 기동 (HOSTNAME 이슈 수정 후 20/20)
+  [x] Phase 3: Caddyfile 전환 (sys_express/next → prod_nest_app/prod_next_app, /v2/*는 Phase 5까지 유지)
+  [x] Phase 3 검증: /api/v1/health-check 200, /api/health 200, 홈 200
+  [x] Phase 4: 구 서비스 삭제 (sys_express, sys_next) + 구 라벨 제거
+  [x] Phase 5-0: fs-02에서 /home/ubuntu/desktop/deploy/sys/registry/data 디렉터리 생성
+  [x] Phase 5-0: 기존 컨테이너 /var/lib/registry 내용을 data/로 docker cp 완료 (638MB 무손실)
+  [x] Phase 5: sys_registry 삭제 + infra 스택 재배포 (registry 합류)
+  [x] Phase 5: Caddyfile /v2/* 경로 변경 (sys_registry → infra_registry)
+  [x] Phase 5 검증: curl fivesouth.duckdns.org/v2/ → 401 (인증 요구, 정상)
+  [x] Phase 5 검증: 이미지 영속성 확인 (docker pull 성공)
+  [x] Phase 5: 구 노드 라벨 제거 (fs-02: sys_registry)
+  [x] Phase 6: docker stack ls + service ls 최종 확인 (5 services)
+  [x] Phase 7: GitHub Actions 정상 작동 (--detach=false converge 대기 로직 포함)
 
 Step 4 — 검증:
-  [ ] infra (3), prod_nest (1), prod_next (1) 스택 확인
-  [ ] 5개 서비스 정상
-  [ ] API 헬스체크 통과
-  [ ] 프론트엔드 접근
-  [ ] WebSocket (Socket.IO) 연결
-  [ ] CI/CD 테스트: main push → prod_nest 스택 자동 배포
-  [ ] infra CI/CD 테스트: docker-stack.yml 변경 → infra 자동 배포
+  [x] infra (3), prod_nest (1), prod_next (1) 스택 확인
+  [x] 5개 서비스 정상
+  [x] API 헬스체크 통과
+  [x] 프론트엔드 접근
+  [x] WebSocket (Socket.IO) 연결 (실사용자 확인)
+  [x] CI/CD 테스트: main push → prod_nest/prod_next 스택 자동 배포 (949195f, 5872035 등 신규 SHA 반영)
+  [x] infra CI/CD 테스트: docker-stack.yml 변경 → infra 자동 재배포
 
 Step 5 — 문서 정비:
-  [ ] CLAUDE.md 업데이트
-  [ ] docs/deploy.md 업데이트
-  [ ] infra/setup-redis.sh 폐기
-  [ ] docker-compose.yml 업데이트
-  [ ] tasks-monitoring.md DNS: tasks.sys_express → tasks.prod_nest_app
-  [ ] tasks-logging.md 참조 업데이트
+  [x] CLAUDE.md 업데이트 (Deployment 섹션 신설, Active Work 완료 표시)
+  [x] docs/deploy.md 업데이트 (전면 재작성)
+  [x] infra/setup-redis.sh 폐기 (Redis가 infra 스택에 포함)
+  [x] docker-compose.yml 업데이트 (DEPRECATED 헤더)
+  [x] tasks-monitoring.md DNS 참조 업데이트
+  [x] tasks-logging.md 참조 업데이트
+
+잔여 작업 (문서 상단 "🟢 잔여 작업" 섹션 참조):
+  [x] [잔여-1] sys_caddy 라벨 rename → infra_caddy (2026-04-20 완료)
+  [x] [잔여-2] Registry 쓰레기 태그/레포 정리 (2026-04-20 완료)
+  [x] [잔여-3] docker-compose.yml 유지 결정 (DEPRECATED 헤더로 충분)
 ```
 
 ---
