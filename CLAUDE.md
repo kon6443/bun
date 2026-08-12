@@ -111,10 +111,10 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
 - **토큰 Unique Index (D23)**: ✅ 완료 (2026-08-05, 커밋 `02aefd8`·`4f0260c`) — jti 선행 수정 후 인덱스 2개 생성. 실측 확인 완료
 - **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
-- **단위 테스트 (D5)**: 🔄 진행 중 — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할 변경) + **C-2(태스크·댓글) + C-3(초대 토큰·멤버 상태·NotificationAdapter) + C-4(TeamGateway) + C-5(OnlineUserService) + C-6(Telegram) + C-7(Discord) + C-8(팀 CRUD·updateTask) + C-9(Fishing 모듈)** 완료 (2026-08-10). **639/639 통과, 커버리지 62.64%** — **Service·Guard·Filter·Gateway 전 계층 완료**, 남은 0%는 컨트롤러뿐
-  - **판단 대기 2건 처리 완료 (2026-08-10)**: ①`insertTeamMember` 죽은 코드 제거(도입 때부터 호출처 0곳) ②`TeamGateway.handleJoinTeam`의 `if (userId)` 폴백을 조기 차단으로 전환 — 팀 격리가 `WsJwtGuard` 한 겹에만 의존하던 것을 HTTP와 동일한 2겹으로 맞췄다. **실사용 동작 변화 없음**(가드 때문에 도달 불가 경로였음)
-  - **▶ 다음 작업: D5 마무리 검토**. 컨트롤러(0%)는 서비스 위임이라 단위 테스트 효용이 낮아 E2E 영역으로 판정했다 — 진행할지는 사용자 결정. 상세는 `docs/tasks/tasks-nestjs-improvements.md` D5 절
-  - **부수 수정 (접근 제어 2건)**: ①댓글 수정·삭제에 팀 멤버 검증 누락 → 탈퇴 멤버·비활성 팀에서도 자기 댓글 수정·삭제 가능했음. ②`createTask`에 팀 멤버 검증 누락 → 인증된 아무 유저나 남의 팀에 태스크 생성 + WS·알림 발생 가능했음(프론트는 이미 403을 전제하고 있었음). 둘 다 `verifyTeamMemberAccess`로 해결. `createTask`는 팀 미존재 시 **404→403으로 계약 변경**. **수동 E2E 미검증**
+- **단위 테스트 (D5)**: 🔄 진행 중 — **Service·Guard·Filter·Gateway 전 계층 완료** (Phase A~C-9, 2026-08-05~08-10). **639/639 통과, 커버리지 8.73% → 62.7%**. 이력·근거·발견 사항은 `docs/tasks/tasks-nestjs-improvements.md` D5 절이 SSOT
+  - **▶ 다음 작업은 결정이 필요하다**: Controller 8개(0%, `team.controller.ts` 858줄 포함)를 단위 테스트로 덮을지, E2E(D6)로 넘길지. 서비스 위임이라 단위 테스트 효용이 낮다는 판정 근거를 문서에 남겨 뒀다
+  - **⚠️ 수동 E2E 미검증 4건** (전부 인증이 필요해 AI가 확인 못 함): 비멤버의 태스크 생성 403 / 탈퇴자의 댓글 수정·삭제 403 / WS `joinTeam` 인증 차단. **접근 제어를 강화한 변경**이라 배포 후 실경로 확인이 필요하다
+  - **⚠️ API 계약 변경 1건** (푸시 시 주의): 태스크 생성에서 팀 미존재·비활성 시 `404 TEAM_NOT_FOUND` → `403 TEAM_FORBIDDEN`. 프론트는 이미 403 문구를 갖고 있어 대응 불필요
   - 테스트 작성 시 반드시 기존 표준 사용: Factory `src/entities/__spec__/entity.factory.ts`(쿼리 결과용 `create*View` 포함), Mock `src/common/__spec__/mock-repository.ts`. spec은 도메인별 분리(`team.service.<도메인>.spec.ts`)
 
 ## Docs

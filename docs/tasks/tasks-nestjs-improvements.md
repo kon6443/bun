@@ -110,7 +110,7 @@ D35 (초대 링크 경로) ──→ 독립 (프론트 next-bun 협의 필요)
 ## D2. 테스트 인프라 구축
 
 - **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟢 낮음 | **범위**: 설정 + 유틸 파일 다수
-- **상태**: ✅ **완료 (2026-08-05)** — 38/38 통과, 빌드·린트 정합. 상세는 아래 실행 체크리스트
+- **상태**: ✅ **완료 (2026-08-05)** — 당시 38/38 통과, 빌드·린트 정합. (현재 테스트 수는 D5 절 참조)
 
 ### 현재 상태
 
@@ -286,22 +286,12 @@ export class MockNotificationAdapter {
 ## D5. 단위 테스트 작성 (Unit Test)
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **선행**: D2 완료
-- **상태**: 🔄 **진행 중** — Phase A(Guard·Filter) + B(Auth·Scheduler) + C(권한 정책·초대·역할) + C-2(태스크 상태·댓글 CRUD) 완료, D 예정
+- **상태**: 🔄 **진행 중** — Service·Guard·Filter·Gateway **전 계층 완료** (Phase A~C-9, 2026-08-05~08-10). **잔여: Controller 8개뿐**
+- **완료 상태의 SSOT는 이 절 맨 아래 [실행 체크리스트](#실행-체크리스트)** — 위쪽 대상 표와 아래 C-N 결과는 각각 "무엇을 할 것인가"와 "왜 그렇게 했는가"를 담는다
 
-### Service 테스트 (10개)
+### Service 테스트 (10개) — ✅ 완료
 
-| 우선순위 | 대상 | 줄 수 | 의존성 | 테스트 핵심 |
-|:---:|------|:---:|------|------|
-| 1 | **AuthService** | 167 | ConfigService, User Repo, fetch | JWT 생성/검증, 카카오 ID 검증 |
-| 2 | **TeamService** (핵심) | 1520 | 6 Repo, ConfigService, NotificationPort | 팀/태스크 CRUD, 권한 검증 |
-| 3 | **OnlineUserService** | 238 | Redis | 소켓-유저 매핑, 온라인 목록 |
-| 4 | **FishingOnlineService** | 320 | Redis | 맵 참가/이탈, 위치/상태 |
-| 5 | **SchedulerService** | 112 | User Repo, TeamTask Repo | autoArchiveTasks |
-| 6 | **NotificationAdapter** | 42 | TelegramService, DiscordService | 알림 분기 |
-| 7 | **TelegramService** | 461 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
-| 8 | **DiscordService** | 183 | Team Repo, fetch | Webhook, 연동/해제 |
-| 9 | **FileShareService** | 40 | FileShare Repo | API Key 검증 |
-| 10 | **UsersService** | 55 | User Repo | 기존 spec 보완 |
+대상·완료 현황은 [실행 체크리스트](#실행-체크리스트)가 SSOT다. 각 서비스에서 **무엇을 왜 고정했는지**는 아래 C-N 결과 절에 있다.
 
 ### 모킹 전략
 
@@ -310,10 +300,12 @@ export class MockNotificationAdapter {
 | TypeORM Repository | `createMockRepository()` (D2 헬퍼) |
 | TypeORM DataSource | `jest.fn()` mock (TeamService의 `dataSource.transaction()`) |
 | ConfigService | `{ get: jest.fn((key) => defaults[key]) }` |
-| Redis (ioredis) | `ioredis-mock` 또는 수동 mock |
+| Redis (ioredis) | **수동 mock 채택** — 파이프라인 체이닝(`mockReturnThis`) + `exec()` 결과 큐. `ioredis-mock` 미사용 |
 | fetch | `jest.spyOn(global, 'fetch')` |
 | NotificationAdapter | `MockNotificationAdapter.build()` (D3 완료됨) |
 | typeorm-transactional | `jest.mock(...)` no-op (D4 후) |
+| Prometheus 메트릭 | `getToken('metric_name')`으로 provider 주입 |
+| Gateway의 `@UseGuards` | `.overrideGuard(X).useValue({canActivate:()=>true})` — 없으면 `.compile()`이 가드 의존성을 해석하려다 실패 |
 
 ### Controller 테스트 (8개, 33 엔드포인트)
 
@@ -329,29 +321,13 @@ export class MockNotificationAdapter {
 | 8 | **UsersController** (users/) | 2 | 유저 조회/수정 |
 | 9 | **UsersController** (auth/) | 1 | 닉네임 수정 |
 
-### Gateway 핸들러 테스트 (8개)
+### Gateway 핸들러 테스트 (8개) — ✅ 완료
 
-| Gateway | 이벤트 | DTO | 테스트 핵심 |
-|---------|--------|-----|------|
-| TeamGateway | `joinTeam` | `JoinTeamDto` | Room 참가, 온라인 등록 |
-| TeamGateway | `leaveTeam` | `LeaveTeamDto` | Room 퇴장, 온라인 제거 |
-| FishingGateway | `joinMap` | `JoinMapDto` | 맵 참가, `_fishingMapId` 캐싱 |
-| FishingGateway | `leaveMap` | `LeaveMapDto` | 맵 퇴장, 상태 제거 |
-| FishingGateway | `move` | `MoveDto` | 위치 브로드캐스트 (고빈도) |
-| FishingGateway | `fishingState` | `FishingStateDto` | 상태 변경 브로드캐스트 |
-| FishingGateway | `chatMessage` | `ChatMessageDto` | 채팅 브로드캐스트 |
-| FishingGateway | `catchResult` | `CatchResultDto` | 낚시 결과 브로드캐스트 |
+TeamGateway(C-4)·FishingGateway(C-9) 모두 완료. 이벤트별 계약은 해당 결과 절 참조.
 
-### Guard/Filter 테스트 (6개)
+### Guard/Filter 테스트 (6개) — ✅ 완료
 
-| 대상 | 테스트 핵심 |
-|------|------|
-| **HttpExceptionFilter** | ApiErrorResponseDto/HttpException/unknown 3분기 |
-| **WsExceptionFilter** | WS 에러 이벤트 전송 |
-| **JwtAuthGuard** | Cookie→Bearer 폴백, 만료/잘못된/없는 토큰 |
-| **OptionalJwtAuthGuard** | 토큰 없어도 통과, 잘못된 토큰 차단 |
-| **WsJwtGuard** | handshake.auth.token 추출, 인증 실패 시 disconnect |
-| **FishingWsGuard** | FishingSocket data 설정, 인증 여부 |
+Phase A(2026-08-05, 78케이스). 파일별 커버리지와 고정한 계약은 아래 **진행 결과** 표 참조.
 
 ### ⚠️ TeamService 테스트 주의
 
@@ -368,7 +344,14 @@ export class MockNotificationAdapter {
 | **B** | AuthService, SchedulerService | ✅ **완료** (2026-08-05, 43케이스) |
 | **C** | 권한 정책 + TeamService 초대·역할 변경 | ✅ **완료** (2026-08-05, 106케이스) |
 | **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
-| D | OnlineUser·Telegram·Discord·NotificationAdapter·Gateway | ⏳ **다음 작업** |
+| **C-3** | 초대 토큰 검증 + 멤버 상태 변경 + NotificationAdapter | ✅ **완료** (2026-08-07, 43케이스) |
+| **C-4** | TeamGateway (WS 진입점) | ✅ **완료** (2026-08-07, 46케이스) |
+| **C-5** | OnlineUserService (Redis 프레즌스) | ✅ **완료** (2026-08-07, 41케이스) |
+| **C-6** | TelegramService (외부 API + 연동) | ✅ **완료** (2026-08-07, 47케이스) |
+| **C-7** | DiscordService (SSRF 관문) | ✅ **완료** (2026-08-10, 37케이스) |
+| **C-8** | team.service.ts 잔여 mutation | ✅ **완료** (2026-08-10, 22케이스) |
+| **C-9** | Fishing 모듈 (Service + Gateway) | ✅ **완료** (2026-08-10, 91케이스) |
+| D | **Controller 8개** — 서비스 위임이라 단위 테스트 효용이 낮다(E2E 영역 판정) | ⏸️ **착수 전 · 진행 여부 결정 필요** |
 
 **진행 결과** — 전체 639/639 통과, 커버리지 8.73% → **62.64%**
 
@@ -701,47 +684,41 @@ grep 전수 결과 **정의만 있고 호출하는 코드가 없었다**. 커버
 ### 실행 체크리스트
 
 ```
-Guard/Filter (6개): ✅ 완료 (2026-08-05)
-  [✓] JwtAuthGuard (14케이스), OptionalJwtAuthGuard (7), WsJwtGuard (11), FishingWsGuard (16)
+Guard/Filter (6개): ✅ 완료 (2026-08-05, 78케이스)
+  [✓] JwtAuthGuard (14), OptionalJwtAuthGuard (7), WsJwtGuard (11), FishingWsGuard (16)
   [✓] HttpExceptionFilter (21), WsExceptionFilter (9)
 
-권한 정책 (순수 함수):
-  [✓] role.constants — 27조합 전수 검증 (64케이스), isValidRole 프로토타입 누수 버그 수정
+권한 정책 (순수 함수): ✅ 완료
+  [✓] role.constants — 27조합 전수 (64케이스) + isValidRole 프로토타입 누수 버그 수정
 
-Service:
+Service: ✅ 완료 (TeamService 조회 계열만 의도적 제외)
   [✓] AuthService (22, 100%), SchedulerService (21, 97.87%)
   [✓] UsersService (5, 100%), FileShareService (6, 100%)
-  [✓] NotificationAdapter (7, 100%), TeamGateway (46, 99.29%)
-  [✓] OnlineUserService (41, 100%), TelegramService (47, 100%), DiscordService (37, 100%)
-  [~] TeamService (80.74%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(37) + 댓글(30) + 팀 CRUD(12)
-      잔여: getTeamMembersBy/getTeamTasksBy 조립, 조회 계열(가치 낮음 판정), insertTeamMember(죽은 코드)
-  [✓] FishingOnlineService (37, 100%)
+  [✓] NotificationAdapter (7, 100%), TelegramService (47, 100%), DiscordService (37, 100%)
+  [✓] OnlineUserService (41, 100%), FishingOnlineService (37, 100%)
+  [~] TeamService (81.25%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(37) + 댓글(30) + 팀 CRUD(12)
+      의도적 제외: 조회 계열(getTeamMembersBy·getTeamTasksBy 조립, getTasksByTeamId 등)
+      — QueryBuilder 조립 검증이 주가 되어 가치 낮음 판정 (C-2에서 결정)
 
-Controller (8개, 33 엔드포인트) — UsersController만 완료:
+Gateway (2개): ✅ 완료
+  [✓] TeamGateway (joinTeam, leaveTeam, chatMessage + 브로드캐스트 10종) — 46케이스, 99.3%
+  [✓] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 54케이스, 99.11%
+
+Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결정 필요
   [✓] UsersController (100%)
   [ ] TeamController (24 엔드포인트), AuthController, TelegramController
   [ ] FileShareController, MainController, HealthController
-
-Guard/Filter (6개): ✅ 완료
-  [✓] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
-  [✓] HttpExceptionFilter, WsExceptionFilter
-
-Gateway: ✅ 완료
-  [✓] TeamGateway (joinTeam, leaveTeam, chatMessage + 브로드캐스트 10종) — 46케이스, 99.29%
-  [✓] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 54케이스, 99.11%
 ```
 
-**다음 착수 순서** (2026-08-07 실측 기준 — 비용 대비 보안·회귀 효과順)
+**남은 작업** (2026-08-12 기준)
 
-1. ✅ **`updateMemberStatus`·`verifyTeamInviteToken`** — 완료 (2026-08-07, 아래 결과 참조)
-2. ✅ **`NotificationAdapter`** — 완료 (2026-08-07)
-3. ✅ **`TeamGateway`** — 완료 (2026-08-07, 아래 결과 참조)
-4. ✅ **`OnlineUserService`** — 완료 (2026-08-07, 아래 결과 참조)
-5. ✅ **`TelegramService`** — 완료 (2026-08-07, 아래 결과 참조)
-6. ✅ **`DiscordService`** — 완료 (2026-08-07, 아래 결과 참조)
-7. ✅ **`team.service.ts` 잔여 mutation** — 완료 (2026-08-10, 아래 결과 참조)
-8. ✅ **Fishing 모듈** — 완료 (2026-08-10, 아래 결과 참조). **Service·Guard·Filter·Gateway 전 계층 완료**
-9. 컨트롤러·조회 계열 — 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 E2E다
+| # | 항목 | 판단 |
+|:-:|---|---|
+| 1 | **Controller 8개** (0%, `team.controller.ts` 858줄 포함) | 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 **E2E(D6)** 다 — 진행 여부는 사용자 결정 |
+| 2 | **수동 E2E 4건** (인증 필요, AI 검증 불가) | 비멤버의 태스크 생성 403 / 탈퇴자의 댓글 수정·삭제 403 / WS `joinTeam` 인증 차단 |
+| 3 | TeamService 조회 계열 | 의도적 제외 — 위 체크리스트 참조 |
+
+**착수 순서 이력**: C-3~C-9는 "비용 대비 보안·회귀 효과順"으로 실측 기준을 잡아 진행했고 8단계 모두 완료했다. 각 단계의 근거와 발견 사항은 아래 C-N 결과 절에 있다.
 
 ---
 
