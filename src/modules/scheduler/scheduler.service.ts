@@ -6,6 +6,7 @@ import { User } from '../../entities/User';
 import { TeamTask } from '../../entities/TeamTask';
 import { ConfigService } from '@nestjs/config';
 import { TaskStatus, ActStatus } from '../../common/enums/task-status.enum';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 /** 자동 아카이브 대기 일수 */
 const AUTO_ARCHIVE_DAYS = 14;
@@ -51,9 +52,8 @@ export class SchedulerService {
 
     try {
       const _count = await this.userRepository.count();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      this.logger.error(`[doTrash] 스케줄러 오류`, err?.stack ?? err);
+    } catch (err: unknown) {
+      this.logger.error(`[doTrash] 스케줄러 오류`, toErrorDetail(err));
     }
   }
 
@@ -77,9 +77,8 @@ export class SchedulerService {
         _accumulator += value;
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      this.logger.error(`[runCpuIntensiveLoop] 스케줄러 오류`, err?.stack ?? err);
+    } catch (err: unknown) {
+      this.logger.error(`[runCpuIntensiveLoop] 스케줄러 오류`, toErrorDetail(err));
     }
   }
 
@@ -110,9 +109,8 @@ export class SchedulerService {
       if (result.affected && result.affected > 0) {
         this.logger.log(`[autoArchiveTasks] ${result.affected}건 자동 아카이브 완료`);
       }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      this.logger.error(`[autoArchiveTasks] 스케줄러 오류`, err?.stack ?? err);
+    } catch (err: unknown) {
+      this.logger.error(`[autoArchiveTasks] 스케줄러 오류`, toErrorDetail(err));
     }
   }
 }

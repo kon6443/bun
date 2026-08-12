@@ -1,10 +1,10 @@
 // crypto 모듈을 전역으로 사용 가능하도록 설정 (Node.js 18 호환성)
 import { randomUUID } from 'crypto';
 if (typeof globalThis.crypto === 'undefined') {
-  globalThis.crypto = {
-    randomUUID,
+  // 사유: Crypto 인터페이스 전체가 아니라 randomUUID 하나만 채우는 부분 폴리필이라
+  // 정확한 타입을 만들 수 없다. @nestjs/schedule이 crypto.randomUUID만 요구한다.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  globalThis.crypto = { randomUUID } as any;
 }
 
 import {
