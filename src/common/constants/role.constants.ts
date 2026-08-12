@@ -18,7 +18,9 @@ export type RoleKey = keyof typeof ROLE_HIERARCHY;
  * 유효한 역할인지 확인
  */
 export function isValidRole(role: string): role is RoleKey {
-  return role in ROLE_HIERARCHY;
+  // `in` 연산자는 프로토타입 체인까지 검사하므로 'toString'·'constructor' 같은
+  // Object.prototype 속성이 유효한 역할로 통과한다. 자기 속성만 확인해야 한다.
+  return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
 }
 
 /**

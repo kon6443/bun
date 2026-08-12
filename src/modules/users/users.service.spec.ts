@@ -1,31 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
+import { UserNotFoundErrorResponseDto } from './users-error.dto';
 import { User } from '../../entities/User';
+import { createUser, FIXED_DATE } from '../../entities/__spec__/entity.factory';
+import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let userRepository: jest.Mocked<Repository<User>>;
+  let userRepository: MockRepository<User>;
 
-  const mockUser: User = {
-    userId: 1,
-    userName: '홍길동',
-    birth: null,
-    kakaoId: '123456789',
-    kakaoEmail: 'test@kakao.com',
-    createdDate: new Date('2024-01-15T09:30:00.000Z'),
-    isActivated: 1,
-    teams: [],
-    teamMembers: [],
-  };
+  const mockUser = createUser();
 
   beforeEach(async () => {
-    const mockRepository = {
-      findOne: jest.fn(),
-      save: jest.fn(),
-    };
+    const mockRepository = createMockRepository<User>();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,7 +39,7 @@ describe('UsersService', () => {
         userId: 1,
         userName: '홍길동',
         kakaoEmail: 'test@kakao.com',
-        createdDate: '2024-01-15T09:30:00.000Z',
+        createdDate: FIXED_DATE.toISOString(),
       });
       expect(userRepository.findOne).toHaveBeenCalledWith({
         where: { userId: 1, isActivated: 1 },
@@ -67,10 +55,10 @@ describe('UsersService', () => {
       expect(result.userName).toBe('사용자1');
     });
 
-    it('존재하지 않는 사용자 조회 시 NotFoundException을 던져야 함', async () => {
+    it('존재하지 않는 사용자 조회 시 UserNotFoundErrorResponseDto를 던져야 함', async () => {
       userRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.getProfile(999)).rejects.toThrow(NotFoundException);
+      await expect(service.getProfile(999)).rejects.toThrow(UserNotFoundErrorResponseDto);
     });
   });
 
@@ -89,12 +77,12 @@ describe('UsersService', () => {
       expect(userRepository.save).toHaveBeenCalled();
     });
 
-    it('존재하지 않는 사용자 수정 시 NotFoundException을 던져야 함', async () => {
+    it('존재하지 않는 사용자 수정 시 UserNotFoundErrorResponseDto를 던져야 함', async () => {
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
         service.updateProfile(999, { userName: '새로운닉네임' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(UserNotFoundErrorResponseDto);
     });
   });
 });

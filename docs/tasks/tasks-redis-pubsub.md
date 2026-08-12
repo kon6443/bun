@@ -1,7 +1,11 @@
 # Task Tracker: Redis Pub/Sub for Multi-Replica Socket.IO
 
-> 이 문서는 **레포 안에 포함**되어 다른 머신/세션에서도 작업 진행 상황을 추적할 수 있음.
-> 새 Claude Code 세션에서 이 파일을 참조하여 남은 작업을 이어서 진행.
+> 작성일: 2026-02-27 · 최종 확인: 2026-08-12 (서비스명·스크립트 경로 정정)
+> 브랜치: `feat-onam`
+> 상태: **구현·배포 완료** — `prod_nest_app` 3 replicas + `infra_redis` 1 replica 상용 운영 중([`docs/deploy.md`](../deploy.md)). 멀티 레플리카에서 Redis adapter 없이는 브로드캐스트가 성립하지 않으므로 실사용 중이다.
+> ⚠️ 아래 **테스트·배포 체크리스트는 대부분 미체크 상태로 남아 있고, 실제 수행 여부의 기록이 없다** — 미검증으로 취급한다 (배포 완료와 항목별 검증을 혼동하지 말 것).
+>
+> 이 문서는 레포 안에 포함되어 다른 머신/세션에서도 진행 상황을 추적한다.
 
 ## 구현 (Implementation) - DONE
 
@@ -43,25 +47,24 @@
 ## 배포 (Deploy) - TODO
 
 ### 서버 사전 작업
-- [ ] **Redis Swarm 서비스 생성**: `infra/setup-redis.sh`를 배포 서버에 복사 후 실행
-  ```bash
-  scp infra/setup-redis.sh ubuntu@server:/tmp/
-  ssh ubuntu@server 'bash /tmp/setup-redis.sh'
+
+> ⚠️ **아래 절차는 Swarm 스택 마이그레이션(2026-04-18)으로 폐기됐다.** `infra/setup-redis.sh`는 **레포에 더 이상 존재하지 않으며**, Redis는 `infra/docker-stack.yml`의 `infra_redis` 서비스로 관리된다 (서비스명도 `sys_redis` → `infra_redis`로 변경). 스크립트를 찾거나 되살리려 들지 말 것 — 인프라 배포 절차는 [`docs/deploy.md`](../deploy.md) "CI/CD > 인프라 배포"가 SSOT다.
+
+- [x] **Redis Swarm 서비스 생성** — `infra/docker-stack.yml`의 `infra_redis`로 배포 완료 (~~`infra/setup-redis.sh`~~ 폐기)
+- [x] **Redis 서비스 상태 확인**: `docker service ps infra_redis` → Running (fs-01 고정, 커밋 `7be9932`)
+- [x] **배포 서버 .env**: `/home/ubuntu/desktop/deploy/sys/config/env/.env`
   ```
-- [ ] **Redis 서비스 상태 확인**: `docker service ps sys_redis` → Running 확인
-- [ ] **배포 서버 .env 수정**: `/home/ubuntu/desktop/deploy/sys/config/env/.env`에 추가
-  ```
-  REDIS_HOST=sys_redis
+  REDIS_HOST=infra_redis
   REDIS_PORT=6379
   ```
 
 ### 코드 배포
-- [ ] **git push** → GitHub Actions CI/CD가 `prod_nest` 이미지 빌드 & 배포
+- [x] **git push** → GitHub Actions CI/CD가 `prod_nest` 이미지 빌드 & 배포
 - [ ] **배포 후 로그 확인**: `docker service logs prod_nest_app` → Redis 연결 로그 확인
 - [ ] **기능 테스트**: 프론트에서 팀 입장/태스크 조작 → 정상 동작 확인
 
 ### 스케일 업 (Redis + 코드 배포 완료 후)
-- [ ] **레플리카 조정**: `infra/docker-stack.app.yml` 의 `deploy.replicas` 수정 → merge (현재 3)
+- [x] **레플리카 조정**: `infra/docker-stack.app.yml` 의 `deploy.replicas` 수정 → merge (현재 3)
 - [ ] **멀티 레플리카 테스트**:
   - 브라우저 2개 탭에서 같은 팀 입장
   - 한 탭에서 태스크 생성 → 다른 탭에서 실시간 수신 확인
@@ -70,6 +73,6 @@
 
 ## 참고
 
-- **PRD**: [docs/prd-redis-pubsub.md](./prd-redis-pubsub.md)
+- **PRD**: [docs/prd-redis-pubsub.md](../prd-redis-pubsub.md)
 - **Redis 키 설계**: OnlineUserService 파일 상단 주석 참조
 - **프론트엔드 변경 없음**: Socket.IO 이벤트/페이로드가 동일하게 유지됨

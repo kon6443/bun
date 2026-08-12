@@ -68,5 +68,5 @@
 
 ## 관련 문서
 - Swarm 마이그레이션 이력 & 결정: `tasks/archive/tasks-swarm-stack-migration.md`
-- 모니터링 계획: `tasks-monitoring.md`
-- 로그 중앙 수집 계획: `tasks-logging.md`
+- 모니터링 계획: [`tasks/tasks-monitoring.md`](tasks/tasks-monitoring.md)
+- 로그 중앙 수집 계획: [`tasks/tasks-logging.md`](tasks/tasks-logging.md)

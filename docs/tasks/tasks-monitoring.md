@@ -1,10 +1,10 @@
 # Task Tracker: 모니터링 스택 (Prometheus + Grafana + node_exporter)
 
 > 분리일: 2026-04-15 | 원본: `docs/tasks-nestjs-improvements.md` D10
-> 최종 수정: 2026-04-16 (mobisell-back 패턴 비교 분석 반영 — sha256 config, shared 스택 분리, XFF 방어, QA 준비)
+> 최종 수정: 2026-04-16 (검증된 패턴 비교 분석 반영 — sha256 config, shared 스택 분리, XFF 방어, QA 준비)
 > 브랜치: `feat-onam`
 > 상태: **추후 적용 예정** (미진행)
-> **선행 작업**: [`tasks-swarm-stack-migration.md`](./tasks-swarm-stack-migration.md) — 서비스 이름 변경 (`sys_express` → `prod_nest_app`, 스택 per 서비스 패턴) 완료 후 진행.
+> **선행 작업**: [`tasks-swarm-stack-migration.md`](./archive/tasks-swarm-stack-migration.md) — 서비스 이름 변경 (`sys_express` → `prod_nest_app`, 스택 per 서비스 패턴) 완료 후 진행.
 > 본 문서는 마이그레이션 완료 후 상태 기준으로 작성됨 (서비스 DNS: `prod_nest_app`, `prod_next_app`).
 > 연관 문서: 로그 수집은 [`tasks-logging.md`](./tasks-logging.md) (Loki + Promtail)
 
@@ -16,13 +16,13 @@
 |------|------|------|
 | 메트릭 경로 | `/api/v1/metrics` | NestJS globalPrefix `api/v1` 자동 적용 |
 | 접근 제어 (1차) | **Caddyfile에서 `/api/v1/metrics` 외부 차단** (404) | Caddy가 기존 리버스 프록시로 동작 중 |
-| 접근 제어 (2차) | **MetricsAccessMiddleware** — XFF 헤더 존재 시 즉시 차단(1차) + overlay 대역 IP 검증(2차) | mobisell-back 2단계 검증 패턴. Caddy가 외부 요청에 XFF 주입 → overlay 내부 Prometheus는 XFF 없음 |
+| 접근 제어 (2차) | **MetricsAccessMiddleware** — XFF 헤더 존재 시 즉시 차단(1차) + overlay 대역 IP 검증(2차) | 선행 구현의 2단계 검증 패턴. Caddy가 외부 요청에 XFF 주입 → overlay 내부 Prometheus는 XFF 없음 |
 | 미들웨어 등록 방식 | **`MiddlewareConsumer.apply().forRoutes()`** (app.module.ts) | NestJS 정석 패턴 |
 | 모듈 등록 | `PrometheusModule.register({ path: 'metrics', defaultMetrics: { enabled: true } })` (app.module.ts) | globalPrefix 자동 적용 |
-| 스택 분리 | **3개 스택**: 앱(개별 서비스) / **shared**(node_exporter+promtail) / **prod**(prometheus+grafana+alertmanager+loki) | mobisell-back 패턴. global 서비스(모든 노드)와 환경별 서비스 라이프사이클 분리 |
+| 스택 분리 | **3개 스택**: 앱(개별 서비스) / **shared**(node_exporter+promtail) / **prod**(prometheus+grafana+alertmanager+loki) | 검증된 패턴. global 서비스(모든 노드)와 환경별 서비스 라이프사이클 분리 |
 | 네트워크 연결 | `sys_default` (기존 앱 overlay)에 `external: true`로 참여 | 앱 스택 수정 0, 기존 DNS 재사용 |
 | 설정 파일 주입 | **기본: Swarm `configs:`** (immutable). 단, **다중 파일 디렉터리(대시보드 JSON 등)는 bind mount** | 단일 YAML은 configs, 동적 디렉터리는 bind mount 하이브리드 |
-| Config 버전 관리 | **sha256sum 12자 해시** → config `name:` 필드에 포함 (`prod_monitor_prometheus_yml_a1b2c3d4e5f6`) | mobisell-back 패턴. rolling update 시 무중단, 구 config 자동 보존. `docker config rm` 불필요 |
+| Config 버전 관리 | **sha256sum 12자 해시** → config `name:` 필드에 포함 (`prod_monitor_prometheus_yml_a1b2c3d4e5f6`) | 검증된 패턴. rolling update 시 무중단, 구 config 자동 보존. `docker config rm` 불필요 |
 | QA 환경 준비 | QA 설정 파일은 `.disabled` 접미사로 비활성 보관 (예: `prometheus.qa.yml.disabled`) | 당분간 PROD 단일 운영, QA 도입 시 `.disabled` 제거 후 즉시 사용 |
 | 외부 노출 (Grafana) | **Caddy 경유 + IP 화이트리스트 (1차) + Grafana admin 로그인 (2차)** | 재택/사무실 IP만 허용, 외부 접근 편의성 확보 |
 | 외부 노출 (Prometheus/Alertmanager) | **SSH 터널로만 접근** (외부 노출 X) | 운영자 전용, 공격면 최소화 |
@@ -53,7 +53,7 @@
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음
 - **선행**: 없음 (독립)
 - **프론트 영향**: 없음
-- **참고 구현**: `../mobisell/mobisell-back` (GCP/QA 환경 — 패턴만 차용, 인프라 세부는 OCI로 재작성)
+- **참고 구현** (GCP/QA 환경 — 패턴만 차용, 인프라 세부는 OCI로 재작성)
 
 서버에서 측정값(응답 시간, 에러 수 등)을 수집 → Prometheus가 저장 → Grafana가 시각화.
 
@@ -68,7 +68,7 @@
 - **앱 배포 방식**: **`docker stack deploy`** (스택 per 서비스 — `prod_nest`, `prod_next` 각 1 service)
 - **리버스 프록시**: **Caddy** (infra 스택, 포트 80/443, `infra_caddy` 라벨 노드 고정, replicas 1 + mode:host — 클라이언트 IP 보존용 Swarm ingress 우회)
 - **앱 서비스 DNS**: `prod_nest_app` (NestJS, globalPrefix `/api/v1`, 포트 3500), `prod_next_app` (Next.js, 3000)
-- **Redis**: `infra_redis` (infra 스택, 128mb maxmemory)
+- **Redis**: `infra_redis` (infra 스택, 128mb maxmemory, fs-01 고정 — `node.labels.infra_redis == 1` 제약, 2026-04-23)
 - **Registry**: `infra_registry` (infra 스택)
 - **네트워크**: `sys_default` (overlay, external) — 모든 스택 참여
 - **기본 서버**: 4 OCPU / 24GB RAM (Always Free **ARM** A1.Flex → **arm64**)
@@ -438,7 +438,7 @@ Grafana 자체 인증은 유지:
  *  - IP 검사만으로는: Caddy 우회 시 10.x 대역이 아닌 외부 IP만 차단 (XFF 탐지 누락)
  *  - 두 검사 조합 시: "XFF 없음 + overlay IP" 조건만 통과 → Prometheus만 허용
  *
- * 참고: mobisell-back 동일 패턴 (GCP LB → XFF 주입, Swarm overlay → XFF 없음)
+ * 참고: 동일 패턴 (GCP LB → XFF 주입, Swarm overlay → XFF 없음)
  */
 @Injectable()
 export class MetricsAccessMiddleware implements NestMiddleware {
@@ -538,7 +538,7 @@ export class AppModule implements NestModule {
 
 ## 🚀 구현 단계
 
-> ⚠️ **스택은 2개 파일로 분리됩니다** (mobisell-back shared 패턴):
+> ⚠️ **스택은 2개 파일로 분리됩니다** (선행 구현의 shared 스택 패턴):
 >
 > | 스택 | 파일 | 서비스 | 배포 순서 |
 > |------|------|--------|----------|
@@ -1323,45 +1323,40 @@ Step 3 — Grafana (subpath /grafana/ + Provisioning + Caddy 노출): ✅ 완료
 
 Step 4 — 커스텀 메트릭 (Phase B 세분화):
 
-  Step 4 [B1-1] 앱 커스텀 메트릭 (src/ 변경):
-    [ ] src/common/metrics/metrics.module.ts 신규 — Counter/Gauge/Histogram provider DI
-    [ ] ws_connections_active (Gauge) — TeamGateway 연결/해제 시 inc/dec
-    [ ] ws_events_total (Counter, labels: event) — gateway handlers
-    [ ] ws_event_duration_seconds (Histogram, labels: event, prom-client 기본 10 bucket)
-    [ ] ws_team_online_users (Gauge, labels: team_id) — OnlineUserService 60s 주기 재계산
-        ※ setInterval 사용 시 OnModuleDestroy 에서 clearInterval (메모리 leak 방지)
-        ※ 팀 삭제 시 gauge.remove({ team_id }) 호출 (stale label 방지)
-    [ ] app_redis_connection_status (Gauge, 0/1) — RedisIoAdapter on('ready'/'end'/'error')
-        ※ exporter 의 redis_up 과 의미 구분 위해 app_ prefix (앱 클라이언트 관점 / 서버 관점 분리)
+  Step 4 [B1-1] 앱 커스텀 메트릭 (src/ 변경): ✅ 완료 (2026-04-23 배포)
+    [x] src/common/metrics/metrics.module.ts 신규 — @Global + 5 providers (getToken export)
+    [x] ws_connections_active (Gauge) — TeamGateway handleConnection/Disconnect inc/dec
+    [x] ws_events_total (Counter, labels: event) — joinTeam/leaveTeam inc
+    [x] ws_event_duration_seconds (Histogram, labels: event, prom-client 기본 10 bucket)
+    [x] ws_team_online_users (Gauge, labels: team_id) — OnlineUserService 60s 주기 재계산
+        [x] TASK_SLOT=1 리더 전용 (멀티 replica 중복 set 방지)
+        [x] OnModuleDestroy clearInterval (메모리 leak 방지)
+        [x] Redis 직접 hlen + per-teamId try-catch → 실패 시 Gauge 유지 (오작동 방지)
+        [x] Promise.all 병렬화로 Redis 연결 점유 시간 최소화
+        [x] 팀 비움(count=0) 시 gauge.remove + Set.delete (stale label 방지)
+    [x] app_redis_connection_status (Gauge, 0/1) — RedisIoAdapter on('ready'/'end'/'error'/'close'/'reconnecting')
+        [x] exporter 의 redis_up 과 의미 구분 위해 app_ prefix (앱 클라이언트 관점 / 서버 관점 분리)
     [ ] (선택, 여유 시) 비즈니스 메트릭 (팀 생성 수, 태스크 완료율 등)
+    [x] 검증: Grafana Explore 에서 app_redis_connection_status=1, ws_connections_active replica 3개 라인 확인
 
-  Step 4 [B1-2] redis_exporter (infra/ 변경):
-    [ ] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
-        - 이미지 oliver006/redis_exporter:v1.62.0
-        - command: --redis.addr=redis://tasks.infra_redis:6379
-        - placement: prod_monitor_metrics=1 (fs-02) — 장애 도메인 분리 (Redis fs-01 과 분리)
-        - memory 50M
-    [ ] prometheus.yml 에 'redis' job 추가 (tasks.prod_monitor_redis-exporter:9121)
-    [ ] 핵심 메트릭 확인: redis_up=1, redis_memory_used_bytes, redis_commands_processed_total
+  Step 4 [B1-2] redis_exporter (infra/ 변경): ✅ 완료 (2026-04-23 배포)
+    [x] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
+        [x] 이미지 oliver006/redis_exporter:v1.62.0
+        [x] command: --redis.addr=redis://tasks.infra_redis:6379
+        [x] placement: prod_monitor_metrics=1 (fs-02) — 장애 도메인 분리 (Redis fs-01 과 분리)
+        [x] memory 50M
+    [x] prometheus.yml 에 'redis' job 추가 (tasks.prod_monitor_redis-exporter:9121)
+    [x] 핵심 메트릭 확인: up{job="redis"}=1, redis_connected_clients=8 (3 replicas × pub+sub + exporter)
     [ ] (Step 6 연계) alerts.yml 에 RedisDown (redis_up == 0 for 1m) + RedisMemoryHigh (> 90%) 룰 추가 예약
 
-  Step 4 [B1-3] 커스텀 대시보드 (Grafana UI → Git export):
+  Step 4 [B1-3] 커스텀 대시보드 (Grafana UI → Git export): ⏳ 미진행
     [ ] Grafana UI 에서 fivesouth-custom 대시보드 구성
         - replica 기반 variable (label_values(nodejs_version_info, replica))
         - 패널: WS 커넥션 수 (replica별), 팀별 온라인 유저 수, WS 이벤트 처리율/p95, Redis 상태
     [ ] Dashboard settings → JSON Model → copy
     [ ] infra/grafana/provisioning/dashboards/json/fivesouth-custom.json 덮어쓰기 + Git 커밋
 
-Step 4.1 — Redis 서버 메트릭 (redis_exporter):
-  [ ] docker-stack.monitoring.yml 에 redis-exporter 서비스 추가
-      - 이미지 oliver006/redis_exporter:v1.62.0
-      - command: --redis.addr=redis://tasks.infra_redis:6379
-      - placement: prod_monitor_metrics=1 (fs-02)
-      - memory 50M
-  [ ] prometheus.yml 에 'redis' job 추가 (tasks.prod_monitor_redis-exporter:9121)
-  [ ] Grafana Dashboard 763 (Redis Dashboard for Prometheus Redis Exporter 1.x) Import
-  [ ] 핵심 메트릭 확인: redis_up=1, redis_memory_used_bytes, redis_commands_processed_total
-  [ ] (Step 6 연계) alerts.yml 에 RedisDown (redis_up == 0 for 1m) + RedisMemoryHigh (> 90%) 룰 추가 예약
+Step 4.1 — Redis 서버 메트릭 (redis_exporter): ✅ B1-2 로 통합 완료 — 상세 체크리스트는 위 B1-2 참조
 
 Step 4.5 — Recording Rules + Drill-down 준비:
   [ ] infra/prometheus/rules/recording.yml 작성 (p95, error_rate, active_teams 등)
@@ -1681,10 +1676,10 @@ networks:
 
 - 원본 문서(분리 전): [`tasks-nestjs-improvements.md`](./tasks-nestjs-improvements.md) D10
 - 연관 작업: [`tasks-logging.md`](./tasks-logging.md) (Loki + Promtail — 같은 모니터링 스택에 확장)
-- 아키텍처: [`architecture.md`](./architecture.md)
-- 배포 환경: [`deploy.md`](./deploy.md)
+- 아키텍처: [`architecture.md`](../architecture.md)
+- 배포 환경: [`deploy.md`](../deploy.md)
 - Redis Pub/Sub: [`tasks-redis-pubsub.md`](./tasks-redis-pubsub.md)
-- 참고 프로젝트: `../mobisell/mobisell-back/docs/tasks-monitoring.md` (GCP/QA 환경, 패턴만 참조)
+- 참고: 모니터링 태스크 문서 (GCP/QA 환경, 패턴만 참조)
 
 **구현 시 수정 대상 파일**:
 

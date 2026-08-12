@@ -139,7 +139,6 @@ export class TelegramService {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(`Telegram API 오류: ${response.status} - ${JSON.stringify(errorData)}`);
     }
-    // console.log(`[TELEGRAM] 메시지 전송 성공. chatId: ${chatId}`);
   }
 
   /**
