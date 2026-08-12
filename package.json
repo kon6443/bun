@@ -75,7 +75,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "check:stubs": "if grep -rnE '(TODO|FIXME|XXX|HACK)' src test --include='*.ts'; then echo 'ERROR: 스텁/미완성 코드가 있습니다 — PR 전 처리하세요'; exit 1; fi",
+    "check:stubs": "if grep -rnE '(TODO|FIXME|XXX|HACK)' src test --include='*.ts'; then echo 'ERROR: 스텁/미완성 코드가 있습니다 — PR 전 처리하세요'; exit 1; fi; if grep -rnE '(describe|it|test)\\.only\\(' src test --include='*.ts'; then echo 'ERROR: .only 가 남아 있습니다 — 나머지 테스트가 조용히 스킵되어 통과로 보입니다'; exit 1; fi",
     "ci:core": "pnpm run lint && pnpm run test && pnpm run build",
     "ci:all": "pnpm run lint && pnpm run check:stubs && pnpm run test && pnpm run test:e2e && pnpm run build",
     "db:migrate:create": "sh -c 'npx typeorm migration:create migrations/\"$1\"' sh",

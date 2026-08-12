@@ -151,7 +151,7 @@ pnpm test:e2e -- team-gateway                              # E2E 부분 실행
 # 통합 검증 (푸시 전 필수 — 아래 ⚠️ 참조)
 pnpm ci:core             # lint → test → build (빠른 검증)
 pnpm ci:all              # lint → 스텁 검사 → test → test:e2e → build (PR 전 최종)
-pnpm check:stubs         # TODO/FIXME/XXX/HACK 검출 (발견 시 실패)
+pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (발견 시 실패)
 ```
 
 > ⚠️ **CI 파이프라인은 lint·test·E2E를 실행하지 않는다.** `deploy-to-oci.yml`은 docker build → push → ssh deploy만 하고, `Dockerfile`도 `pnpm install` 후 `pnpm run build`만 돌린다. 즉 **테스트를 통과시키는 관문은 로컬의 `pnpm ci:all`이 유일하다** — `main` push는 검증 없이 배포로 직행한다.
