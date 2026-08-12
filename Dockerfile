@@ -15,7 +15,9 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # Copy source code and configuration files
-COPY tsconfig.json ./
+# tsconfig.build.json 은 pnpm run build(tsc -p tsconfig.build.json)의 진입 설정이고
+# tsconfig.json 을 extends 하므로 두 파일이 모두 있어야 한다 (하나라도 빠지면 TS5058).
+COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
 # Build the application
