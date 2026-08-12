@@ -40,10 +40,12 @@ export class FileShareController {
     if (!fs.existsSync(this.sharedBaseDir)) {
       try {
         fs.mkdirSync(this.sharedBaseDir, { recursive: true });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (error: any) {
-        if (error.code !== 'EACCES') {
-          this.logger.warn(`Failed to create shared directory: ${error.message}`);
+      } catch (error: unknown) {
+        // 권한 없음(EACCES)은 운영 환경에서 볼륨이 미리 마운트된 정상 상황이라 무시한다
+        const code = error instanceof Error && 'code' in error ? error.code : undefined;
+        if (code !== 'EACCES') {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Failed to create shared directory: ${message}`);
         }
       }
     }

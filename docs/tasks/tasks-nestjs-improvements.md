@@ -3,7 +3,7 @@
 > 작성일: 2026-04-03 | 최종 수정: 2026-07-23 (D33 ✅ 완료 / D27·D34 구현·커밋 완료 — 수동 테스트만 잔여. 커밋 `169ee9a`~`802ebfa`)
 > 브랜치: `feat-onam`
 > 목표: 안정성 + 구조적 업그레이드
-> 참고 프로젝트: 사내 NestJS 레퍼런스 프로젝트 (Pino, Port/Adapter, 테스트 Factory 등)
+> 참고 구현 (Pino, Port/Adapter, 테스트 Factory 등)
 
 ---
 
@@ -21,8 +21,7 @@
 ## 진행률
 
 ```
-완료: 28/51  |  남은: 21  |  보류: 2
-(D23은 구현 완료 — 담당자 db:migrate:up 실행만 잔여)
+완료: 30/51  |  남은: 19  |  보류: 2
 ```
 
 ---
@@ -32,10 +31,10 @@
 | 순서 | 태스크 | 난이도 | 위험도 | 효과 | 선행 |
 |:---:|--------|:---:|:---:|:---:|:---:|
 | ~~9~~ | ~~D3 Port/Adapter~~ | — | — | — | **✅ 완료** |
-| 10 | **D2 테스트 인프라 구축** | 어려움 | 🟢 | 매우 높음 | 없음 |
+| ~~10~~ | ~~D2 테스트 인프라 구축~~ | — | — | — | **✅ 완료** |
 | ~~11~~ | ~~D7 매직 문자열 enum화~~ | — | — | — | **✅ 완료** |
 | ~~12~~ | ~~D11 ESLint 설정~~ | — | — | — | **✅ 완료** |
-| 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | D2 |
+| 13 | **D5 단위 테스트 작성** | 보통 | 🟢 | 높음 | 🔄 Phase A·B·C 완료 |
 | 14 | **D1 TeamService 분리** | 어려움 | 🟡 | 높음 | D5 |
 | 15 | **D6 E2E 테스트 작성** | 어려움 | 🟡 | 매우 높음 | D2 |
 | 16 | **D4 typeorm-transactional** | 보통 | 🟡 | 보통 | 없음 |
@@ -53,7 +52,7 @@
 | 28 | **D20 Swagger 리다이렉트 NestMiddleware 전환** | 쉬움 | 🟢 | 보통 | 없음 |
 | 29 | **D21 파일 다운로드 에러 응답 통일** | 쉬움 | 🟢 | 보통 | D19 |
 | 30 | **D22 TelegramService 비관적 락** | 쉬움 | 🟢 | 높음 | 없음 |
-| 31 | **D23 TeamInvitation 토큰 Unique Index** | 쉬움 | 🟡 | 높음 | ⏳ 구현 완료 — up 실행 잔여 |
+| ~~31~~ | ~~D23 TeamInvitation 토큰 Unique Index~~ | — | — | — | **✅ 완료** |
 | 32 | **D24 하드코딩 설정값 → ConfigService** | 쉬움 | 🟢 | 보통 | 없음 |
 | 33 | **D25 DTO 검증 누락 보완** | 쉬움 | 🟢 | 보통 | 없음 |
 | 34 | **D26 중복 Controller 클래스명 수정** | 쉬움 | 🟢 | 낮음 | 없음 |
@@ -71,7 +70,7 @@
 ### 의존 관계
 
 ```
-D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
+✅ D2 (인프라) ──→ D5 (단위 테스트) ──→ D1 (TeamService 분리)
            ──→ D6 (E2E 테스트)
 ✅ D3 (Port/Adapter) ──→ D5 모킹 편의 향상 (필수는 아님, 수동 mock으로 대체 가능)
 D4 (typeorm-transactional) ──→ 독립 (단, 테스트 DB 없어 수동 검증만)
@@ -91,7 +90,7 @@ D19 (StreamableFile) ──→ 독립 (Express @Res 제거)
 D20 (Swagger NestMiddleware) ──→ 독립 (Express 인라인 미들웨어 제거)
 D21 (에러 응답 통일) ──→ D19 완료 시 자동 해결
 D22 (Telegram 비관적 락) ──→ 독립 (trigger: acceptTeamInvite 동일 패턴)
-D23 (토큰 Unique Index) ──→ 독립 (D33 마이그레이션으로 수행)
+✅ D23 (토큰 Unique Index) ──→ 완료
 D24 (하드코딩 설정값 ConfigService) ──→ 독립 (.env 추가)
 D25 (DTO 검증 보완) ──→ 독립
 D26 (Controller 클래스명) ──→ 독립
@@ -111,6 +110,7 @@ D35 (초대 링크 경로) ──→ 독립 (프론트 next-bun 협의 필요)
 ## D2. 테스트 인프라 구축
 
 - **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟢 낮음 | **범위**: 설정 + 유틸 파일 다수
+- **상태**: ✅ **완료 (2026-08-05)** — 당시 38/38 통과, 빌드·린트 정합. (현재 테스트 수는 D5 절 참조)
 
 ### 현재 상태
 
@@ -132,7 +132,7 @@ pnpm add -D ioredis-mock                          # Redis 모킹
 pnpm add -D socket.io-client                      # WS E2E 테스트
 ```
 
-> **`rosie` 도입 근거** (레퍼런스 프로젝트 검증됨): `Factory.build()`, `Factory.buildList(5)` 패턴으로 기본값+override 지원.
+> **`rosie` 도입 근거** (선행 구현 검증됨): `Factory.build()`, `Factory.buildList(5)` 패턴으로 기본값+override 지원.
 
 **2. package.json 스크립트 추가**
 ```json
@@ -193,18 +193,54 @@ export class MockNotificationAdapter {
 - **fetch 모킹**: `jest.spyOn(global, 'fetch')` (Node 18+ 내장 fetch)
 - **typeorm-transactional mock**: D4 도입 후 no-op 모킹 필요
 
+### ⚠️ 착수 시점 실태 조사 결과 (2026-08-05) — 위 계획서보다 상황이 나았음
+
+| 계획서 서술 | 실제 |
+|---|---|
+| 테스트 패키지 ❌ 미설치 | ✅ 이미 설치됨 (`jest@30`, `ts-jest`, `@nestjs/testing`, `@types/jest`) |
+| test 스크립트 ❌ 없음 | ✅ `test`/`test:watch`/`test:cov` 존재 |
+| 기존 테스트 2개 "스캐폴딩 수준" | **3개**, 그중 `metrics-access.middleware.spec.ts`는 `it.each` 파라미터화로 IP·XFF 에지 23케이스를 덮는 양질 테스트 |
+| 실패 20건 = 인프라 미비 | **아님.** 에러 DTO 리팩토링(2026-07-22) 때 테스트를 함께 갱신하지 않아 기대 예외 클래스가 어긋난 것 + D15(`@CurrentUser`) 전환으로 컨트롤러 시그니처가 바뀐 것. **프로덕션 코드는 정상** |
+
+→ "0에서 구축"이 아니라 **"정비 + 표준 수립"**으로 방향 조정. 검증된 케이스를 버리지 않기 위해 **① 최소 수정으로 녹색화 → ② 표준 수립 후 리팩터** 2단계로 진행했다.
+
+### 결정 사항 (2026-08-05)
+
+| 결정 | 선택 | 근거 |
+|---|---|---|
+| 기존 실패 20건 | **고쳐서 살림** (삭제·재작성 아님) | 실패 원인이 전부 동일 패턴이라 수정이 저렴하고, 검증된 에지 케이스 23개를 보존 |
+| 테스트 의존성 | **0개 추가** — 순수 TS Factory 함수 | `Partial<T>` 기반이라 타입 안전성이 완전하고(rosie는 제네릭 추론 약함), faker의 랜덤값은 재현성을 해침. `supertest`는 D6 착수 시 추가 |
+| 커버리지 임계값 | **미설정** | 현재 커버리지가 사실상 0이라 지금 걸면 무조건 실패. D5로 쌓은 뒤 실측치 기준으로 설정 (`coverageThreshold` 5줄) |
+| CI 게이트 | **미적용** | 지금 붙이면 PR이 전부 막힘. 테스트 녹색화 직후 `ci.yml` 12줄로 추가 예정 |
+
 ### 실행 체크리스트
 ```
-[ ] 테스트 패키지 설치
-[ ] package.json 스크립트 추가
-[ ] jest.config.js 업데이트 (transformIgnorePatterns, @config + @/* alias 추가)
-[ ] test/jest-e2e.json 생성
-[ ] src/entities/__spec__/ — Entity Factory 구현 (8개)
-[ ] test/helpers/mock-repository.ts
-[ ] test/helpers/create-testing-app.ts
-[ ] test/helpers/e2e-auth.ts
-[ ] 기존 spec 파일 실행 가능 확인
-[ ] jest 정상 동작 확인
+1단계 — 기준선 확보 (녹색화)
+  [✓] 실패 20건 원인 규명 — 에러 DTO 리팩토링·@CurrentUser 전환 후 테스트 미갱신
+  [✓] users.service.spec: NotFoundException → UserNotFoundErrorResponseDto
+  [✓] metrics-access.middleware.spec: ForbiddenException → ApiForbiddenErrorResponseDto
+  [✓] users.controller.spec: mockRequest → User 객체 (@CurrentUser 시그니처 반영)
+  [✓] jest.config.js moduleNameMapper에 @config/*, @/* 추가 (tsconfig paths와 1:1 정합)
+  [✓] 32/32 통과 확인
+
+2단계 — 표준 수립 + 리팩터
+  [✓] src/common/__spec__/mock-repository.ts — createMockRepository / createMockQueryBuilder
+      (QueryBuilder 체이닝 mock 포함 — TeamService 테스트(D5) 대비)
+  [✓] src/entities/__spec__/entity.factory.ts — Entity 8개 Factory + FIXED_DATE
+      (고정값만 사용 / 관계 프로퍼티 기본 미설정 / Partial override)
+  [✓] 기존 spec 3개를 표준으로 리팩터 (케이스 보존, 32/32 유지)
+  [✓] 표준 검증용 신규 테스트 1개 작성 — file-share.service.spec.ts (6케이스)
+  [✓] 38/38 통과
+
+3단계 — 툴체인 정합화 (2단계 중 발견해 함께 처리)
+  [✓] tsconfig.build.json 신설 + build 스크립트를 `tsc -p tsconfig.build.json`으로 변경
+      → 프로덕션 빌드에서 테스트·마이그레이션 제외 (dist 오염 방지 확인)
+  [✓] tsconfig.json은 테스트를 포함하도록 변경 → eslint 타입 인지 린팅·IDE가 테스트도 검사
+  [✓] eslint ignores에서 `**/*.spec.ts` 제거 — **테스트 코드도 린트 대상**으로 전환
+      (기존엔 테스트가 린트에서 완전히 빠져 있었음. 신규 경고 0건으로 통과)
+
+잔여 (D6 착수 시)
+  [✓] supertest 설치 + test/jest-e2e.json + E2E 헬퍼 — D6에서 완료 (2026-08-12)
 ```
 
 ---
@@ -213,7 +249,7 @@ export class MockNotificationAdapter {
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **범위**: 4~6파일
 
-> **레퍼런스 프로젝트 검증**: 6개 Port/Adapter 운영 중. `MockAdapter.build()` 패턴으로 테스트에서 완전 교체 가능.
+> **선행 구현 검증**: 6개 Port/Adapter 운영 중. `MockAdapter.build()` 패턴으로 테스트에서 완전 교체 가능.
 
 ### 현재 외부 의존성
 
@@ -250,21 +286,12 @@ export class MockNotificationAdapter {
 ## D5. 단위 테스트 작성 (Unit Test)
 
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟢 낮음 | **선행**: D2 완료
+- **상태**: 🔄 **진행 중** — Service·Guard·Filter·Gateway **전 계층 완료** (Phase A~C-9, 2026-08-05~08-10). **잔여: Controller 8개뿐**
+- **완료 상태의 SSOT는 이 절 맨 아래 [실행 체크리스트](#실행-체크리스트)** — 위쪽 대상 표와 아래 C-N 결과는 각각 "무엇을 할 것인가"와 "왜 그렇게 했는가"를 담는다
 
-### Service 테스트 (10개)
+### Service 테스트 (10개) — ✅ 완료
 
-| 우선순위 | 대상 | 줄 수 | 의존성 | 테스트 핵심 |
-|:---:|------|:---:|------|------|
-| 1 | **AuthService** | 167 | ConfigService, User Repo, fetch | JWT 생성/검증, 카카오 ID 검증 |
-| 2 | **TeamService** (핵심) | 1520 | 6 Repo, ConfigService, NotificationPort | 팀/태스크 CRUD, 권한 검증 |
-| 3 | **OnlineUserService** | 238 | Redis | 소켓-유저 매핑, 온라인 목록 |
-| 4 | **FishingOnlineService** | 320 | Redis | 맵 참가/이탈, 위치/상태 |
-| 5 | **SchedulerService** | 112 | User Repo, TeamTask Repo | autoArchiveTasks |
-| 6 | **NotificationAdapter** | 42 | TelegramService, DiscordService | 알림 분기 |
-| 7 | **TelegramService** | 461 | Team Repo, TelegramLink Repo, fetch | Webhook, 연동/해제 |
-| 8 | **DiscordService** | 183 | Team Repo, fetch | Webhook, 연동/해제 |
-| 9 | **FileShareService** | 40 | FileShare Repo | API Key 검증 |
-| 10 | **UsersService** | 55 | User Repo | 기존 spec 보완 |
+대상·완료 현황은 [실행 체크리스트](#실행-체크리스트)가 SSOT다. 각 서비스에서 **무엇을 왜 고정했는지**는 아래 C-N 결과 절에 있다.
 
 ### 모킹 전략
 
@@ -273,10 +300,12 @@ export class MockNotificationAdapter {
 | TypeORM Repository | `createMockRepository()` (D2 헬퍼) |
 | TypeORM DataSource | `jest.fn()` mock (TeamService의 `dataSource.transaction()`) |
 | ConfigService | `{ get: jest.fn((key) => defaults[key]) }` |
-| Redis (ioredis) | `ioredis-mock` 또는 수동 mock |
+| Redis (ioredis) | **수동 mock 채택** — 파이프라인 체이닝(`mockReturnThis`) + `exec()` 결과 큐. `ioredis-mock` 미사용 |
 | fetch | `jest.spyOn(global, 'fetch')` |
 | NotificationAdapter | `MockNotificationAdapter.build()` (D3 완료됨) |
 | typeorm-transactional | `jest.mock(...)` no-op (D4 후) |
+| Prometheus 메트릭 | `getToken('metric_name')`으로 provider 주입 |
+| Gateway의 `@UseGuards` | `.overrideGuard(X).useValue({canActivate:()=>true})` — 없으면 `.compile()`이 가드 의존성을 해석하려다 실패 |
 
 ### Controller 테스트 (8개, 33 엔드포인트)
 
@@ -292,56 +321,404 @@ export class MockNotificationAdapter {
 | 8 | **UsersController** (users/) | 2 | 유저 조회/수정 |
 | 9 | **UsersController** (auth/) | 1 | 닉네임 수정 |
 
-### Gateway 핸들러 테스트 (8개)
+### Gateway 핸들러 테스트 (8개) — ✅ 완료
 
-| Gateway | 이벤트 | DTO | 테스트 핵심 |
-|---------|--------|-----|------|
-| TeamGateway | `joinTeam` | `JoinTeamDto` | Room 참가, 온라인 등록 |
-| TeamGateway | `leaveTeam` | `LeaveTeamDto` | Room 퇴장, 온라인 제거 |
-| FishingGateway | `joinMap` | `JoinMapDto` | 맵 참가, `_fishingMapId` 캐싱 |
-| FishingGateway | `leaveMap` | `LeaveMapDto` | 맵 퇴장, 상태 제거 |
-| FishingGateway | `move` | `MoveDto` | 위치 브로드캐스트 (고빈도) |
-| FishingGateway | `fishingState` | `FishingStateDto` | 상태 변경 브로드캐스트 |
-| FishingGateway | `chatMessage` | `ChatMessageDto` | 채팅 브로드캐스트 |
-| FishingGateway | `catchResult` | `CatchResultDto` | 낚시 결과 브로드캐스트 |
+TeamGateway(C-4)·FishingGateway(C-9) 모두 완료. 이벤트별 계약은 해당 결과 절 참조.
 
-### Guard/Filter 테스트 (6개)
+### Guard/Filter 테스트 (6개) — ✅ 완료
 
-| 대상 | 테스트 핵심 |
-|------|------|
-| **HttpExceptionFilter** | ApiErrorResponseDto/HttpException/unknown 3분기 |
-| **WsExceptionFilter** | WS 에러 이벤트 전송 |
-| **JwtAuthGuard** | Cookie→Bearer 폴백, 만료/잘못된/없는 토큰 |
-| **OptionalJwtAuthGuard** | 토큰 없어도 통과, 잘못된 토큰 차단 |
-| **WsJwtGuard** | handshake.auth.token 추출, 인증 실패 시 disconnect |
-| **FishingWsGuard** | FishingSocket data 설정, 인증 여부 |
+Phase A(2026-08-05, 78케이스). 파일별 커버리지와 고정한 계약은 아래 **진행 결과** 표 참조.
 
 ### ⚠️ TeamService 테스트 주의
 
 - **1520줄, 의존성 9개** → D1 분리 전에는 핵심 메서드만
 - QueryBuilder mock 체이닝 필요: `select().where().innerJoinAndSelect().getMany()` 등
 
+### 진행 상황 (2026-08-05~)
+
+**우선순위 판단 근거**: 깨졌을 때 피해가 크고(보안·에러 경계) 의존성이 적어 지금 정확히 검증 가능한 것부터.
+
+| Phase | 대상 | 상태 |
+|---|---|---|
+| **A** | Guard 4개 + Filter 2개 (인증·에러 경계) | ✅ **완료** (2026-08-05, 78케이스) |
+| **B** | AuthService, SchedulerService | ✅ **완료** (2026-08-05, 43케이스) |
+| **C** | 권한 정책 + TeamService 초대·역할 변경 | ✅ **완료** (2026-08-05, 106케이스) |
+| **C-2** | TeamService 태스크 상태 + 댓글 CRUD | ✅ **완료** (2026-08-07, 55케이스 + 접근 제어 구멍 2건 수정) |
+| **C-3** | 초대 토큰 검증 + 멤버 상태 변경 + NotificationAdapter | ✅ **완료** (2026-08-07, 43케이스) |
+| **C-4** | TeamGateway (WS 진입점) | ✅ **완료** (2026-08-07, 46케이스) |
+| **C-5** | OnlineUserService (Redis 프레즌스) | ✅ **완료** (2026-08-07, 41케이스) |
+| **C-6** | TelegramService (외부 API + 연동) | ✅ **완료** (2026-08-07, 47케이스) |
+| **C-7** | DiscordService (SSRF 관문) | ✅ **완료** (2026-08-10, 37케이스) |
+| **C-8** | team.service.ts 잔여 mutation | ✅ **완료** (2026-08-10, 22케이스) |
+| **C-9** | Fishing 모듈 (Service + Gateway) | ✅ **완료** (2026-08-10, 91케이스) |
+| D | **Controller 8개** — 서비스 위임이라 단위 테스트 효용이 낮다(E2E 영역 판정) | ⏸️ **착수 전 · 진행 여부 결정 필요** |
+
+**진행 결과** — 전체 639/639 통과, 커버리지 8.73% → **62.64%**
+
+| 파일 | 커버리지 | 고정한 핵심 계약 |
+|---|---:|---|
+| `jwt-auth.guard.ts` | **100%** | cookie 우선 → Bearer 폴백 / **sub 없는 토큰(초대 토큰) 차단** / 활성 유저만 조회 / `request.user` 주입 |
+| `optional-jwt-auth.guard.ts` | **100%** | 토큰 없으면 익명 통과 / **잘못된 토큰은 익명이 아니라 차단** |
+| `ws-jwt-auth.guard.ts` | 97.67% | `auth.token` 우선 → Bearer 폴백 / WsException **code**별 분기 / `client.data.user` 주입 |
+| `fishing-ws.guard.ts` | **100%** | 인증↔게스트 분류 / **guestId 음수 불변식**(일반 userId와 충돌 방지) / socketId 결정적 / 중복 실행 시 상태 미덮어씀 |
+| `http-exception.filter.ts` | **100%** | 도메인 DTO·HttpException·알 수 없는 예외 3분기 / status→code 매핑 10종 / **알 수 없는 예외의 원본 비노출** / 4xx=warn·5xx=error |
+| `ws-exception.filter.ts` | **100%** | WsException 객체·문자열 / 누락 필드 보완 / **응답엔 고정 메시지·로그엔 원본** |
+
+**회귀 방어 포인트**: 이번 세션에서 "초대 토큰으로 인증 우회가 불가능한 근거"가 가드의 `payload?.sub` 검증이었는데 그걸 지키는 테스트가 없었다. HTTP·WS 양쪽에 각각 고정했다 — 가드가 2개 구현으로 나뉘어 있어 한쪽만 고치는 실수가 가능하기 때문이다.
+
+**Phase B 결과**
+
+| 파일 | 커버리지 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---:|---|
+| `auth.service.ts` | **100%** | 22 | **카카오 number id → string 변환**(D34 회귀 방어), fetch 실패 status별 분기, 조건 없으면 DB 미조회, 신규가입↔기존로그인 분기, 기본 닉네임, 발급 토큰의 `sub`·`loginType` |
+| `scheduler.service.ts` | 97.87% | 21 | **TASK_SLOT=1 리더만 실행**(멀티 레플리카 중복 방지), ENV 대소문자 정규화, 미설정 시 기본값 1, 14일 cutoff 계산, **DB 오류를 삼켜 크론이 죽지 않게** |
+
+**Phase B 회귀 방어 포인트**: `kakaoId`를 number→string으로 바꾼 것(D34)이 수동 테스트로만 확인돼 있었다. 이제 "카카오가 주는 number를 string으로 변환해 조회한다"가 테스트로 고정됐다 — 되돌아가면 Oracle 암묵 형변환으로 ORA-01722 장애가 재현될 수 있다.
+
+`SchedulerService`는 `ENV`·`TASK_SLOT`을 **생성자에서 읽으므로** 조합마다 인스턴스를 새로 만들어야 검증된다. 실행/미실행 12조합을 표로 고정했다.
+
+**Phase C 결과**
+
+| 파일 | 커버리지 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---:|---|
+| `role.constants.ts` | **100%** | 64 | **27조합 전수**(허용 5개만 true) / MASTER는 대상도 부여도 불가(팀당 1명) / MANAGER는 승격만 / 동급 관리 불가 |
+| `team.service.ts` (초대) | — | 24 | 권한 3역할, 만료 검증(과거·7일 초과), **jti로 토큰 유일성**(D23 회귀 방어), **`pessimistic_write` 락**, 재활성화 시 MEMBER 초기화, 사용 횟수 소진 |
+| `team.service.ts` (역할) | — | 18 | 본인 변경 차단(조회 전), 정책 6조합, 동일 역할 차단, 역할 대소문자 정규화, `select: ['userName']`만 조회, 알림 전송 |
+
+`team.service.ts` 전체 커버리지는 **30.86%** — 1,520줄 중 초대·역할 변경 영역만 덮었다. 나머지(태스크·댓글·팀원 조회)는 C-2에서.
+
+**🔴 Phase C에서 발견한 프로덕션 버그 — `isValidRole` 프로토타입 체인 누수**
+
+```ts
+// Before: `in`은 프로토타입 체인까지 검사한다
+return role in ROLE_HIERARCHY;   // isValidRole('toString') === true !!
+// After
+return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
+```
+
+실측: `isValidRole('toString'|'constructor'|'valueOf'|'hasOwnProperty')`가 모두 `true`였고 `ROLE_HIERARCHY['toString']`은 함수를 반환했다.
+**현재 프로덕션 호출처는 0곳**(정의만 존재)이라 실제 장애는 없었지만, 나중에 이 함수로 사용자 입력을 검증하면 `'toString'`이 유효한 역할로 통과하는 잠재 함정이었다. `Object.hasOwn`은 ES2022라 target(ES2020)에서 못 써 `hasOwnProperty.call`로 수정.
+
+---
+
+### C-2 실행 계획 (2026-08-05 수립 → ✅ 2026-08-07 완료. 결과는 이 절 아래 "C-2 결과" 참조)
+
+**전제**: 인프라·표준은 이미 갖춰져 있다. 새로 조사할 것 없이 아래 계약만 테스트로 옮기면 된다.
+- Factory: `src/entities/__spec__/entity.factory.ts` (`createTaskComment`, `createTeamTask`, `createTeamMemberView` 사용)
+- Mock: `src/common/__spec__/mock-repository.ts` (`createMockRepository`, `createMockQueryBuilder`)
+- spec 파일은 도메인별로 분리 — 신규 파일명 `team.service.task.spec.ts`, `team.service.comment.spec.ts`
+- `jest.config.js`에 `restoreMocks: true`가 있으므로 `afterEach(restoreAllMocks)` 불필요
+- 서비스 생성 시 NestJS 모듈 초기화 로그가 `Logger.prototype.log` spy에 잡힌다 → 생성 직후 `mockClear()` (scheduler.service.spec.ts의 buildService 참고)
+
+**조사로 확인한 검증 대상 계약** (파일: `src/modules/team/team.service.ts`)
+
+| 메서드 | 줄 | 고정해야 할 계약 |
+|---|---|---|
+| `verifyTeamMemberAccess` | 731 | **활성 팀 멤버 + 활성 유저** 조건으로만 조회(`actStatus`·`userActStatus` 둘 다 ACTIVE), 없으면 `TeamForbiddenErrorResponseDto`. 모든 팀 API의 공통 진입점이라 여기가 뚫리면 팀 격리가 깨진다 |
+| `updateTaskStatus` | 468 | 멤버 검증 → 태스크 존재 → **`task.teamId !== teamId`면 차단**(팀 격리) → **`completedAt` 자동 관리: COMPLETED/CANCELLED면 현재시각, 그 외 상태면 `null`** → 저장 → 알림. ⚠️ `completedAt`은 **SchedulerService 자동 아카이브의 기준값**이므로 이 로직이 깨지면 아카이브가 안 되거나 잘못 실행된다 (5개 TaskStatus 전수 검증할 것) |
+| `updateTaskActiveStatus` | 529 | 동일한 3단 검증 후 `actStatus`만 변경. **알림을 보내지 않는다** — updateTaskStatus와의 차이가 의도인지 확인 |
+| `createTaskComment` | 564 | 멤버 검증 → `findOne({taskId, teamId})`로 태스크 확인 → `status: ACTIVE`로 생성 → 알림. **commentId를 할당하지 않는다**(D27: DB가 GENERATED ALWAYS AS IDENTITY) |
+| `updateTaskComment` | 608 | **작성자만 수정**(`comment.userId !== userId` → `TeamCommentForbiddenErrorResponseDto`), 태스크·팀 소속 검증, **삭제된 댓글(status INACTIVE)은 수정 불가**, `mdfdAt` 갱신, 알림 |
+| `deleteTaskComment` | 678 | **작성자만 삭제**, 소속 검증, 이미 삭제면 차단, **소프트 삭제**(`status = INACTIVE` + `mdfdAt`). 물리 삭제가 아님을 고정할 것 |
+
+**작업 중 판단할 항목 (조사에서 발견)**
+- `createTaskComment`·`updateTaskComment`는 팀 알림을 보내지만 `deleteTaskComment`는 **보내지 않는다**. 삭제 알림이 노이즈라 의도한 것으로 보이나 확인 후, 의도면 테스트로 "알림을 보내지 않는다"를 명시적으로 고정한다(대칭 분기).
+- `updateTaskComment`는 팀 멤버 검증(`verifyTeamMemberAccess`) 없이 **작성자 확인만** 한다. 작성자라면 이미 멤버였겠지만, 탈퇴 후에도 수정이 가능한 경로인지 확인 필요.
+
+**이번 Phase에서 다루지 않을 것** (D 또는 이후)
+`getTeamMembersBy`(126)·`getTeamTasksBy`(198)·`getTasksByTeamId`(752)·`getCommentsByTaskId`(799)·`getTaskWithComments`(850)·`getTeamUsers`(915) 등 조회 계열은 QueryBuilder 조립 검증이 주가 되어 가치가 낮다. `insertTeam`(308)·`updateTeam`(324)·`createTask`(357)·`updateTask`(402)는 C-2 이후.
+
+**작성 중 발견**: `defineDomainError`의 throw 옵션은 `(message)` 또는 `({ message, details })` 두 형태만 받는다(`(message, details)` 아님). 테스트를 쓰면서 실제 계약을 확인했다.
+
+---
+
+### C-2 결과 (2026-08-07)
+
+신규 spec 2개 · **55케이스**. 전체 273 → **328/328 통과**, `team.service.ts` 커버리지 30.86% → **56.48%**, 전체 27.97% → **31.29%**.
+
+| 파일 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---|
+| `team.service.task.spec.ts` | 25 | `verifyTeamMemberAccess`의 **4개 조회 조건 전수**(팀·유저 ACTIVE 둘 다) / 3단 검증 순서(멤버 → 존재 → `task.teamId` 대조) / **`completedAt` 5개 상태 전수**(COMPLETED·CANCELLED만 설정) / **완료 되돌리면 `completedAt` null 초기화** / 알림 메시지·URL / `updateTaskActiveStatus`는 알림 미전송 |
+| `team.service.comment.spec.ts` | 30 | 생성·수정·삭제 **모두 팀 멤버 검증 선행**(아래 수정 사항) + `findOne({taskId, teamId})` 팀 격리 / **`commentId` 미할당**(D27 회귀 방어) / 멤버 → 작성자 → 소속 검증 순서 / 삭제된 댓글 재수정·재삭제 차단 / **소프트 삭제**(`delete`·`remove` 미호출) / 삭제는 알림 미전송 / 알림 팀 정보는 `getTeamTasksBy` 결과에서 취득 |
+
+**회귀 방어 포인트**: `completedAt`은 SchedulerService 자동 아카이브(14일)의 유일한 기준값인데, "완료를 되돌리면 null로 초기화"를 지키는 테스트가 없었다. 이 한 줄이 사라지면 **진행중 태스크가 14일 뒤 조용히 보관함으로 사라진다** — 사용자에게는 데이터 유실로 보이고 로그에도 남지 않는다. 5개 상태 전수 + 되돌리기 케이스로 고정했다.
+
+**Factory 추가**: `createTeamTaskView` (`getTeamTasksBy`의 flatten 반환 shape). 타입을 `Awaited<ReturnType<TeamService['getTeamTasksBy']>>[number]`로 잡아 서비스 반환 shape이 바뀌면 Factory에서 컴파일이 깨지게 했다. `createTeamTask`(Entity)를 캐스팅해 쓰면 알림 대상 필드(`telegramChatId`·`discordWebhookUrl`)가 조용히 undefined가 된다.
+
+**🔴 발견 → ✅ 수정 완료 — 댓글 수정·삭제에 팀 멤버 검증이 없었다** (2026-08-07)
+
+`updateTaskComment`·`deleteTaskComment`가 `verifyTeamMemberAccess`를 호출하지 않고 **작성자 확인만** 해서 다음이 통과했다:
+- 팀에서 **탈퇴(또는 강제 비활성)된 사용자**가 재직 중 작성한 댓글을 계속 수정·삭제
+- **비활성 팀**(`TEAMS.ACT_STATUS = 0`)의 댓글 수정·삭제
+
+생성(`createTaskComment`)과 조회(`getCommentsByTaskId`·`getTaskWithComments`)는 멤버 검증을 하므로 **같은 리소스인데 수정·삭제만 구멍**이었다.
+
+**수정**: 두 메서드 맨 앞에 `verifyTeamMemberAccess(teamId, userId)` 추가. **작성자 검증보다 앞**에 둔 것이 핵심이다 — 뒤에 두면 남의 팀 댓글이 "없음(404)"인지 "권한 없음(403)"인지가 응답으로 새어나간다. 이 순서를 지키는 테스트도 함께 넣었다(멤버가 아니면 `findOne`조차 호출하지 않음).
+
+부수 효과로 수정·삭제 403의 코드가 경우에 따라 `TEAM_COMMENT_FORBIDDEN` → `TEAM_FORBIDDEN`으로 바뀐다. 프론트(`next-bun/src/types/api.ts`)는 두 코드 모두 메시지 매핑만 하고 분기 로직이 없어 영향 없음. Swagger 403 description도 두 코드를 함께 표기하도록 갱신했다.
+
+**사용자 영향 없음의 근거**: 조회 경로가 이미 멤버 검증을 하므로 탈퇴자·비활성 팀 사용자는 애초에 댓글 화면에 진입할 수 없었다. 즉 UI 흐름을 막는 변화가 아니라 API 직접 호출 경로를 닫은 것이다.
+
+**🔴 발견 → ✅ 수정 완료 — `createTask`에도 팀 멤버 검증이 없었다** (2026-08-07, 위 수정 후 대칭 검증에서 발견)
+
+`createTask`는 **팀 존재·활성만** 확인하고(`teamRepository.findOne`) 요청자가 그 팀 멤버인지 보지 않았다. 컨트롤러 가드는 `JwtAuthGuard`뿐이라, 인증된 아무 사용자나 임의 `teamId`로 **남의 팀에 태스크를 만들고 `emitTaskCreated` WS 브로드캐스트 + 텔레그램/디스코드 알림까지 발생**시킬 수 있었다. `updateTask`·`updateTaskStatus`·`updateTaskActiveStatus`는 모두 멤버 검증이 있어 **생성만 비대칭**이었다.
+
+**프론트는 이미 멤버 검증을 전제하고 있었다** — `next-bun/src/services/teamService.ts:436-440`이 403에 "팀 멤버만 태스크를 생성할 수 있습니다."를 매핑해 두고 404 매핑은 두지 않았다. 백엔드만 스펙을 못 지킨 상태였다.
+
+**수정**: `teamRepository.findOne` + 404 분기를 `verifyTeamMemberAccess`로 **대체**(추가가 아님). 멤버 검증이 활성 팀만 조인하므로 팀 존재·활성 확인을 이미 포함하고, 남겨두면 도달할 수 없는 404 분기가 된다. 알림 대상 팀 정보도 멤버 검증 반환값에서 얻어 `updateTask`와 같은 형태가 됐다. 쿼리 수는 1회로 동일.
+
+**API 계약 변경**: 팀 미존재·비활성 시 `404 TEAM_NOT_FOUND` → `403 TEAM_FORBIDDEN`. 팀의 존재 여부를 비멤버에게 알려주지 않게 되는 부수 효과도 있다. Swagger 명세도 403으로 갱신했다.
+
+**확인된 의도(테스트로 고정)**: `deleteTaskComment`·`updateTaskActiveStatus`는 알림을 보내지 않는다. 삭제·보관 토글은 팀 전체에 알릴 사건이 아니라는 판단이며, 대칭 분기로 고정해 두어 나중에 알림이 추가되면 테스트가 먼저 깨진다.
+
+---
+
+### C-3 결과 (2026-08-07) — 권한·토큰 경계 + 알림 분기
+
+C-2 이후 실측으로 잡은 우선순위 1·2번을 처리하고, 그 과정에서 찾은 죽은 코드를 제거했다.
+**43케이스 추가, 328 → 371/371 통과.** `team.service.ts` 56.48% → **70.49%**, 전체 31.29% → **35.07%**.
+
+| 대상 | 케이스 | 고정한 핵심 계약 |
+|---|---:|---|
+| `verifyTeamInviteToken` (invite.spec에 추가) | 13 | JWT_SECRET 부재 시 **DB 조회 전 차단** / 위조·만료·형식오류를 **모두 같은 에러로** 응답(토큰 탐색 방지) / 초대 조회에 `teamId`+`token`+`actStatus` **3조건 전수** / **JWT가 유효해도 DB `endAt`이 지나면 만료**(만료 시각의 SSOT는 DB) / 팀 비활성 차단 / 사용 횟수 경계(cur=max 차단, cur<max 통과) |
+| `updateMemberStatus` (신규 `team.service.member-status.spec.ts`) | 23 | 본인 차단(조회 전) / 정책 5조합 / MASTER 대상 불가 / **대상 조회에 `userActStatus` 필터 없음**(재활성화 경로) / 동일 상태 차단 / 해당 행만 `update` / `select: ['userName']`만 조회 / 이름 없으면 ID로 대체 / 활성화·비활성화 알림 문구 |
+| `NotificationAdapter` (신규 spec) | 7 | **두 채널 모두 호출**(한쪽 누락 방지) / 채널별 파라미터 이름 변환(`message`↔`content`) / url→텔레그램 버튼 변환 / **url 없으면 `buttons` 키 자체 없음** / fire-and-forget(즉시 반환) / 미연동 팀도 그대로 위임 |
+
+**회귀 방어 포인트 — `updateMemberStatus`의 대상 조회**: 요청자는 활성 멤버만 찾지만 **대상은 비활성 멤버까지 찾아야 한다**. 여기에 `userActStatus: [ACTIVE]`를 무심코 추가하면 "한 번 비활성화된 멤버는 영원히 되살릴 수 없는" 상태가 되고, 증상은 404("대상 사용자가 팀 멤버가 아닙니다")로 나와 원인 추적이 어렵다. 쿼리 인자를 통째로 비교해 고정했다.
+
+**`NotificationAdapter`를 먼저 잡은 이유**: 호출부가 결과를 확인하지 않는 fire-and-forget이라, 한 채널이 빠져도 **예외도 로그도 남지 않는다**. 증상이 "알림이 안 온다"뿐이라 가장 추적이 어려운 종류의 회귀다.
+
+**🔴 발견 → ✅ 제거 완료 — `verifyTeamInviteToken`의 도달 불가능한 분기** (구 `team.service.ts:1147-1150`)
+
+```ts
+// 조회에서 이미 payload.teamId로 걸었으므로
+where: { teamId: payload.teamId, token, actStatus: ActStatus.ACTIVE }
+// 이 조건은 항상 false — "보안 강화" 주석이 붙어 있었지만 실행되지 않는 코드였다
+if (payload.teamId !== invite.teamId) throw ...
+```
+
+**도달 불가 근거**: ①TypeORM이 `teamId = payload.teamId` 조건으로 필터링하므로 반환된 `invite.teamId`는 항상 `payload.teamId`와 같다. ②타입 불일치(`"7" !== 7`)로 걸릴 여지도 없다 — 토큰은 이 서비스가 `sign({ teamId, ... })`로 만들고 `teamId`는 `ParseIntPipe`를 거친 number이며, Oracle NUMBER도 JS number로 돌아온다. ③커버리지 미커버 라인이 실증했다(12케이스를 넣어도 그 줄만 미실행). 제거 후 미커버 목록에서 사라진 것으로 재확인.
+
+**제거하면서 방어는 유지**: `teamId` 검증은 사라진 게 아니라 **조회 조건이 담당**한다(위조 시 매칭 없음 → 404). 그 사실을 조회 지점 주석에 남기고, **위조 teamId 토큰이 404로 걸러지는 행위 테스트**를 추가했다(`findOne` mock이 where의 teamId를 실제로 반영하도록 구성). 조회 조건에서 `teamId`를 빼면 이 테스트가 깨진다 — 죽은 분기를 지우면서 생기는 반대 방향 실수를 막기 위해서다.
+
+죽은 분기를 그대로 두면 "뒤에서 한 번 더 검증하니 조회 조건은 느슨해도 된다"는 착각을 부른다. 없는 방어선이 있는 것처럼 읽히는 쪽이 실제 위험이었다.
+
+---
+
+### C-4 결과 (2026-08-07) — TeamGateway (WS 진입점)
+
+**46케이스, 371 → 417/417 통과.** `team.gateway.ts` 0% → **99.29%**(미커버는 `afterInit`의 로그 1줄 — 로직이 없어 제외), 전체 35.07% → **41.33%**.
+
+고정한 계약을 3축으로 묶었다.
+
+| 축 | 케이스 | 내용 |
+|---|---:|---|
+| **팀 격리** | 6 | room 참가 **전에** `verifyTeamMemberAccess` 호출 / 실패 시 `WsException(FORBIDDEN)` + `join`·`addUserToOnline` 미호출 / room명 `team-{teamId}` / `client.data.teamId` 캐싱 |
+| **채팅 권한의 출처** | 5 | 팀 미참여·인증정보 없음 → `CHAT_NOT_JOINED` / **DTO가 아니라 캐싱된 `teamId`로 room 결정** / 서버 시각 사용 / 기본 표시명 |
+| **중복 알림 방지** | 12 | `wasAlreadyOnline`이면 입장 알림 생략(다중 탭) / 본인에겐 목록 항상 전송 / `isSocketRegistered=false`면 `removeSocket` 생략(leave↔disconnect 경합) / `isFullyOffline`일 때만 퇴장 알림 / **제거 직후 재접속 시 알림 취소** |
+| 브로드캐스트 10종 | 10 | 메서드↔이벤트명 전수 대조 |
+| 라이프사이클·메트릭·위임 | 13 | 커넥션 게이지 증감 / 실패해도 `finally`로 타이머 종료 / 조회 위임 |
+
+**`client.to` vs `server.to`를 분리해 검증한 이유**: Socket.IO에서 전자는 본인 제외, 후자는 본인 포함이다. 입장 알림에 `server.to`를 쓰면 **본인에게 자기 입장 알림이 가고**, 채팅에 `client.to`를 쓰면 **자기 메시지가 자기 화면에 안 뜬다**. 둘 다 예외 없이 조용히 어긋나는 종류라 emit 경로를 각각 캡처했다.
+
+**🟡 발견 — `handleJoinTeam`의 인증 없음 폴백** (`team.gateway.ts:140`)
+
+```ts
+if (userId) {           // ← userId가 없으면 멤버십 검증을 통째로 건너뛰고
+  await this.teamService.verifyTeamMemberAccess(teamId, userId);
+}
+await client.join(roomName);   // ← room에는 그대로 참가한다
+```
+
+`@UseGuards(WsJwtGuard)`가 앞단에서 막으므로 **당시에도 도달 불가**였다. 가드 코드로 확인한 근거 — 토큰 없음(`ws-jwt-auth.guard.ts:53`)·검증 실패(`:56`)·유저 없음/비활성(`:64`) 모두 예외를 던지고, 통과할 때만 `:68`에서 `client.data.user`를 세팅한다.
+
+문제는 **팀 격리가 가드 한 겹에만 의존**한다는 점이었다. `@UseGuards`가 빠지면 `userId`가 `undefined`가 되고 → 멤버십 검증을 건너뛰고 → 아무나 임의 팀 room에 들어가 모든 태스크·댓글·채팅을 **예외도 로그도 없이** 수신하게 된다. HTTP 경로가 가드 + `verifyTeamMemberAccess` 2겹인 것과 대비됐다.
+
+**✅ 수정 완료 (2026-08-10)**: `if (userId)`를 조기 차단으로 뒤집었다.
+
+```ts
+if (!userId) {
+  throw new WsException({ code: 'AUTH_UNAUTHORIZED', message: '인증이 필요합니다.' });
+}
+await this.teamService.verifyTeamMemberAccess(teamId, userId);   // 이제 무조건 실행
+```
+
+에러 코드는 `WsJwtGuard`가 같은 상황(토큰 없음·유저 없음)에 쓰는 `AUTH_UNAUTHORIZED`로 맞췄다 — 인증 정보 부재는 권한 문제(403)가 아니라 401 성격이다. 프론트도 이미 이 코드를 알고 있다(`next-bun/src/types/api.ts:36,68` — "인증이 필요합니다. 다시 로그인해주세요."). 아래쪽 온라인 등록 블록의 `if (userId)`도 조건이 불필요해져 들여쓰기가 한 단계 줄었다.
+
+**실사용 동작은 달라지지 않는다** — 가드 때문에 지금도 인증 없이는 이 핸들러에 도달하지 못한다. 바뀐 것은 "가드가 사라져도 뚫리지 않는다"는 보장이다. 테스트도 "검증 미호출 + join 성공" → "`join` 미호출 + `AUTH_UNAUTHORIZED`"로 뒤집었다.
+
+**Fishing 쪽의 같은 패턴은 그대로 둔다**: `FishingGateway`의 `if (info)`는 **게스트 접속을 허용하는 공개 맵** 정책이라 신원이 없어도 관전만 가능하게 두는 것이 의도다. 팀은 게스트 개념이 없어 같은 논리가 성립하지 않는다.
+
+**테스트 작성 메모**: `@UseGuards`가 붙은 Gateway는 핸들러를 직접 호출해도 Nest가 가드의 의존성(User Repository 등)까지 해석하려 해 `.compile()`에서 실패한다. `.overrideGuard(WsJwtGuard)`로 끊었다. 가드 자체는 `ws-jwt-auth.guard.spec.ts`에서 11케이스로 이미 검증돼 있다.
+
+---
+
+### C-5 결과 (2026-08-07) — OnlineUserService (Redis 프레즌스)
+
+**41케이스, 417 → 458/458 통과.** `online-user.service.ts` 0% → **100%**, 전체 41.33% → **45.7%**.
+
+C-4에서 TeamGateway spec이 `wasAlreadyOnline`·`isFullyOffline`을 mock으로 가정했으므로, **그 값을 실제로 계산하는 로직은 여기서만 검증된다.** 두 판정이 틀리면 다중 탭 사용자에게 입퇴장 알림이 중복되거나(오탐) 아예 누락된다(미탐).
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `addUserToOnline` | 7 | **판정은 소켓 추가 "전"의 개수로**(호출 순서까지 검증 — 추가 후에 세면 첫 입장 알림이 영영 안 나간다) / 세 키를 한 파이프라인으로 / **전 키에 TTL**(socket·userSockets 3600s, teamOnline 7200s) |
+| `removeSocket` | 6 | 미등록 소켓은 `null` / 남은 소켓 0일 때만 온라인 해시·Set 정리 / **다중 탭이면 목록 미변경** / Redis Hash의 문자열 ID를 number로 복원 |
+| 조회 4종 | 12 | 이름 없으면 접속 수 조회 생략 / **100명 초과 시 절단**(조회도 100회만) / 파이프라인 결과 순서 매핑 / `exec()`가 비면 0 |
+| **Gauge 갱신** | 6 | 접속자 있으면 `set`, 0명이면 `remove` + 추적 해제 / **Redis 실패는 0으로 취급하지 않고 주기 skip** / 한 팀 실패해도 나머지는 갱신 |
+| **갱신 타이머** | 6 | `TASK_SLOT=1`만 60s 주기 등록 / 미설정·0·2는 미등록 / `onModuleDestroy`가 타이머 정리(2회 호출도 안전) |
+| 장애 격리 | 4+ | 메서드별 안전한 기본값(`{wasAlreadyOnline:false}`·`null`·`[]`·`0`·`false`) / **Redis 클라이언트 미주입 상태에서도 안 죽음** |
+
+**가장 값나가는 방어 — 실패와 0명의 구분**: `refreshTeamOnlineMetric`은 `hlen` 실패 시 그 팀을 **건너뛴다**(이전 Gauge 값 유지). 실패를 0으로 취급해 `remove`하면 **Redis 장애 중에 대시보드에서 지표가 통째로 사라져** 장애 판단을 방해한다. 원 구현에 주석으로만 남아 있던 의도를 테스트로 고정했다.
+
+**장애 격리 설계 확인**: 이 서비스는 모든 Redis 오류를 삼키고 안전한 기본값을 반환한다 — "Redis가 죽어도 HTTP는 정상, WS 프레즌스만 중단"이라는 결정을 지키기 위해서다. 메서드마다 "실패 시 무엇을 반환하는가"를 명시 고정했으므로, 누가 예외를 다시 던지도록 바꾸면 테스트가 먼저 깨진다.
+
+이번 Phase에서는 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
+---
+
+### C-6 결과 (2026-08-07) — TelegramService (외부 API + 연동)
+
+**47케이스, 458 → 505/505 통과.** `telegram.service.ts` 0% → **100%**(브랜치 98.27% — 미커버는 로그 문자열의 `chat.title` optional 하나), 전체 45.7% → **49.8%**.
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `sendMessageAsync` | 9 | 봇 토큰·chatId·message 없으면 **호출 자체를 안 함** / URL에 토큰 삽입 / `parse_mode: HTML` / 버튼→`inline_keyboard` 한 줄 / **버튼 없으면 `reply_markup` 키 자체 없음**(빈 키보드는 API가 400으로 거부) / 실패 응답은 상태 코드를 담아 throw(본문이 JSON이 아니어도) |
+| `sendTeamNotification` | 4 | 미연동 팀은 건너뛰되 **경고 로그는 남김** / **API 실패·네트워크 단절 모두 예외를 삼킴** |
+| `generateLinkToken` | 5 | **기존 활성 토큰 전부 무효화 후 발급**(순서까지 검증 — 남기면 옛 딥링크로 연동 가능) / 64자 hex / 매번 다른 값 / 만료 24시간 / 딥링크 동봉 |
+| `getDeepLink` | 2 | 봇 사용자명 없으면 설정 오류 + **구체 원인은 서버 로그에만** |
+| `verifyAndLinkTeam` | 7 | 활성·미만료 토큰만 조회 / **이미 다른 그룹과 연동됐으면 거부** / 같은 그룹은 재연동 허용 / chatId 저장과 토큰 소진을 **한 트랜잭션** / 실패 시 throw가 아니라 실패 결과 반환 |
+| `handleWebhook` | 9 | 봇 추가(member/administrator)는 대기 / **제거(left/kicked) 시 연동 해제** / `/start <token>` 성공·실패 각각 안내 / 토큰 없는 `/start`는 안내만 / `bot_command` 엔티티 없으면 무시 |
+| `getLinkStatus`·`unlinkTeam` | 11 | 팀 없으면 404 / 연동 시 대기 토큰 조회 생략 / 대기 토큰은 최신 1건 / 해제는 chatId 제거 + 토큰 무효화를 한 트랜잭션 |
+
+**연동/해제의 에러 처리가 비대칭인 이유**(테스트로 명시): `verifyAndLinkTeam`은 실패해도 **결과 객체를 반환**하고 `unlinkTeam`은 **throw**한다. 전자는 webhook 응답으로 사용자에게 문구를 보여줘야 하고, 후자는 사용자가 명시적으로 요청한 HTTP 액션이라 실패를 알려야 하기 때문이다. 둘을 통일하려는 리팩터가 들어오면 이 테스트가 먼저 깨진다.
+
+**확인한 것 — webhook 실패가 재시도 폭풍으로 번지지 않는다**: `handleWebhook`은 안내 메시지 전송(`sendMessageAsync`)의 예외를 잡지 않지만, `telegram.controller.ts:31-37`이 `try/catch`로 감싸 200 + `{success:false}`를 반환한다. 텔레그램이 재시도하지 않으므로 "연동은 됐는데 안내 실패 → 재시도 → 토큰 소진됨 → 실패 안내 반복" 시나리오는 발생하지 않는다.
+
+**테스트 작성 중 걸린 함정**: `buildService(botToken = BOT_TOKEN)` 형태의 기본값 파라미터를 쓰면 `buildService(undefined)`가 "미설정"이 아니라 **기본값으로 해석**되어 "토큰 없으면 전송 안 함" 테스트가 조용히 무력해진다(실제로 처음에 이 케이스만 실패해서 발견). 옵션 객체 + `'key' in overrides`로 바꿨다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
+---
+
+### C-7 결과 (2026-08-10) — DiscordService (SSRF 관문)
+
+**37케이스, 505 → 542/542 통과.** `discord.service.ts` 0% → **100%**(statements·branches·functions·lines 전부), 전체 49.8% → **51.39%**.
+
+텔레그램과 결정적으로 다른 점: **팀이 직접 입력한 URL로 서버가 요청을 보낸다.** 그래서 이 서비스의 핵심은 전송이 아니라 `validateWebhookUrl`의 도메인 검증이다. 검증이 뚫리면 저장된 URL이 그대로 알림 전송 대상이 되어 **서버가 임의 주소로 POST하는 통로(SSRF)** 가 되고, 팀 알림 내용이 그쪽으로 새어나간다.
+
+| 영역 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| **`validateWebhookUrl`** | 14 | 허용 도메인 2개(`discord.com`·`discordapp.com`) / **거부 8종은 요청조차 보내지 않음** / 도메인 통과 시 GET으로 존재 확인 / 404는 무효(삭제된 webhook) / 이름 없어도 유효 / 네트워크 오류는 무효 |
+| `sendWebhookMessage` | 7 | URL·content 없으면 미전송 / **embed 없으면 `embeds` 키 자체 없음** / 실패는 상태 코드 담아 throw(본문을 못 읽어도) |
+| `sendTeamNotification` | 6 | 미연동 팀은 건너뛰되 경고 로그 / **url은 마크다운 링크로 본문에 덧붙임**(디스코드는 인라인 버튼이 없어 텔레그램과 다름) / API 실패·네트워크 단절 모두 예외 삼킴 |
+| 연동 관리 | 10 | 3개 메서드 모두 팀 없으면 404 + `update` 미호출 / 활성 팀만 조회 / 해당 팀에만 저장 / 채널 이전(덮어쓰기) 허용 / 해제 시 null |
+
+**거부 케이스 8종을 전수로 넣은 이유**: `startsWith` 한 줄이 방어의 전부라 우회 시도를 실제 문자열로 고정해야 의미가 있다. 검증한 것 — 임의 외부 도메인, **서브도메인 위장**(`discord.com.evil.test`), **인증정보 위장**(`discord.com@evil.test`), 평문 http, 경로 불일치(`/api/oauth2/`), **내부망 메타데이터 주소**(`169.254.169.254`), 로컬호스트, 빈 문자열. 8종 모두 `fetch` 호출 0회까지 확인했다 — **검증 전에 요청하면 응답을 안 쓰더라도 그 자체가 SSRF**이기 때문이다.
+
+**확인한 것 — 검증이 저장 경로에 실제로 걸려 있다**: `team.controller.ts:708-713`이 `validateWebhookUrl` → 실패 시 400 → `saveWebhookUrl` 순으로 호출한다. 서비스의 `saveWebhookUrl`은 검증을 전제하며 자체 검증은 하지 않는다.
+
+**텔레그램과의 비대칭 확인**: `unlinkTeam`이 텔레그램은 트랜잭션(chatId 제거 + 토큰 무효화)인데 디스코드는 단순 `update` 하나다. 디스코드는 연동 토큰 개념이 없어 무효화할 대상이 없으므로 정당한 차이다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
+---
+
+### C-8 결과 (2026-08-10) — team.service.ts 잔여 mutation
+
+**22케이스, 542 → 564/564 통과.** `team.service.ts` 70.49% → **80.74%**, 전체 51.39% → **52.66%**.
+
+| 대상 | 케이스 | 고정한 계약 |
+|---|---:|---|
+| `updateTask` (task.spec에 추가) | 12 | 3단 검증(멤버 → 존재 → `teamId` 대조) / **지정한 필드만 변경**(dto에 없는 키는 유지) / 빈 값(`''`·`null`)은 null로 지우기 — undefined(미지정)와 구분 / **`taskStatus`·`actStatus`는 이 API로 못 바꿈** / 알림 제목에 태스크명이 **안 붙음**(상태 변경과의 차이) |
+| `insertTeam` (신규 `team.service.team.spec.ts`) | 5 | **팀 + MASTER 멤버를 한 트랜잭션**(save 2회) / 생성자를 MASTER로 등록 / 멤버의 `teamId`는 **저장된 팀에서 취득**(DB 발번) / 트랜잭션 실패는 예외 전파 |
+| `updateTeam` | 7 | 멤버 아니면 조회 전 차단 / **역할 무관 — 모든 활성 멤버가 수정 가능**(현재 정책) / 팀 없으면 404 / 지정 필드만 변경 / 빈 설명은 null |
+
+**`insertTeam`의 트랜잭션이 왜 중요한가**: 팀 생성과 MASTER 멤버 등록이 갈라지면 "팀은 있는데 멤버가 아무도 없는" 상태가 된다. 모든 팀 API가 `verifyTeamMemberAccess`를 통과하지 못하므로 **생성자조차 접근할 수 없는 유령 팀**이 남고, 팀 삭제 API가 없어 수동 DB 조작 없이는 복구되지 않는다.
+
+**`updateTask`가 상태를 못 바꾸는 것도 계약이다**: `taskStatus`를 이 API로 바꿀 수 있으면 `updateTaskStatus`의 `completedAt` 자동 관리를 우회하게 되어 자동 아카이브(14일) 기준값이 어긋난다. DTO에 없는 필드를 억지로 넣어 호출해도 무시되는지 확인했다.
+
+**명시 고정 — `updateTeam`은 역할을 보지 않는다**: 초대 생성·역할 변경·멤버 상태는 관리 권한(MANAGER 이상)을 요구하는데 팀 이름·설명 수정만 **MEMBER도 가능**하다. 컨트롤러 Swagger도 "팀 멤버만 팀 정보를 수정할 수 있습니다"로 되어 있어 의도된 정책으로 판단하고 현재 동작을 고정했다. "MANAGER 이상"으로 바꾸려면 그 테스트가 먼저 깨진다.
+
+**🔴 발견 → ✅ 제거 완료 — `insertTeamMember`는 호출처가 0곳** (구 `team.service.ts:290-306`, 2026-08-10 제거)
+
+grep 전수 결과 **정의만 있고 호출하는 코드가 없었다**. 커버리지 미커버 구간에 포함된 것이 이를 뒷받침했다.
+
+**이력 추적 결과 — 태어날 때부터 죽어 있었다**: 도입 커밋 `43cac78`(2026-01-11, "/api/v1/teams")에서 **`insertTeam`의 트랜잭션 버전(`manager.create(TeamMember, ...)`)과 같은 커밋에 함께** 만들어졌고, 당시 컨트롤러도 이 메서드를 부르지 않았다. 팀 생성을 두 단계로 나눠 쓰려다 트랜잭션 방식으로 정리하면서 남은 잔재다.
+
+**지웠을 때 잃는 것이 없는 근거**: 멤버가 추가되는 경로는 두 곳뿐이고 둘 다 트랜잭션 안에서 직접 처리한다 — 팀 생성(`insertTeam`)과 초대 수락(`acceptTeamInvite`). 오히려 이 메서드는 **트랜잭션 밖에서 단독 INSERT**를 하므로, 썼다면 "팀은 만들어졌는데 멤버 등록만 실패" 같은 부분 적용 상태를 만들 수 있었다. `teamMemberRepository`는 다른 6곳에서 계속 쓰이므로 DI는 유지된다.
+
+이 세션에서 나온 세 번째 죽은 코드다(`isValidRole` 프로토타입 누수 → 수정, `verifyTeamInviteToken`의 도달 불가 분기 → 제거, `insertTeamMember` → 제거).
+
+---
+
+### C-9 결과 (2026-08-10) — Fishing 모듈 (마지막 0% 도메인)
+
+**91케이스, 564 → 639/639 통과.** `fishing-online.service.ts` 0% → **100%**, `fishing.gateway.ts` 0% → **99.11%**(미커버는 `afterInit` 로그 1줄), 전체 52.66% → **62.64%**.
+
+이로써 **Service·Guard·Filter·Gateway 전 계층이 완료**됐다. 남은 0%는 컨트롤러뿐이다.
+
+**`FishingOnlineService` (37케이스)** — 팀 프레즌스와 키 네임스페이스가 `fishing:` 프리픽스로 갈라져 있고, 유저당 **세 종류의 상태**(온라인·위치·낚시상태)를 함께 다룬다.
+
+| 계약 | 왜 중요한가 |
+|---|---|
+| **파이프라인 인덱스 매핑**(`i * 3`) | 유저 1명당 3개 명령(scard·hget position·hget state)을 넣고 오프셋으로 꺼낸다. 오프바이원이 나면 **A의 위치·낚시상태가 B에게 표시된다** — 예외도 로그도 없이. 2명×3필드를 실제 값으로 교차 검증했다 |
+| **완전 오프라인 시 위치·상태까지 삭제** | 온라인 해시만 지우면 **접속하지 않은 유령 캐릭터가 맵에 계속 서 있다**. `hdel` 3종 + `del` 1종을 전수 확인 |
+| 50명 절단 | 팀(100명)과 다른 상한. 잘라낸 만큼만 조회하는지(`scard` 50회)까지 확인 |
+| 깨진 위치 JSON 격리 | 한 명의 데이터 손상이 맵 전체 목록을 날리지 않는다 |
+| fire-and-forget | `updatePosition`·`updateFishingState`는 Redis 응답을 기다리지 않는다(이동은 초당 여러 번) |
+
+**`FishingGateway` (54케이스)** — `/teams`와 독립이며 **게스트도 접속한다**는 것이 가장 큰 차이다.
+
+| 계약 | 내용 |
+|---|---|
+| 신원 3분기 | 인증 유저 → 게스트 → 없음. **신원이 없으면 room에는 넣되 온라인 등록은 안 함**(관전만 가능) |
+| 조용한 무시 | `mapId` 미캐싱·신원 없음이면 move·상태·채팅·낚시결과 모두 **에러 없이 무시**. 공개 맵이라 차단이 아니라 무시가 정책(팀 채팅의 `CHAT_NOT_JOINED`와 대비) |
+| **브로드캐스트 우선** | `client.to().emit()`이 `updatePosition`보다 먼저 호출되는지 `invocationCallOrder`로 고정. 뒤집히면 Redis 지연이 그대로 게임 렉이 된다 |
+| emit 대상 구분 | 채팅만 `server.to`(본인 포함), 이동·낚시상태·**낚시결과**는 `client.to`(본인 제외 — 본인은 이미 UI에서 봤다) |
+| 입장 시 2종 전송 | 온라인 목록 + **전체 위치 스냅샷**. 목록만 보내면 새 접속자 화면에 캐릭터가 안 그려진다 |
+
+**작성 중 걸린 것**: `FishingStateDto.state`가 리터럴 유니온(`idle|casting|waiting|bite|challenge|success|fail`)이라 `'fishing'`은 **애초에 유효한 값이 아니었다**. 타입 체크가 잡아줘서 실제 상태값(`casting`)으로 고쳤다 — `pointId`도 number가 아니라 string이었다.
+
+이번 Phase도 **발견된 결함 없음**. 프로덕션 코드 변경 0건.
+
 ### 실행 체크리스트
 
 ```
-Service (10개):
-  [ ] AuthService, TeamService (핵심), OnlineUserService, FishingOnlineService
-  [ ] SchedulerService, NotificationService, TelegramService, DiscordService
-  [ ] FileShareService, UsersService (기존 spec 보완)
+Guard/Filter (6개): ✅ 완료 (2026-08-05, 78케이스)
+  [✓] JwtAuthGuard (14), OptionalJwtAuthGuard (7), WsJwtGuard (11), FishingWsGuard (16)
+  [✓] HttpExceptionFilter (21), WsExceptionFilter (9)
 
-Controller (8개, 33 엔드포인트):
-  [ ] TeamController (24), AuthController (1), UsersController (2)
-  [ ] TelegramController (1), FileShareController (2)
-  [ ] MainController (1), HealthController (1), UsersController-auth (1)
+권한 정책 (순수 함수): ✅ 완료
+  [✓] role.constants — 27조합 전수 (64케이스) + isValidRole 프로토타입 누수 버그 수정
 
-Guard/Filter (6개):
-  [ ] JwtAuthGuard, OptionalJwtAuthGuard, WsJwtGuard, FishingWsGuard
-  [ ] HttpExceptionFilter, WsExceptionFilter
+Service: ✅ 완료 (TeamService 조회 계열만 의도적 제외)
+  [✓] AuthService (22, 100%), SchedulerService (21, 97.87%)
+  [✓] UsersService (5, 100%), FileShareService (6, 100%)
+  [✓] NotificationAdapter (7, 100%), TelegramService (47, 100%), DiscordService (37, 100%)
+  [✓] OnlineUserService (41, 100%), FishingOnlineService (37, 100%)
+  [~] TeamService (81.25%) — 초대·토큰(37) + 역할(18) + 멤버 상태(23) + 태스크(37) + 댓글(30) + 팀 CRUD(12)
+      의도적 제외: 조회 계열(getTeamMembersBy·getTeamTasksBy 조립, getTasksByTeamId 등)
+      — QueryBuilder 조립 검증이 주가 되어 가치 낮음 판정 (C-2에서 결정)
 
-Gateway (8개):
-  [ ] TeamGateway (joinTeam, leaveTeam)
-  [ ] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult)
+Gateway (2개): ✅ 완료
+  [✓] TeamGateway (joinTeam, leaveTeam, chatMessage + 브로드캐스트 10종) — 46케이스, 99.3%
+  [✓] FishingGateway (joinMap, leaveMap, move, fishingState, chatMessage, catchResult) — 54케이스, 99.11%
+
+Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결정 필요
+  [✓] UsersController (100%)
+  [ ] TeamController (24 엔드포인트), AuthController, TelegramController
+  [ ] FileShareController, MainController, HealthController
 ```
+
+**남은 작업** (2026-08-12 기준)
+
+| # | 항목 | 판단 |
+|:-:|---|---|
+| 1 | **Controller 8개** (0%, `team.controller.ts` 858줄 포함) | 로직이 거의 없이 서비스 위임이라 단위 테스트 효용이 낮다. 값이 나오는 건 **E2E(D6)** 다 — 진행 여부는 사용자 결정 |
+| 2 | **수동 E2E 4건** (인증 필요, AI 검증 불가) | 비멤버의 태스크 생성 403 / 탈퇴자의 댓글 수정·삭제 403 / WS `joinTeam` 인증 차단 |
+| 3 | TeamService 조회 계열 | 의도적 제외 — 위 체크리스트 참조 |
+
+**착수 순서 이력**: C-3~C-9는 "비용 대비 보안·회귀 효과順"으로 실측 기준을 잡아 진행했고 8단계 모두 완료했다. 각 단계의 근거와 발견 사항은 아래 C-N 결과 절에 있다.
 
 ---
 
@@ -399,6 +776,7 @@ Gateway (8개):
 ## D6. E2E 테스트 작성
 
 - **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟡 중간 | **선행**: D2 완료
+- **상태**: 🔄 **진행 중** — 인프라 구축 + 접근 제어 플로우 완료 (2026-08-12, 10케이스). 나머지 플로우는 미착수
 
 ### E2E 전략
 
@@ -435,11 +813,175 @@ Gateway (8개):
 
 ### 실행 체크리스트
 ```
-[ ] test/jest-e2e.json, 인증 우회/포함 모듈
-[ ] health-check.e2e-spec.ts (인프라 검증용)
-[ ] auth, team, task, invitation, comment, file-share
-[ ] WS: team-gateway, fishing-gateway
+인프라: ✅ 완료 (2026-08-12)
+  [✓] supertest + @types/supertest 설치
+  [✓] test/jest-e2e.json (rootDir=.., testRegex=.e2e-spec.ts, tsconfig paths 매핑)
+  [✓] package.json에 test:e2e 스크립트
+  [✓] test/helpers/e2e-app.ts — 앱 조립 + main.ts 전역 설정 재현 + JwtAuthGuard override
+  [✓] main.e2e-spec.ts (인프라 검증 3케이스 — prefix·응답 포맷·에러 필터)
+
+  [✓] test/setup/forbid-db.ts — oracledb 드라이버 차단 가드레일 (setupFiles 등록)
+  [✓] forbid-db.e2e-spec.ts — 가드레일이 살아 있는지 검증 (3케이스)
+
+플로우:
+  [✓] 접근 제어 (7케이스) — 비멤버 태스크 생성 403, 탈퇴자 댓글 수정·삭제 403,
+      정상 경로 대조 2건, ValidationPipe 422 2건
+  [✓] auth (10케이스) — 신규 가입/기존 로그인, **발급 토큰으로 보호된 API 접근(왕복)**,
+      토큰 없음·위조 401, 카카오 실패 502, 검증 422
+  [✓] 초대·연동 (12케이스) — 초대 생성 권한 3역할, **OptionalJwtAuthGuard 3분기**,
+      **requireManagerAccess(컨트롤러 전용 권한) 4역할**
+  [✓] 파일 공유 (18케이스) — API Key 인증(쿼리·헤더 2방식), **경로 탐색 방어 5종**,
+      공유 격리, 스트리밍 다운로드
+  [✓] WS 팀 게이트웨이 (12케이스) — 소켓 인증 5, 채팅 분기 2, **room 격리 3**, 퇴장 2
+  [✓] WS 낚시 게이트웨이 (14케이스) — 게스트 허용 5, **emit 대상 4**, 맵 격리 2, 미참가 2, 퇴장 1
+  [ ] team CRUD, health-check (이미 덮인 로직의 반복 — 가치 낮음 판정)
 ```
+
+### 결과 (2026-08-12) — 인프라 + 접근 제어
+
+**10케이스 통과.** 단위 테스트(639)와 별도 실행(`pnpm test:e2e`).
+
+**AppModule을 쓰지 않는 이유**: `AppModule`은 `TypeOrmModule.forRootAsync`를 import하므로 **부팅만으로 Oracle 접속을 시도**한다. LOCAL/PROD가 같은 상용 DB인 이 프로젝트에서는 테스트가 상용에 붙는 사고가 된다. 그래서 전략 A대로 필요한 컨트롤러만 조립하고 Repository를 mock으로 끊었다.
+
+**대신 HTTP 파이프라인은 프로덕션과 동일하게 재현한다** — 그게 E2E의 존재 이유다.
+
+| 재현한 것 | 방법 |
+|---|---|
+| `ValidationPipe` | **AppModule과 같은 팩토리 공유** (`src/common/pipes/global-validation-pipe.ts`로 추출) |
+| `HttpExceptionFilter` | `APP_FILTER` provider |
+| `cookieParser`, `setGlobalPrefix('api/v1')` | main.ts와 동일 |
+
+재현하지 않은 것: helmet·compression(응답 본문 무관), CORS(같은 프로세스), `CustomThrottlerGuard`(rate limit이 테스트를 깨뜨림).
+
+**ValidationPipe 설정을 추출한 이유**: E2E가 프로덕션과 다른 설정으로 검증하면 통과해도 통과가 아니다. 특히 `forbidNonWhitelisted`가 빠지면 "허용되지 않은 필드 거부" 테스트가 거짓 통과한다. 한 곳에서만 정의하도록 `AppModule`도 이 팩토리를 쓰게 고쳤다.
+
+**얻은 것 — 수동 검증 3건의 자동화**: 이번 세션에 고친 접근 제어는 "인증이 필요해 사람이 직접 확인해야 하는" 상태로 남아 있었다. 서비스 단위 테스트는 메서드를 직접 호출하지만 실제 사용자는 HTTP로 들어오고 그 사이에 가드·파이프·필터가 있다. 그 조합이 실제로 403을 돌려주는지를 이제 자동으로 확인한다.
+
+**작성 중 확인한 실제 계약**: 검증 실패는 **400이 아니라 422**(`VALIDATION_ERROR`)다. 처음에 400으로 기대했다가 실패해서 확인했고, 프론트도 422/`VALIDATION_ERROR`로 매핑하고 있었다(`next-bun/src/types/api.ts:28,60`).
+
+---
+
+### 결과 (2026-08-12) — DB 차단 가드레일 + 인증 플로우
+
+**13케이스 추가, 총 23케이스 통과.**
+
+**🔒 DB 차단 가드레일** (`test/setup/forbid-db.ts`, `setupFiles`에 등록)
+
+"지금 DB에 안 붙는다"와 "앞으로도 안 붙는다"는 다르다. 누군가 `AppModule`을 그대로 import하는 E2E를 추가하면 `TypeOrmModule.forRootAsync`가 부팅 중 **상용 DB에 커넥션 풀을 만든다**. 그래서 드라이버(oracledb) 레벨에서 `getConnection`·`createPool`·`initOracleClient`를 throw로 막았다 — TypeORM이 어떤 경로로 연결을 시도하든 결국 이 드라이버를 거치므로 가장 아래에서 한 번 막는 것이 확실하다.
+
+가드레일은 스스로를 검증하지 못하므로 `forbid-db.e2e-spec.ts`(3케이스)로 **살아 있는지 확인**한다. `setupFiles` 등록이 지워지면 이 테스트가 먼저 깨진다.
+
+**DB 무관 실측**: 접속 정보를 전부 잘못된 값으로 바꾸고(`ORACLE_DB_USER=INVALID`, `ORACLE_DB_CONNECT_STR=nonexistent-host.invalid:9999/NOPE`, `REDIS_HOST=…`, `JWT_SECRET=`) 실행해도 23/23 통과한다. 실제 연결을 시도했다면 여기서 깨진다.
+
+**인증 플로우** (`auth.e2e-spec.ts`, 10케이스) — 이 스펙만 `useRealAuthGuard: true`로 **진짜 가드**를 태운다.
+
+핵심은 **"발급한 토큰으로 보호된 API에 실제로 접근되는가"** 다. `auth.service.spec.ts`는 토큰 payload를, `jwt-auth.guard.spec.ts`는 가드 로직을 각각 검사하지만 **둘이 맞물리는지는 아무도 확인하지 않았다.** 발급 쪽이 `sub`를 빼거나 서명 비밀이 어긋나면 "로그인은 성공하는데 그 토큰으로 아무것도 못 하는" 상태가 되고, 단위 테스트는 양쪽 다 통과한다. 로그인 → 토큰 획득 → `Authorization: Bearer`로 `/users/me` 접근까지 한 테스트에서 왕복시켰다.
+
+그 외: 신규 가입 시 기본 표시명, 기존 로그인 시 **중복 계정 미생성**(`save` 미호출), 토큰 없음·위조 401, 카카오 거부 502, 검증 실패 422, 권한 필드(`isAdmin`) 주입 차단.
+
+**작성 중 걸린 것**: `AuthService.getUserBy`는 QueryBuilder가 아니라 `find({ where })`를 쓴다. QueryBuilder로 mock했다가 500이 나서 실제 구현을 확인하고 고쳤다.
+
+---
+
+### 결과 (2026-08-12) — 초대·연동 권한 경계
+
+**12케이스 추가, 총 35케이스 통과.** 여기서만 확인되는 것 두 가지를 노렸다.
+
+**1. `OptionalJwtAuthGuard`의 3분기** — 초대 수락은 **비회원도 호출할 수 있는 유일한 팀 API**다. E2E 헬퍼가 override하는 것은 `JwtAuthGuard`뿐이라 이 가드는 **실제로 동작**한다.
+
+| 인증 상태 | 기대 동작 |
+|---|---|
+| 토큰 없음 | 가드는 익명 통과 → **서비스가 401**(회원가입 필요) |
+| 유효한 토큰 | `userId`를 실어 가입 처리로 |
+| **잘못된 토큰** | **익명이 아니라 차단(401)** |
+
+세 번째가 핵심이다. 잘못된 토큰을 익명으로 취급하면 **만료된 세션이 조용히 비회원으로 격하**된다. 가드 단위 테스트(7케이스)가 이미 있지만, 실제 라우트에 그 가드가 붙어 있는지는 E2E만 안다.
+
+**2. 컨트롤러에만 있는 권한 로직** — `requireManagerAccess`는 `TeamService`가 아니라 **`TeamController`의 private 메서드**이고 텔레그램·디스코드 연동 4곳에서 쓰인다. 서비스 단위 테스트로는 원리적으로 덮이지 않는 영역이라 지금까지 **어떤 테스트도 검증하지 않았다.** MASTER·MANAGER 허용 / MEMBER·비멤버 차단 4조합을 고정했고, 차단 시 `generateLinkToken`이 호출되지 않는 것까지 확인했다 — 권한이 없으면 토큰을 만들어서도 안 된다.
+
+뚫렸다면 일반 멤버가 팀의 알림 채널을 임의로 연동·해제할 수 있었다.
+
+---
+
+### 결과 (2026-08-12) — 파일 공유 + 🔴 **느슨한 기대값이 테스트를 무력화한 사례**
+
+**18케이스 추가, 총 53케이스 통과.**
+
+파일 공유는 **JWT가 아닌 별도 인증**(shareId + apiKey)을 쓰는 유일한 경계이고, 가드가 아니라 컨트롤러가 직접 검사한다. 쿼리스트링·헤더 2방식을 모두 지원하는 것도 계약이라 함께 고정했다(한쪽만 되면 연동 클라이언트가 깨진다).
+
+**🔴 처음 작성한 경로 탐색 테스트는 아무것도 검증하지 못했다**
+
+```ts
+// 처음 쓴 것 — 통과했지만 무의미했다
+expect([403, 404]).toContain(res.status);
+```
+
+방어를 **통째로 제거하고 mutation을 돌렸더니 16/16 그대로 통과했다.** 원인은 403(거부)과 404(파일 없음)를 함께 허용한 것이다. 이 API의 방어는 3중인데,
+
+1. `path.basename(filename)` — **무해화** (경로를 파일명으로 축약)
+2. `safeFilename !== filename || includes('..')` — 탐지 후 403
+3. `resolve().startsWith(shareDir)` — 최종 확인
+
+2·3을 제거해도 1이 남아 `shared/{id}/../../package.json`이 `shared/{id}/package.json`으로 축약돼 **404가 난다.** 404를 허용한 순간 "방어 작동"과 "방어 없이 우연히 못 찾음"이 구분되지 않았다.
+
+**실측으로 확인한 실제 동작** (프로브 스펙을 임시로 띄워 측정):
+
+| 상태 | `..%2f..%2fpackage.json` 응답 |
+|---|---|
+| 방어 있음 | **403 `FILE_SHARE_FORBIDDEN`** |
+| 방어 제거 | 404 `FILE_SHARE_FILE_NOT_FOUND` (컨트롤러까지는 도달) |
+
+**수정**: `expect(res.status).toBe(403)` + `code` 확인으로 좁히고, "탈출 경로로 실제 파일을 읽어내지 못한다"(응답에 `devDependencies` 문자열이 없어야 함)를 추가했다. 고친 뒤 같은 mutation을 다시 걸어 **탐지·거부 제거 시 6건 실패 / 무해화까지 제거 시 4건 실패**로 실제 검출을 확인했다.
+
+**교훈**: 상태 코드를 `toContain([...])`으로 느슨하게 받으면 그 차이가 곧 방어의 유무일 때 테스트가 조용히 무력해진다. **에러 경로는 status와 code를 정확히 고정**해야 한다. 이번엔 mutation을 돌려서 발견했지만, 안 돌렸으면 "경로 탐색 방어 검증됨"이라고 잘못 보고할 뻔했다.
+
+**부수**: `shared/`가 `.gitignore`에 없었다. LOCAL 실행 시 앱이 자동 생성하는 런타임 디렉토리인데 누락돼 있어 추가했다(E2E도 이 경로를 쓴다 — mock하면 경로 해석 검증이 무의미해지므로 실제 파일시스템을 쓰고 끝나면 지운다).
+
+---
+
+### 결과 (2026-08-12) — WS 팀 게이트웨이 (실제 소켓)
+
+**12케이스 추가, 총 65케이스 통과.** `test/helpers/ws-e2e-app.ts` 신설.
+
+**HTTP E2E와 다른 점**: supertest는 `getHttpServer()`에 요청을 주입하지만 소켓은 진짜 핸드셰이크가 필요해 **실제로 포트를 연다**(`listen(0)` → OS가 빈 포트 배정). Redis는 쓰지 않는다 — `RedisIoAdapter`는 멀티 레플리카 브로드캐스트용이고 단일 프로세스 테스트에는 Socket.IO 기본 어댑터로 충분하다. **가드도 override하지 않는다** — WS 인증이 실제 소켓 위에서 동작하는지가 검증 대상이기 때문이다.
+
+**여기서만 확인되는 것 2가지**
+
+**1. 수동 검증 대기의 마지막 항목 해소** — 세션에서 고친 `joinTeam` 인증 차단이 실제 소켓에서 동작한다. 부수적으로 중요한 사실도 고정했다: **NestJS의 WS 가드는 연결이 아니라 메시지 핸들러에 걸린다.** 토큰 없이도 `connect`는 성공하므로 "붙었으니 인증됐다"고 착각하면 안 되고, `joinTeam` 시점에 `AUTH_UNAUTHORIZED`로 막힌다.
+
+**2. room 격리 — 단위 테스트로는 원리적으로 불가능한 검증**. mock은 `server.to(room)`이 **호출됐다는 것**만 알 뿐 **누구에게 도달했는지**는 모른다. 팀 A·B 소켓을 각각 붙여 A의 태스크 생성·채팅이 B에게 **가지 않는 것**을 실측했다.
+
+**검증력 측정**: `server.to(roomName).emit(...)` → `server.emit(...)`(전체 브로드캐스트)로 무력화하니 **격리 2건이 정확히 실패**했다. 도달 여부를 진짜로 보고 있다는 뜻이다.
+
+**플레이키 확인**: 타이밍 의존이라 3회 반복 실행해 12/12 일관 통과를 확인했다. 이벤트 대기에 명시적 타임아웃(3초)을 두고, "오면 안 되는 이벤트"는 관찰 창(300ms)을 둔 뒤 판정하며, `afterEach`에서 소켓·서버를 모두 닫아 Jest 열린 핸들 경고가 없다.
+
+---
+
+### 결과 (2026-08-12) — WS 낚시 게이트웨이
+
+**14케이스 추가, 총 79케이스 통과.** WS 인프라를 그대로 재사용했다(네임스페이스만 `/fishing`).
+
+`/teams`와 **정반대 정책**이 핵심이다 — 게스트도 그냥 붙어서 논다. 토큰이 없거나 잘못돼도 거부하지 않고 게스트로 강등한다.
+
+| 검증 | 왜 E2E여야 하는가 |
+|---|---|
+| **게스트 강등** | 가드가 토큰 실패를 삼키고 음수 `guestId`를 부여하는 전 과정이 실제 소켓 위에서 일어나는지 |
+| **음수 guestId** | 양수면 실제 회원 ID와 겹쳐 **남의 캐릭터를 덮어쓸 수 있다** |
+| **emit 대상** | 이동은 `client.to`(본인 제외), 채팅은 `server.to`(본인 포함), 낚시결과는 `client.to`로 **의도적으로 갈라져 있다.** mock은 어느 메서드를 불렀는지만 알지만 여기서는 "본인에게 왔는가/안 왔는가"를 직접 본다 |
+| 맵 격리 | 맵 A의 이동·채팅이 맵 B에 도달하지 않는지 |
+| 미참가 무시 | 팀 채팅은 `CHAT_NOT_JOINED`로 알려주지만 **공개 맵은 차단이 아니라 무시**가 정책 |
+
+**검증력 측정**: 두 가지를 무력화해 확인했다 — 이동을 `server.to`(본인 포함)로 바꾸고, `guestId`를 양수로 바꾸니 **정확히 2건이 실패**했다. 각각 "이동은 본인에게 되돌아오지 않아야 함", "게스트에게는 음수 ID를 줘야 함"이다.
+
+**플레이키 확인**: 3회 반복 14/14 일관 통과, 열린 핸들 경고 없음.
+
+---
+
+### D6 현황 (2026-08-12)
+
+**79케이스 / 8 suites.** 인프라(HTTP + WS) 구축 완료, 주요 플로우 6개 완료.
+
+남은 `team CRUD`·`health-check`는 **이미 덮인 로직의 반복**이라 가치가 낮다고 판단했다 — 팀 CRUD의 접근 제어·검증은 `team-access-control`에서, 응답 포맷과 예외 필터는 `main`에서 이미 확인된다. `health-check`는 terminus의 DB ping이 전부라 mock하면 검증할 것이 남지 않는다.
 
 ---
 
@@ -447,7 +989,7 @@ Gateway (8개):
 
 - **난이도**: 보통 | **효과**: 보통 | **위험도**: 🟡 중간 | **범위**: 3~5파일
 
-> **레퍼런스 프로젝트 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
+> **선행 구현 검증**: MySQL에서 정상 운영. **Oracle 미검증**.
 
 ### 현재 트랜잭션 사용 (전수 확인 — 4곳)
 
@@ -487,7 +1029,7 @@ Gateway (8개):
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 4파일
 - **선행**: 없음 (독립 실행 가능)
 
-> **레퍼런스 패턴**: TypeScript enum + const object as const + Record 변환 테이블 3가지 병용. 이 프로젝트는 이미 `ROLE_HIERARCHY` const object 패턴을 사용 중이므로, 기존 패턴을 유지하면서 문자열 리터럴만 상수 참조로 교체.
+> **검증된 패턴**: TypeScript enum + const object as const + Record 변환 테이블 3가지 병용. 이 프로젝트는 이미 `ROLE_HIERARCHY` const object 패턴을 사용 중이므로, 기존 패턴을 유지하면서 문자열 리터럴만 상수 참조로 교체.
 
 ### 현재 문제 (전수 확인)
 
@@ -1141,7 +1683,7 @@ export const LOG_ROTATION_COUNT = 7;
 
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 2파일
 - **상태**: 추후 — 목록 API 확장 시 적용
-- **참고**: 레퍼런스 프로젝트에서 `PaginationQueryDto` + `PaginationMeta` 패턴 운영 중
+- **참고**: 선행 구현에서 `PaginationQueryDto` + `PaginationMeta` 패턴 운영 중
 
 ### 구현 방법
 
@@ -1386,15 +1928,15 @@ Phase 1~4 — 완료 (15개)
   [✓] uncaughtException/unhandledRejection 핸들러 추가
   [✓] pino-http transport.targets 호환성 수정 (formatters.level 분리)
 
-Phase 5 — 작업 목록 (완료 13 + 미완료 21 + 보류 2)
-  [ ] D2  테스트 인프라 구축 (패키지, Factory, Helper)
+Phase 5 — 작업 목록 (완료 15 + 미완료 19 + 보류 2)
+  [✓] D2  테스트 인프라 구축 — Factory·Mock 헬퍼 표준 + 기존 테스트 정비 + 툴체인 정합화 (2026-08-05, 38/38 통과)
   [✓] D3  Port/Adapter — NotificationPort 완료
   [✓] D7  매직 문자열 enum화 — MANAGEMENT_ROLES 교체 + LoginType 타입 적용
   [✓] D11 ESLint 설정 — Flat Config + Prettier + 경고 0건 달성
   [✓] D9  응답 압축 — compression 미들웨어 적용 완료
   [✓] D12 Express 흔적 제거 — express-async-errors, swagger-jsdoc, data-source.ts 삭제
   [✓] D13 NestJS 비정석 수정 — process.env→ConfigService, WsExceptionFilter DI 전환
-  [ ] D5  단위 테스트 (Service 10 + Controller 9 + Guard/Filter 6 + Gateway 8)
+  [ ] D5  단위 테스트 — 🔄 Guard/Filter 6 + Service 5 + 권한 정책 완료 (2026-08-05, 273/273 통과 / 커버리지 27.97%). Controller·Gateway·나머지 Service 잔여
   [ ] D1  TeamService 분리 (1520줄 → 3~4 서비스)
   [ ] D6  E2E 테스트 (Mock Repository, HTTP 7플로우 + WS 2플로우)
   [ ] D4  typeorm-transactional (Oracle 호환성 확인 필요)
@@ -1409,7 +1951,7 @@ Phase 5 — 작업 목록 (완료 13 + 미완료 21 + 보류 2)
   [ ] D20 Swagger 리다이렉트 NestMiddleware 전환
   [ ] D21 파일 다운로드 에러 응답 통일 (D19 완료 시 자동 해결)
   [ ] D22 TelegramService 비관적 락 (verifyAndLinkTeam에 pessimistic_write 추가)
-  [ ] D23 토큰 Unique Index — 마이그레이션·Entity 작성 완료, 담당자 up 실행 잔여 (2026-07-31)
+  [✓] D23 토큰 Unique Index — jti 선행 수정 + 인덱스 2개 생성 완료 (2026-08-05)
   [ ] D24 하드코딩 설정값 → ConfigService (online-user, scheduler, cors)
   [ ] D25 DTO 검증 누락 보완 (5개 DTO)
   [ ] D26 중복 Controller 클래스명 수정 (auth/UsersController → AuthUsersController)
@@ -1489,7 +2031,7 @@ await this.dataSource.transaction(async (manager) => {
 ## D23. TeamInvitation 토큰 Unique Index 활성화
 
 - **난이도**: 쉬움 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: Entity 2파일 + 마이그레이션 1개
-- **상태**: ⏳ **구현 완료** (2026-07-31) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개. **잔여: 담당자 `pnpm db:migrate:up` 실행**
+- **상태**: ✅ **완료** (2026-08-05) — 마이그레이션 `1785464744654-AddTokenUniqueIndexes.ts` + Entity 2개 + jti 선행 수정(`02aefd8`). 배포 후 `db:migrate:up` 실행 완료
 - ⚠️ 원안은 "DDL 직접 실행"이었으나 D33 이후 **마이그레이션 파일로 수행**하도록 변경됨
 
 ### 현재 문제 (`TeamInvitation.ts:19`)
@@ -1553,8 +2095,7 @@ CREATE UNIQUE INDEX IDX_INVITE_TOKEN ON TEAM_INVITATIONS(TOKEN);
 [✓] TelegramLink.ts: @Index 신규 추가
 [✓] team.service.ts: JWT payload에 jti(nonce) 추가 — 동일 초 중복 토큰 차단 (리뷰에서 발견)
 [✓] pnpm build + lint 통과 (에러 0건), 마이그레이션 클래스 로드 확인
-[ ] 담당자: pnpm db:migrate:up 실행 → 인덱스 2개 생성 확인
-[ ] 초대 생성 1회 수동 테스트 (인덱스 적용 후 정상 동작)
+[✓] 담당자: pnpm db:migrate:up 실행 (2026-08-05) — 실측 확인: IDX_INVITE_TOKEN / IDX_TELEGRAM_LINK_TOKEN 둘 다 TOKEN에 UNIQUE로 생성, 이력 3건
 ```
 
 ---
@@ -2004,7 +2545,7 @@ async updateProfile(userId: number, dto: UpdateUserDto) {
 - **난이도**: 보통 | **효과**: 높음 | **위험도**: 🟡 중간 | **범위**: 신규 파일 2~3개 + package.json + CLAUDE.md
 - **상태**: ✅ **완료 (2026-07-23)** — init 베이스라인 fake 등록까지 완료. 이후 모든 스키마 변경은 Entity 수정 + 마이그레이션 파일 세트로 수행
 - **선행**: 없음 (독립) | **후속 연계**: D34(Entity↔DB 정합화), D23(토큰 Unique Index), D27(TaskComment PK) — 도입 후 DB DDL 작업은 마이그레이션으로 수행
-- **참고 구현**: 사내 NestJS 레퍼런스 프로젝트 — `migration-datasource.ts` + `db:migrate:*` 스크립트 + init 풀 덤프 패턴 (MySQL, TypeORM 0.3.28 동일 버전)
+- **참고 구현**: `migration-datasource.ts` + `db:migrate:*` 스크립트 + init 풀 덤프 패턴 (MySQL, TypeORM 0.3.28 동일 버전)
 
 ### 배경
 
@@ -2018,8 +2559,8 @@ async updateProfile(userId: number, dto: UpdateUserDto) {
 |------|------|------|
 | init 스키마 소스 | **실제 DB DDL 덤프** (`DBMS_METADATA.GET_DDL`) | Entity↔실 DB 드리프트(D27 등) 존재 → 실 DB가 source of truth |
 | 베이스라인 등록 | **`migration:run --fake`** | 기존 DB에 init 실행 없이 이력만 기록. 실 DB 변경은 이력 테이블 생성 + 행 1개뿐 |
-| 이후 작성 방식 | **수동 작성 only** (`migration:create`) | generate는 live DB(=상용) 대조라 드리프트 노이즈 발생. 레퍼런스 컨벤션 동일 |
-| 실행 주체 | **담당자가 CLI 수동 실행** | LOCAL/PROD 동일 DB → 모든 `up`이 곧 상용 적용. **AI는 마이그레이션 파일 작성까지만** (레퍼런스 규칙 이식) |
+| 이후 작성 방식 | **수동 작성 only** (`migration:create`) | generate는 live DB(=상용) 대조라 드리프트 노이즈 발생. 일반 컨벤션 동일 |
+| 실행 주체 | **담당자가 CLI 수동 실행** | LOCAL/PROD 동일 DB → 모든 `up`이 곧 상용 적용. **AI는 마이그레이션 파일 작성까지만** (선행 구현 규칙 이식) |
 | 앱 자동 실행 | **금지** (`migrationsRun: false`, 런타임 설정에 migrations 키 자체를 두지 않음) | Swarm 3 replicas — 동시 기동 시 중복 실행 위험 |
 | Entity 정합화 | **DB 기준으로 Entity 수정** — 런타임 영향 항목만(D27 등), init 이후 별도 진행 | 실 데이터를 가진 DB가 source of truth. 인덱스·트리거·FK 등 DB 전용 객체는 Entity 선언 불요 (generate 미사용이라 효과 없음) |
 
@@ -2071,21 +2612,21 @@ export default new DataSource({
 
 - `DBMS_METADATA.GET_DDL`로 8개 테이블 + 인덱스 + 시퀀스 + 제약조건 추출 (read-only 쿼리)
 - `up()`: 추출한 DDL을 `queryRunner.query(...)` raw SQL로 나열
-- `down()`: **빈 함수** — 편도 베이스라인 (레퍼런스 init과 동일 설계)
+- `down()`: **빈 함수** — 편도 베이스라인 (선행 구현 init과 동일 설계)
 - 기존 운영 DB에는 `pnpm db:migrate:fake`로 이력만 기록 (실행 안 함)
 
 **4. 운영 규칙 (CLAUDE.md에 반영)**
 
-- 신규 마이그레이션은 **멱등 작성** — Oracle은 `USER_TAB_COLUMNS`/`USER_INDEXES`/`USER_CONSTRAINTS` 존재 체크 (레퍼런스(MySQL)의 `INFORMATION_SCHEMA` 가드에 대응)
-- 파일명 컨벤션 최초부터 고정: `<timestamp>-PascalCase.ts` (레퍼런스는 도중에 camelCase→PascalCase로 바뀜 — 반면교사)
+- 신규 마이그레이션은 **멱등 작성** — Oracle은 `USER_TAB_COLUMNS`/`USER_INDEXES`/`USER_CONSTRAINTS` 존재 체크 (MySQL 환경의 `INFORMATION_SCHEMA` 가드에 대응)
+- 파일명 컨벤션 최초부터 고정: `<timestamp>-PascalCase.ts` (선행 구현은 도중에 camelCase→PascalCase로 바뀜 — 반면교사)
 - init 제외 모든 마이그레이션은 `down()` 작성 의무
 - **`up`/`revert` 실행은 담당자 직접 — AI·자동화 도구가 임의 실행 금지**
 
-### ⚠️ Oracle 특이사항 (레퍼런스(MySQL)와의 차이)
+### ⚠️ Oracle 특이사항 (MySQL 환경과의 차이)
 
 - **DDL 비트랜잭션** (자동 커밋): 실패 시 부분 적용 상태로 남음 → 마이그레이션 1개 = 1목적으로 잘게 쪼개기 + 멱등 가드 필수. `migrationsTransactionMode`는 DDL에 무의미
 - **식별자 대문자**: 이력 테이블명은 `TYPEORM_MIGRATIONS` 대문자 — 기존 테이블(USERS, TEAMS 등) 컨벤션 일치, 수동 조회 시 따옴표 불필요
-- **QA DB 없음**: 레퍼런스는 QA 선적용 후 상용 적용이 가능하지만 여긴 LOCAL/PROD 동일 DB → 실행 전 코드 리뷰가 유일한 안전망
+- **QA DB 없음**: 선행 구현은 QA 선적용 후 상용 적용이 가능하지만 여긴 LOCAL/PROD 동일 DB → 실행 전 코드 리뷰가 유일한 안전망
 - **thick client**: CLI DataSource에도 wallet init 필요 (런타임 `app.module.ts:90` 로직과 동일하게)
 - **`migration:show`(=db:migrate:list)도 첫 실행 시 이력 테이블을 자동 생성** — TypeORM `MigrationExecutor.showMigrations()`가 `createMigrationsTableIfNotExist()`를 호출 (소스 확인). 따라서 **list 포함 모든 `db:migrate:*` DB 접속 명령은 담당자가 직접 실행**
 

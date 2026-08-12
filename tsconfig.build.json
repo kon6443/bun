@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  // include는 tsconfig.json에서 상속된 "src/**/*" — migrations/·migration-datasource.ts는
+  // 애초에 대상이 아니므로 여기서 제외할 필요가 없다.
+  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts", "**/__spec__/**"]
+}

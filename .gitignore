@@ -16,3 +16,15 @@ dist/
 logs/
 # Claude Code 로컬 설정 백업
 .claude/settings.local.json.bak-*
+.claude/settings.json.bak*
+
+# 세션 핸드오프 스냅샷 (PreCompact 훅 산출물)
+# 사용자 요청 원문·명령 이력·작업 트리가 담긴다. 시크릿은 마스킹되지만
+# 업무 맥락·내부 경로는 그대로 남으므로 공개 저장소에 커밋하지 않는다.
+docs/handoff/
+
+# 테스트 커버리지 리포트 (pnpm test:cov 산출물)
+coverage/
+
+# 파일 공유 런타임 디렉토리 (LOCAL 실행 시 자동 생성, E2E도 사용)
+shared/

@@ -136,18 +136,28 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       this.logger.debug(`팀 참가 요청: teamId=${teamId}, userId=${userId}, socketId=${client.id}`);
 
+      // 인증 정보 확인
+      // WsJwtGuard가 앞단에서 막지만, 팀 격리를 가드 한 겹에만 의존하지 않는다 —
+      // @UseGuards가 빠지면 아무나 임의 팀 room에 들어가 모든 이벤트를 수신하게 된다.
+      // HTTP 경로가 가드 + verifyTeamMemberAccess 2겹인 것과 같은 구조를 맞춘다.
+      if (!userId) {
+        this.logger.warn(`팀 참가 거부: 인증 정보 없음 socketId=${client.id}`);
+        throw new WsException({
+          code: 'AUTH_UNAUTHORIZED',
+          message: '인증이 필요합니다.',
+        });
+      }
+
       // 팀 멤버십 검증
-      if (userId) {
-        try {
-          await this.teamService.verifyTeamMemberAccess(teamId, userId);
-        } catch (_error) {
-          this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
-          // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
-          throw new WsException({
-            code: 'FORBIDDEN',
-            message: '해당 팀에 접근 권한이 없습니다.',
-          });
-        }
+      try {
+        await this.teamService.verifyTeamMemberAccess(teamId, userId);
+      } catch (_error) {
+        this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
+        // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
+        throw new WsException({
+          code: 'FORBIDDEN',
+          message: '해당 팀에 접근 권한이 없습니다.',
+        });
       }
 
       const roomName = this.getRoomName(teamId);
@@ -157,44 +167,42 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       client.data.teamId = teamId;
 
       // 온라인 유저에 추가
-      if (userId) {
-        const userName = getDisplayName(client.data.user?.userName, userId);
+      const userName = getDisplayName(client.data.user?.userName, userId);
 
-        const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
-          teamId,
-          userId,
-          userName,
-          client.id,
-        );
+      const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
+        teamId,
+        userId,
+        userName,
+        client.id,
+      );
 
-        // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
-        this.onlineUserService.trackActiveTeam(teamId);
+      // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
+      this.onlineUserService.trackActiveTeam(teamId);
 
-        const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
-        if (userInfo) {
-          const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
+      const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
+      if (userInfo) {
+        const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
 
-          // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
-          if (!wasAlreadyOnline) {
-            const payload: UserJoinedPayload = {
-              teamId,
-              userId,
-              userName,
-              connectionCount: userInfo.connectionCount,
-              totalOnlineCount: onlineUsers.length,
-            };
-            // 본인 제외하고 브로드캐스트
-            client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
-          }
-
-          // 본인에게는 항상 현재 온라인 유저 목록 전송
-          const onlineUsersPayload: OnlineUsersPayload = {
+        // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
+        if (!wasAlreadyOnline) {
+          const payload: UserJoinedPayload = {
             teamId,
-            users: onlineUsers,
-            totalCount: onlineUsers.length,
+            userId,
+            userName,
+            connectionCount: userInfo.connectionCount,
+            totalOnlineCount: onlineUsers.length,
           };
-          client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
+          // 본인 제외하고 브로드캐스트
+          client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
         }
+
+        // 본인에게는 항상 현재 온라인 유저 목록 전송
+        const onlineUsersPayload: OnlineUsersPayload = {
+          teamId,
+          users: onlineUsers,
+          totalCount: onlineUsers.length,
+        };
+        client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
       }
 
       this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);

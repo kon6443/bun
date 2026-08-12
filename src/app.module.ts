@@ -1,10 +1,10 @@
 // crypto 모듈을 전역으로 사용 가능하도록 설정 (Node.js 18 호환성)
 import { randomUUID } from 'crypto';
 if (typeof globalThis.crypto === 'undefined') {
-  globalThis.crypto = {
-    randomUUID,
+  // 사유: Crypto 인터페이스 전체가 아니라 randomUUID 하나만 채우는 부분 폴리필이라
+  // 정확한 타입을 만들 수 없다. @nestjs/schedule이 crypto.randomUUID만 요구한다.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  globalThis.crypto = { randomUUID } as any;
 }
 
 import {
@@ -12,13 +12,12 @@ import {
   Module,
   NestModule,
   RequestMethod,
-  ValidationPipe,
 } from '@nestjs/common';
 import { THROTTLE_SHORT, THROTTLE_LONG } from './common/constants/throttle.constants';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
-import { ApiValidationErrorResponseDto } from './common/dto/api-error.dto';
+import { createGlobalValidationPipe } from './common/pipes/global-validation-pipe';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -54,24 +53,10 @@ const logger = new Logger('AppModule');
       useClass: HttpExceptionFilter,
     },
     {
+      // 설정 본체는 E2E 테스트와 공유한다 (test/helpers/e2e-app.ts) —
+      // 여기서만 바꾸면 E2E가 다른 규칙으로 검증하게 되므로 한 곳에 둔다
       provide: APP_PIPE,
-      useFactory: () =>
-        new ValidationPipe({
-          whitelist: true,
-          transform: true,
-          forbidNonWhitelisted: true,
-          transformOptions: {
-            enableImplicitConversion: true,
-          },
-          exceptionFactory: (errors) => {
-            const messages = errors
-              .map((e) => Object.values(e.constraints || {}).join(', '))
-              .join('; ');
-            return new ApiValidationErrorResponseDto(
-              messages || '요청 값이 올바르지 않습니다.',
-            );
-          },
-        }),
+      useFactory: createGlobalValidationPipe,
     },
   ],
   imports: [

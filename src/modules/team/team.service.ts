@@ -287,24 +287,6 @@ export class TeamService {
     }));
   }
 
-  async insertTeamMember({
-    userId,
-    teamId,
-    role,
-  }: {
-    userId: number;
-    teamId: number;
-    role: string;
-  }): Promise<void> {
-    const newTeamMember = this.teamMemberRepository.create({
-      userId,
-      teamId,
-      joinedAt: new Date(),
-      role,
-    });
-    await this.teamMemberRepository.save(newTeamMember);
-  }
-
   async insertTeam({ createTeamDto }: { createTeamDto: CreateTeamDto }): Promise<void> {
     await this.dataSource.transaction(async (manager: EntityManager) => {
       // 1. Team 생성
@@ -363,14 +345,10 @@ export class TeamService {
     createTaskDto: CreateTeamTaskDto;
     userId: number;
   }): Promise<TeamTask> {
-    // 팀 존재 여부 확인
-    const team = await this.teamRepository.findOne({
-      where: { teamId, actStatus: ActStatus.ACTIVE },
-    });
-
-    if (!team) {
-      throw new TeamNotFoundErrorResponseDto();
-    }
+    // 팀 멤버 권한 확인 (활성화된 멤버만)
+    // 이 검증이 팀 존재·활성까지 포함하므로(getTeamMembersBy가 활성 팀만 조인) 별도 팀 조회는 없다 —
+    // 남겨두면 멤버 검증에 먼저 걸려 도달할 수 없는 404 분기가 된다
+    const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
     // 태스크 생성
     const taskEntity = this.teamTaskRepository.create({
@@ -388,13 +366,13 @@ export class TeamService {
 
     const url = this.getTeamTaskUrl({ teamId, taskId: task.taskId });
     const message = [
-      `[${team.teamName}] - ${task.taskName}`,
+      `[${teamMember.teamName}] - ${task.taskName}`,
       `✅ 태스크 생성 ✅`,
       task.startAt || task.endAt
         ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
         : null,
     ].filter(Boolean).join('\n');
-    this.notificationPort.notifyTeam({ team, message, url });
+    this.notificationPort.notifyTeam({ team: teamMember, message, url });
 
     return task;
   }
@@ -618,6 +596,11 @@ export class TeamService {
     updateCommentDto: UpdateTaskCommentDto;
     userId: number;
   }): Promise<TaskComment> {
+    // 팀 멤버 권한 확인 (활성화된 멤버만)
+    // 작성자 확인보다 먼저 둔다 — 탈퇴했거나 비활성 팀이면 자기 댓글이라도 수정할 수 없고,
+    // 남의 팀 댓글은 존재 여부(404)조차 흘리지 않는다
+    await this.verifyTeamMemberAccess(teamId, userId);
+
     // 댓글 존재 여부 확인
     const comment = await this.taskCommentRepository.findOne({
       where: { commentId },
@@ -686,7 +669,10 @@ export class TeamService {
     commentId: number;
     userId: number;
   }): Promise<void> {
-    // 1. 댓글 존재 여부 확인
+    // 1. 팀 멤버 권한 확인 (활성화된 멤버만) — 수정과 동일한 이유로 작성자 확인보다 먼저
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    // 2. 댓글 존재 여부 확인
     const comment = await this.taskCommentRepository.findOne({
       where: { commentId },
     });
@@ -695,27 +681,27 @@ export class TeamService {
       throw new TeamCommentNotFoundErrorResponseDto();
     }
 
-    // 2. 댓글 작성자 권한 확인
+    // 3. 댓글 작성자 권한 확인
     if (comment.userId !== userId) {
       throw new TeamCommentForbiddenErrorResponseDto('댓글 작성자만 삭제할 수 있습니다.');
     }
 
-    // 3. 댓글이 해당 태스크에 속하는지 확인
+    // 4. 댓글이 해당 태스크에 속하는지 확인
     if (comment.taskId !== taskId) {
       throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 태스크에 속하지 않습니다.');
     }
 
-    // 4. 댓글이 해당 팀에 속하는지 확인
+    // 5. 댓글이 해당 팀에 속하는지 확인
     if (comment.teamId !== teamId) {
       throw new TeamTaskBadRequestErrorResponseDto('댓글이 해당 팀에 속하지 않습니다.');
     }
 
-    // 5. 댓글이 이미 삭제된 상태인지 확인
+    // 6. 댓글이 이미 삭제된 상태인지 확인
     if (comment.status === ActStatus.INACTIVE) {
       throw new TeamTaskBadRequestErrorResponseDto('이미 삭제된 댓글입니다.');
     }
 
-    // 6. 소프트 삭제 (status를 비활성으로 변경)
+    // 7. 소프트 삭제 (status를 비활성으로 변경)
     comment.status = ActStatus.INACTIVE;
     comment.mdfdAt = new Date();
 
@@ -1117,6 +1103,8 @@ export class TeamService {
     }
 
     // 2. 데이터베이스에서 초대 정보 조회
+    // teamId를 조회 조건에 포함하는 것이 곧 "토큰의 teamId 검증"이다 —
+    // 위조된 teamId면 매칭되는 초대가 없어 아래 404로 걸러진다. 이 조건을 빼면 검증도 함께 사라진다.
     const invite = await this.teamInvitationRepository.findOne({
       where: { teamId: payload.teamId, token, actStatus: ActStatus.ACTIVE },
     });
@@ -1140,12 +1128,7 @@ export class TeamService {
       throw new TeamNotFoundErrorResponseDto('팀을 찾을 수 없거나 비활성 상태입니다.');
     }
 
-    // 5. JWT payload의 teamId와 DB의 teamId 일치 확인 (보안 강화)
-    if (payload.teamId !== invite.teamId) {
-      throw new TeamInviteExpiredErrorResponseDto('유효하지 않은 초대 링크입니다.');
-    }
-
-    // 6. 사용 횟수 확인
+    // 5. 사용 횟수 확인
     if (invite.usageCurCnt >= invite.usageMaxCnt) {
       throw new TeamInviteExpiredErrorResponseDto('초대 링크의 사용 횟수가 초과되었습니다.');
     }

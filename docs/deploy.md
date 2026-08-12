@@ -10,7 +10,7 @@
 | `infra` | `infra_redis` | 1 | fs-01 (Manager) | `infra_redis:6379` |
 | `infra` | `infra_registry` | 1 | fs-02 | `infra_registry:5000` (영속 bind mount) |
 | `prod_nest` | `prod_nest_app` | 3 | fs-01 | `prod_nest_app:3500` |
-| `prod_next` | `prod_next_app` | 20 | fs-01 | `prod_next_app:3000` |
+| `prod_next` | `prod_next_app` | 10 | fs-01 | `prod_next_app:3000` |
 
 ### 노드
 
@@ -68,5 +68,5 @@
 
 ## 관련 문서
 - Swarm 마이그레이션 이력 & 결정: `tasks/archive/tasks-swarm-stack-migration.md`
-- 모니터링 계획: `tasks-monitoring.md`
-- 로그 중앙 수집 계획: `tasks-logging.md`
+- 모니터링 계획: [`tasks/tasks-monitoring.md`](tasks/tasks-monitoring.md)
+- 로그 중앙 수집 계획: [`tasks/tasks-logging.md`](tasks/tasks-logging.md)
