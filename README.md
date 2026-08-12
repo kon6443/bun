@@ -116,7 +116,8 @@ pnpm lint                # eslint (flat config)
 pnpm lint:fix
 
 # 테스트
-pnpm test                # jest
+pnpm test                # jest (단위 테스트)
+pnpm test:e2e            # E2E (test/jest-e2e.json, DB 없이 HTTP 파이프라인)
 pnpm test:cov            # 커버리지
 ```
 

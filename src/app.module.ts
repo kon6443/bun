@@ -12,13 +12,12 @@ import {
   Module,
   NestModule,
   RequestMethod,
-  ValidationPipe,
 } from '@nestjs/common';
 import { THROTTLE_SHORT, THROTTLE_LONG } from './common/constants/throttle.constants';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
-import { ApiValidationErrorResponseDto } from './common/dto/api-error.dto';
+import { createGlobalValidationPipe } from './common/pipes/global-validation-pipe';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -54,24 +53,10 @@ const logger = new Logger('AppModule');
       useClass: HttpExceptionFilter,
     },
     {
+      // 설정 본체는 E2E 테스트와 공유한다 (test/helpers/e2e-app.ts) —
+      // 여기서만 바꾸면 E2E가 다른 규칙으로 검증하게 되므로 한 곳에 둔다
       provide: APP_PIPE,
-      useFactory: () =>
-        new ValidationPipe({
-          whitelist: true,
-          transform: true,
-          forbidNonWhitelisted: true,
-          transformOptions: {
-            enableImplicitConversion: true,
-          },
-          exceptionFactory: (errors) => {
-            const messages = errors
-              .map((e) => Object.values(e.constraints || {}).join(', '))
-              .join('; ');
-            return new ApiValidationErrorResponseDto(
-              messages || '요청 값이 올바르지 않습니다.',
-            );
-          },
-        }),
+      useFactory: createGlobalValidationPipe,
     },
   ],
   imports: [

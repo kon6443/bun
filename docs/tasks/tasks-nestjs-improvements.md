@@ -240,7 +240,7 @@ export class MockNotificationAdapter {
       (기존엔 테스트가 린트에서 완전히 빠져 있었음. 신규 경고 0건으로 통과)
 
 잔여 (D6 착수 시)
-  [ ] supertest 설치 + test/jest-e2e.json + E2E 헬퍼 (create-testing-app, e2e-auth)
+  [✓] supertest 설치 + test/jest-e2e.json + E2E 헬퍼 — D6에서 완료 (2026-08-12)
 ```
 
 ---
@@ -776,6 +776,7 @@ Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결�
 ## D6. E2E 테스트 작성
 
 - **난이도**: 어려움 | **효과**: 매우 높음 | **위험도**: 🟡 중간 | **선행**: D2 완료
+- **상태**: 🔄 **진행 중** — 인프라 구축 + 접근 제어 플로우 완료 (2026-08-12, 10케이스). 나머지 플로우는 미착수
 
 ### E2E 전략
 
@@ -812,11 +813,41 @@ Controller (8개, 33 엔드포인트): ⏸️ 착수 전 — 진행 여부 결�
 
 ### 실행 체크리스트
 ```
-[ ] test/jest-e2e.json, 인증 우회/포함 모듈
-[ ] health-check.e2e-spec.ts (인프라 검증용)
-[ ] auth, team, task, invitation, comment, file-share
-[ ] WS: team-gateway, fishing-gateway
+인프라: ✅ 완료 (2026-08-12)
+  [✓] supertest + @types/supertest 설치
+  [✓] test/jest-e2e.json (rootDir=.., testRegex=.e2e-spec.ts, tsconfig paths 매핑)
+  [✓] package.json에 test:e2e 스크립트
+  [✓] test/helpers/e2e-app.ts — 앱 조립 + main.ts 전역 설정 재현 + JwtAuthGuard override
+  [✓] main.e2e-spec.ts (인프라 검증 3케이스 — prefix·응답 포맷·에러 필터)
+
+플로우:
+  [✓] 접근 제어 (7케이스) — 비멤버 태스크 생성 403, 탈퇴자 댓글 수정·삭제 403,
+      정상 경로 대조 2건, ValidationPipe 422 2건
+  [ ] auth (카카오 → JWT → Cookie), team CRUD, invitation, file-share, health-check
+  [ ] WS: team-gateway, fishing-gateway (소켓 핸드셰이크 필요 — HTTP E2E와 별도 인프라)
 ```
+
+### 결과 (2026-08-12) — 인프라 + 접근 제어
+
+**10케이스 통과.** 단위 테스트(639)와 별도 실행(`pnpm test:e2e`).
+
+**AppModule을 쓰지 않는 이유**: `AppModule`은 `TypeOrmModule.forRootAsync`를 import하므로 **부팅만으로 Oracle 접속을 시도**한다. LOCAL/PROD가 같은 상용 DB인 이 프로젝트에서는 테스트가 상용에 붙는 사고가 된다. 그래서 전략 A대로 필요한 컨트롤러만 조립하고 Repository를 mock으로 끊었다.
+
+**대신 HTTP 파이프라인은 프로덕션과 동일하게 재현한다** — 그게 E2E의 존재 이유다.
+
+| 재현한 것 | 방법 |
+|---|---|
+| `ValidationPipe` | **AppModule과 같은 팩토리 공유** (`src/common/pipes/global-validation-pipe.ts`로 추출) |
+| `HttpExceptionFilter` | `APP_FILTER` provider |
+| `cookieParser`, `setGlobalPrefix('api/v1')` | main.ts와 동일 |
+
+재현하지 않은 것: helmet·compression(응답 본문 무관), CORS(같은 프로세스), `CustomThrottlerGuard`(rate limit이 테스트를 깨뜨림).
+
+**ValidationPipe 설정을 추출한 이유**: E2E가 프로덕션과 다른 설정으로 검증하면 통과해도 통과가 아니다. 특히 `forbidNonWhitelisted`가 빠지면 "허용되지 않은 필드 거부" 테스트가 거짓 통과한다. 한 곳에서만 정의하도록 `AppModule`도 이 팩토리를 쓰게 고쳤다.
+
+**얻은 것 — 수동 검증 3건의 자동화**: 이번 세션에 고친 접근 제어는 "인증이 필요해 사람이 직접 확인해야 하는" 상태로 남아 있었다. 서비스 단위 테스트는 메서드를 직접 호출하지만 실제 사용자는 HTTP로 들어오고 그 사이에 가드·파이프·필터가 있다. 그 조합이 실제로 403을 돌려주는지를 이제 자동으로 확인한다.
+
+**작성 중 확인한 실제 계약**: 검증 실패는 **400이 아니라 422**(`VALIDATION_ERROR`)다. 처음에 400으로 기대했다가 실패해서 확인했고, 프론트도 422/`VALIDATION_ERROR`로 매핑하고 있었다(`next-bun/src/types/api.ts:28,60`).
 
 ---
 
