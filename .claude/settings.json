@@ -5,7 +5,9 @@
     "pr": ""
   },
   "permissions": {
-    "additionalDirectories": ["../next-bun"],
+    "additionalDirectories": [
+      "../next-bun"
+    ],
     "allow": [
       "Bash(git status:*)",
       "Bash(git log:*)",
@@ -142,6 +144,19 @@
       "Bash(sql *)",
       "Bash(redis-cli*)",
       "Bash(pnpm db:migrate:list*)"
+    ]
+  },
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/precompact.sh\"",
+            "timeout": 20
+          }
+        ]
+      }
     ]
   }
 }
