@@ -547,9 +547,24 @@ if (userId) {           // ← userId가 없으면 멤버십 검증을 통째로
 await client.join(roomName);   // ← room에는 그대로 참가한다
 ```
 
-`@UseGuards(WsJwtGuard)`가 앞단에서 막으므로 **현재는 도달 불가**다(가드가 `client.data.user`를 세팅하지 못하면 연결 자체가 끊긴다). 다만 팀 격리가 **가드 한 겹에만** 의존한다는 뜻이고, 가드를 떼거나 `@UseGuards`를 실수로 지우면 아무나 임의 팀 room에 들어가 모든 태스크·댓글·채팅을 수신하게 된다. HTTP 쪽 `verifyTeamMemberAccess`가 방어 계층 2겹인 것과 대비된다.
+`@UseGuards(WsJwtGuard)`가 앞단에서 막으므로 **당시에도 도달 불가**였다. 가드 코드로 확인한 근거 — 토큰 없음(`ws-jwt-auth.guard.ts:53`)·검증 실패(`:56`)·유저 없음/비활성(`:64`) 모두 예외를 던지고, 통과할 때만 `:68`에서 `client.data.user`를 세팅한다.
 
-현재 동작을 테스트로 명시 고정했다(검증 미호출 + join 성공). 정책을 "userId 없으면 차단"으로 바꾸면 그 테스트가 먼저 깨진다. 판단 대기 — 범위 밖이라 손대지 않음.
+문제는 **팀 격리가 가드 한 겹에만 의존**한다는 점이었다. `@UseGuards`가 빠지면 `userId`가 `undefined`가 되고 → 멤버십 검증을 건너뛰고 → 아무나 임의 팀 room에 들어가 모든 태스크·댓글·채팅을 **예외도 로그도 없이** 수신하게 된다. HTTP 경로가 가드 + `verifyTeamMemberAccess` 2겹인 것과 대비됐다.
+
+**✅ 수정 완료 (2026-08-10)**: `if (userId)`를 조기 차단으로 뒤집었다.
+
+```ts
+if (!userId) {
+  throw new WsException({ code: 'AUTH_UNAUTHORIZED', message: '인증이 필요합니다.' });
+}
+await this.teamService.verifyTeamMemberAccess(teamId, userId);   // 이제 무조건 실행
+```
+
+에러 코드는 `WsJwtGuard`가 같은 상황(토큰 없음·유저 없음)에 쓰는 `AUTH_UNAUTHORIZED`로 맞췄다 — 인증 정보 부재는 권한 문제(403)가 아니라 401 성격이다. 프론트도 이미 이 코드를 알고 있다(`next-bun/src/types/api.ts:36,68` — "인증이 필요합니다. 다시 로그인해주세요."). 아래쪽 온라인 등록 블록의 `if (userId)`도 조건이 불필요해져 들여쓰기가 한 단계 줄었다.
+
+**실사용 동작은 달라지지 않는다** — 가드 때문에 지금도 인증 없이는 이 핸들러에 도달하지 못한다. 바뀐 것은 "가드가 사라져도 뚫리지 않는다"는 보장이다. 테스트도 "검증 미호출 + join 성공" → "`join` 미호출 + `AUTH_UNAUTHORIZED`"로 뒤집었다.
+
+**Fishing 쪽의 같은 패턴은 그대로 둔다**: `FishingGateway`의 `if (info)`는 **게스트 접속을 허용하는 공개 맵** 정책이라 신원이 없어도 관전만 가능하게 두는 것이 의도다. 팀은 게스트 개념이 없어 같은 논리가 성립하지 않는다.
 
 **테스트 작성 메모**: `@UseGuards`가 붙은 Gateway는 핸들러를 직접 호출해도 Nest가 가드의 의존성(User Repository 등)까지 해석하려 해 `.compile()`에서 실패한다. `.overrideGuard(WsJwtGuard)`로 끊었다. 가드 자체는 `ws-jwt-auth.guard.spec.ts`에서 11케이스로 이미 검증돼 있다.
 

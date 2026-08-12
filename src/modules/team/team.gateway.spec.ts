@@ -166,15 +166,17 @@ describe('TeamGateway', () => {
       expect(client.data.teamId).toBe(TEAM_ID);
     });
 
-    it('인증 정보가 없으면 멤버십 검증 없이 참가한다 (현재 계약 — WsJwtGuard가 앞단에서 막는다)', async () => {
+    it('인증 정보가 없으면 room에 넣지 않고 차단해야 함', async () => {
       const client = createClient({ userId: null });
 
-      await gateway.handleJoinTeam(client, { teamId: TEAM_ID });
-
-      // 이 경로는 가드가 없을 때만 도달 가능하다. 가드를 떼거나 우회하면 팀 격리가 사라진다는 뜻이므로
-      // 동작을 명시적으로 고정해 둔다 — 정책을 바꾸면 이 테스트가 먼저 깨진다
+      // WsJwtGuard가 앞단에서 막으므로 정상 흐름에서는 도달하지 않는다.
+      // 그래도 여기서 한 번 더 막는 이유는 팀 격리가 가드 한 겹에만 의존하지 않게 하기 위해서다 —
+      // @UseGuards가 빠지면 아무나 임의 팀 room의 모든 이벤트를 수신하게 된다
+      await expect(gateway.handleJoinTeam(client, { teamId: TEAM_ID })).rejects.toMatchObject({
+        error: { code: 'AUTH_UNAUTHORIZED' },
+      });
+      expect(client.join).not.toHaveBeenCalled();
       expect(teamService.verifyTeamMemberAccess).not.toHaveBeenCalled();
-      expect(client.join).toHaveBeenCalledWith(ROOM);
       expect(onlineUserService.addUserToOnline).not.toHaveBeenCalled();
     });
   });
