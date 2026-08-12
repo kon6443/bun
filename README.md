@@ -90,6 +90,29 @@ pnpm install
 pnpm dev          # watch 모드 → http://localhost:3500/api/v1
 ```
 
+### 로컬 Redis 실행
+
+WebSocket 온라인 상태(프레즌스)와 멀티 레플리카 브로드캐스트에 쓰인다. **없어도 HTTP API는 정상 기동**하며 WS 프레즌스만 동작하지 않는다.
+
+```bash
+# 운영과 동일 이미지로 띄우기
+docker run -d --name bun-redis -p 6379:6379 redis:7-alpine
+
+# 연결 확인 (PONG 이 나와야 한다)
+docker exec -it bun-redis redis-cli ping
+
+# 앱이 만든 키 확인 (팀 입장 후)
+docker exec -it bun-redis redis-cli KEYS '*'
+#   socket:*  ·  team:*:online  ·  team:*:user:*:sockets
+
+# 종료 / 정리
+docker stop bun-redis && docker rm bun-redis
+```
+
+- 접속 정보 기본값은 `localhost:6379`이므로(`src/common/adapters/redis-io.adapter.ts`) `.env`에 `REDIS_HOST`를 안 넣어도 로컬에서는 붙는다. `REDIS_PORT`는 검증 대상 필수 변수다.
+- 운영(`infra_redis`)은 `--appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru`로 뜬다 — 영속성·축출 정책까지 재현하려면 같은 옵션을 붙인다.
+- Redis를 끈 상태로 앱을 띄우면 경고 로그만 남고 기동은 성공해야 한다. 이 동작 자체가 검증 항목이다.
+
 ### 환경 변수
 
 `.env`를 프로젝트 루트에 둔다. 부팅 시 `src/config/env.validation.ts`가 검증하며 누락 시 앱이 시작되지 않는다.
@@ -119,7 +142,22 @@ pnpm lint:fix
 pnpm test                # jest (단위 테스트)
 pnpm test:e2e            # E2E (test/jest-e2e.json, DB 없이 HTTP 파이프라인)
 pnpm test:cov            # 커버리지
+
+# 부분 테스트 (전체 대신 좁혀 돌릴 때)
+pnpm test -- src/common/constants/role.constants.spec.ts   # 단일 파일 (경로 직접 전달)
+npx jest --testPathPatterns=team                           # 패턴 매칭 (jest 30: 복수형)
+pnpm test:e2e -- team-gateway                              # E2E 부분 실행
+
+# 통합 검증 (푸시 전 필수 — 아래 ⚠️ 참조)
+pnpm ci:core             # lint → test → build (빠른 검증)
+pnpm ci:all              # lint → 스텁 검사 → test → test:e2e → build (PR 전 최종)
+pnpm check:stubs         # TODO/FIXME/XXX/HACK 검출 (발견 시 실패)
 ```
+
+> ⚠️ **CI 파이프라인은 lint·test·E2E를 실행하지 않는다.** `deploy-to-oci.yml`은 docker build → push → ssh deploy만 하고, `Dockerfile`도 `pnpm install` 후 `pnpm run build`만 돌린다. 즉 **테스트를 통과시키는 관문은 로컬의 `pnpm ci:all`이 유일하다** — `main` push는 검증 없이 배포로 직행한다.
+>
+> `pnpm ci:all` 기준선(2026-08-12 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **639/639**, E2E **79/79**, build 통과.
+> ⚠️ `--testPathPattern`(단수형)은 jest 30에서 동작하지 않는다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
 
@@ -167,9 +205,15 @@ Docker Swarm 기반. `main` 브랜치 push 시 GitHub Actions가 빌드 후 배�
 
 AI 에이전트용 작업 규약은 [`CLAUDE.md`](CLAUDE.md)가 진입점(SSOT)이다. 사람·AI 공통 참고 문서:
 
-- **[아키텍처 & 주요 파일](docs/architecture.md)** — 구조 파악의 기준
-- **[배포 & 인프라](docs/deploy.md)** — Swarm 스택, 운영
-- **[진행 중 태스크](docs/tasks/)** — 작업별 체크리스트와 결정 기록 (완료분은 [`docs/tasks/archive/`](docs/tasks/archive/))
+| 문서 | 담당 |
+|---|---|
+| **[코드 패턴](docs/conventions/code-patterns.md)** | 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) — `src` 작업 전 필독 |
+| **[반복 이슈 플레이북](docs/playbooks/recurring-issues-playbook.md)** | 결함 클러스터별 최우선 확인 지점 — 버그·장애 조사 진입점 |
+| **[교훈 로그](docs/lessons.md)** | 작업 방식의 누적 교훈 — 리팩터링 착수 전·교정 직후 |
+| **[배포 & 인프라](docs/deploy.md)** | Swarm 스택, 노드, 볼륨, CI/CD |
+| **[태스크 문서](docs/tasks/)** | 태스크별 상태·이력·결정 근거 (완료분은 [`archive/`](docs/tasks/archive/)) |
+| [아키텍처 & 주요 파일](docs/architecture.md) | ⚠️ **날짜 처리 섹션은 폐기된 옛 정책**이다 — 모듈 구성은 위 "아키텍처 개요"가 정확하다 |
+| [Redis Pub/Sub PRD](docs/prd-redis-pubsub.md) · [API 스로틀링 가이드](docs/blog-api-throttling.md) | 배경 문서 (후자는 외부 발행용 초안, 프로젝트 규약 아님) |
 
 **프로젝트를 처음 접하는 사람/AI는:**
 

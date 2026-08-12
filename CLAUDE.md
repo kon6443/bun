@@ -6,10 +6,12 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 | 문서 | 담당 | 예시 |
 |---|---|---|
-| [`README.md`](README.md) | **사실·사용법** (What / How) — 사람·AI 공통 | 기술 스택, 모듈 구성, 명령어, 환경변수, 배포 구성 |
-| **이 문서** | **규약·금지·함정·현재 상태** (Rules / Now) — AI 행동 지침 | 라우팅 표, 금지 사항, Pitfalls, DoD, Active Work |
+| [`README.md`](README.md) | **사실·사용법** (What / How) — 사람·AI 공통 | 기술 스택, 모듈 구성, 명령어, 환경변수, 배포 구성, **문서 목록** |
+| **이 문서** | **규약·금지·함정** (Rules) — AI 행동 지침 | 라우팅 표, 금지 사항, Pitfalls, DoD, 커밋 컨벤션 |
+| [`docs/conventions/`](docs/conventions/) · [`docs/playbooks/`](docs/playbooks/) | **코드 규약 상세 · 결함 진단** | 계층·트랜잭션·테스트 패턴, 반복 결함 클러스터 |
+| [`docs/tasks/*.md`](docs/tasks/) | **진행 상황·이력·결정 근거** (Status / Why) | 각 문서 헤더의 상태, 커밋 해시, 잔여 항목, 판정 근거 |
 
-사실 정보가 필요하면 여기에 복사하지 말고 README를 링크한다.
+**이 문서에 진행 상황·완료 이력·커버리지 수치를 쓰지 않는다.** 두 곳에 두면 반드시 어긋난다 — 실제로 커버리지가 이 문서엔 `62.7%`, 태스크 문서엔 `62.64%`로 갈렸던 전례가 있다. 사실은 README를, 진행 상황은 해당 태스크 문서를 링크한다.
 
 ---
 
@@ -19,7 +21,11 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 | 트리거 (요청 키워드 / 작업 성격) | 즉시 읽을 파일 |
 |---|---|
-| 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `docs/architecture.md` |
+| **코드 작성·수정·구현 (모든 `src` 작업)** · 신규 API/WS 이벤트 · 테스트 작성 | `docs/conventions/code-patterns.md` — 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) |
+| **버그 · 장애 · 에러 · 회귀 · "안 됨" 조사** | `docs/playbooks/recurring-issues-playbook.md` — 반복 결함 클러스터별 **최우선 확인 지점**부터 진단 |
+| 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
+| 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
+| 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `docs/architecture.md` — ⚠️ **날짜 처리 섹션은 2026-04-14 커밋 `2c86d73`으로 폐기된 옛 정책**이다(playbook 클러스터 3). 모듈 구성은 `README.md`가 더 정확하다 |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 | 이 문서 **DB Migrations** 섹션 + `docs/tasks/tasks-nestjs-improvements.md` D33/D34 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (D2/D5 등 해당 태스크) |
@@ -28,8 +34,41 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | 메트릭 · Prometheus · Grafana | `docs/tasks/tasks-monitoring.md` |
 | 로그 수집 · Loki · Promtail | `docs/tasks/tasks-logging.md` |
 | Redis Pub/Sub · 멀티 레플리카 브로드캐스트 | `docs/prd-redis-pubsub.md` + `docs/tasks/tasks-redis-pubsub.md` |
+| **프론트(`../next-bun`) 코드 확인 또는 작업** (API 계약·소켓 이벤트·날짜 표시 대조) | `../next-bun/CLAUDE.md` — 🔴 **자동 로드되지 않는다** (추가 작업 디렉터리라 세션 시작 시 컨텍스트에 없음). "코드만 잠깐 본다"도 예외 아님 — 미로드 시 그쪽 고유 규약을 놓친다 |
 
 **면제**: 단일 한 줄 수정, 단순 정보 조회, 1회성 명령 실행.
+
+---
+
+## 작업 경계: Never / Ask — 상시 적용
+
+문맥에서 승인을 유추하지 않는다. **의심되면 멈추고 물어본다.**
+
+### Never — 어떤 경우에도 하지 않는다
+
+| 금지 | 이유 |
+|---|---|
+| **DB에 접속하는 명령 실행** — `db:migrate:up`/`fake`/`revert`/**`list`**, `sqlplus`, DataSource를 직접 여는 스크립트(`tsx`·`node` 포함) | **LOCAL과 PROD가 동일 DB** — 모든 `up`이 곧 상용 적용. `list`조차 첫 실행 시 이력 테이블을 생성한다. AI는 **파일 작성까지만** (↓ DB Migrations) |
+| `db:migrate:fake`를 평상시 사용 | pending이 있는 상태면 DDL 없이 기록만 되어 **조용히 미적용** (↓ Pitfalls #1) |
+| Caddyfile을 Git에 커밋 | 공개 저장소 — 도메인·IP 노출 (↓ Deployment) |
+| 시크릿(JWT_SECRET·wallet·봇 토큰)을 코드·로그·응답·문서에 기입 | 커밋 이력에 영구 보존된다 |
+| `ORA_SDTZ` 설정 · Oracle `FROM_TZ()`에 리전 이름(`'UTC'`) | 전자는 oracledb가 로컬 TZ로 Date를 저장, 후자는 ORA-01805 (↓ Date/Time) |
+| E2E에서 `AppModule` import | `TypeOrmModule`이 **부팅만으로 상용 DB에 붙는다** — `createE2eApp()`을 쓴다 |
+| 인메모리 변수·타이머로 공유 상태 관리 | NestJS 3 replicas — 레플리카별로 중복 실행된다. Redis + `TASK_SLOT` 가드 |
+| `any` · `@ts-ignore` 등 타입 억제 | 글로벌 `engineering.md` §3 |
+| 사용자 지시 없는 `git commit`·`push` | auto mode에서도 금지 (↓ Rules) |
+
+### Ask — 실행 전 반드시 사용자 승인
+
+| 확인 대상 | 비고 |
+|---|---|
+| 커밋 · 푸시 · 머지 · 리베이스 · 태그 | `main` push는 곧 자동 배포다 |
+| 배포 · `docker` 명령 · `ssh`/`scp` | 운영 서버 영향 |
+| 파일·디렉토리 삭제, 비가역 변경 | |
+| **마이그레이션 실행 요청** | 파일 작성은 AI, 실행은 담당자 — 완료 조건에서 분리해 명시한다 |
+| **API 계약 변경** (상태코드·에러코드) | 프론트(`../next-bun`) 대응 필요 여부까지 커밋 본문에 명시 |
+| 새 의존성 추가 | 기존 스택으로 안 풀리는지 먼저 확인 |
+| 외부로 발송되는 알림 경로 변경 (Telegram·Discord) | 실제 사용자에게 도달한다 |
 
 ---
 
@@ -37,18 +76,30 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 명령어·환경변수 전체 목록은 [`README.md`](README.md)가 SSOT다. 작업 시 자주 쓰는 것만:
 
-- 검증: `pnpm build` (tsc, `tsconfig.build.json`) · `pnpm lint` · `pnpm test` (단위, 현재 639/639) · `pnpm test:e2e` (E2E, 현재 79/79 — **DB·Redis에 접속하지 않는다**) — 실패가 보이면 내 변경 탓이다
+- 검증: **`pnpm ci:core`**(lint → test → build) · PR 직전 **`pnpm ci:all`**(+ 스텁 검사 + E2E). 개별 실행은 `pnpm build`·`pnpm lint`·`pnpm test`·`pnpm test:e2e`
+  - **테스트는 전부 통과하는 상태가 기준선이다 — 실패가 보이면 내 변경 탓이다** (기준선 수치는 [`README.md`](README.md#주요-명령어))
+  - E2E는 **DB·Redis에 접속하지 않는다** (아래 Never 표 참조)
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
+- 부분 테스트로 좁혀 돌리는 방법은 [`README.md`](README.md#주요-명령어) 참조
+  - ⚠️ `--testPathPattern`(구 단수형)은 jest 30에서 **동작하지 않는다** — 실측 에러: `Option "testPathPattern" was replaced by "--testPathPatterns"`. 복수형을 쓴다.
+
+### Path Aliases
+
+`@/*` → `src/*` · `@entities/*` · `@modules/*` · `@common/*` · `@config/*` (`tsconfig.json`)
 
 ## Key Patterns
-- **응답 포맷**: `{ code, data, message }` — 전역 인터셉터 없음, 컨트롤러가 직접 반환 (`ApiSuccessResponseDto` 계열 DTO 상속)
-- **에러**: `defineDomainError` 팩토리로 정의 후 throw → `HttpExceptionFilter`가 형식 통일
+
+> 요약만 둔다. **코드를 쓰기 전에 상세와 실측 카운트는 [`docs/conventions/code-patterns.md`](docs/conventions/code-patterns.md)를 읽는다** (라우팅 표 1행).
+
+- **응답 포맷**: `{ code, data, message }` — 전역 인터셉터 없음, 컨트롤러가 **객체 리터럴을 직접 반환**한다. `ApiSuccessResponseDto` 상속 DTO는 **Swagger 명세용 타입 선언 전용**(`new`로 만들어 반환하지 않는다)
+- **에러**: `defineDomainError` 팩토리로 정의 후 throw → `HttpExceptionFilter`가 `{ code, message, timestamp }`로 통일. 응답 바디에 `statusCode` 필드는 **없다**
 - **계층**: Repository 클래스 없음 — Service가 `@InjectRepository`로 직접 주입
-- **인증**: Kakao OAuth + JWT — HTTP는 cookie `access_token` 우선 → Bearer 헤더 / WS는 `handshake.auth.token` → Bearer 헤더
-- **ValidationPipe**: `transform: true`, `enableImplicitConversion: true`
+- **트랜잭션**: `dataSource.transaction(async (manager) => ...)` 콜백 — `@Transactional`·`queryRunner` 수동 사용은 0건(도입하지 않는다)
+- **인증**: Kakao OAuth + JWT — HTTP는 cookie `access_token` 우선 → Bearer 헤더 / WS는 `handshake.auth.token` → Bearer 헤더. **Guard는 인증까지만 — 팀 멤버십·역할 인가는 서비스/컨트롤러가 직접 검증한다**(반복 누락 지점, playbook 클러스터 1)
+- **ValidationPipe**: `whitelist: true`, **`forbidNonWhitelisted: true`**, `transform: true`, `enableImplicitConversion: true` — 설정 본체는 `src/common/pipes/global-validation-pipe.ts` 한 곳에 있고 E2E와 공유한다(한쪽만 바꾸면 E2E가 다른 규칙으로 검증하게 된다)
 - **Rate Limiting**: 글로벌 2단계 (초당 5회 + 분당 60회), 제외는 `@SkipThrottle()`
-- **WS**: namespace `/teams`, room `team-{teamId}` — 멀티 레플리카는 Redis Pub/Sub
-- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun)
+- **WS**: namespace `/teams`·`/fishing`, room `team-{teamId}` — 멀티 레플리카는 Redis Pub/Sub, 온라인 상태는 인메모리 금지(Redis)
+- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun) — 코드 확인 시 그쪽 `CLAUDE.md`를 먼저 읽는다(자동 로드 안 됨)
 
 ## Date/Time Handling
 - UTC 저장, 로컬 표시 — DB 컬럼 전부 `TIMESTAMP WITH TIME ZONE`
@@ -69,6 +120,8 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 이 프로젝트에서 실제로 발생했거나 근거로 확인된 함정. 같은 실수를 반복하지 않기 위한 목록이다.
 
+> 여기는 **"하지 말 것" 목록**이다. **증상에서 출발해 원인을 찾는 진단**은 [`docs/playbooks/recurring-issues-playbook.md`](docs/playbooks/recurring-issues-playbook.md)를 쓴다 (클러스터별 최우선 확인 지점 + fix 커밋 18건 전수 분류).
+
 1. **`db:migrate:fake`는 베이스라인 등록 1회용** — pending 마이그레이션이 있는 상태에서 실행하면 DDL 실행 없이 기록만 되어 **조용히 미적용**된다. 평상시엔 `up`만 사용.
 2. **Oracle DDL은 자동 커밋** — 마이그레이션이 중간에 실패하면 부분 적용 상태로 남는다. `migrationsTransactionMode`는 DDL에 무의미하므로 멱등 가드 + 1파일 1목적이 유일한 방어책.
 3. **`migration:show`(=`db:migrate:list`)도 이력 테이블을 생성한다** — 읽기 전용이 아니다 (TypeORM `MigrationExecutor.showMigrations()`가 `createMigrationsTableIfNotExist()` 호출).
@@ -87,11 +140,21 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **`git diff`로 변경 범위를 볼 때 pathspec `**` 금지** — 기본 pathspec은 `**`를 glob으로 해석하지 않아 `'src/**/*.ts'`가 **`src/` 직속 파일(app.module.ts·main.ts 등)을 건너뛴다**. 실측: 같은 커밋을 `'src/**/*.ts'`로 보면 1 file, `src/`로 보면 2 files(2026-08-12 D6 리뷰에서 `app.module.ts` 변경을 놓칠 뻔함). **`-- src/`(디렉토리)** 또는 **`-- ':(glob)src/**/*.ts'`**(glob 매직 명시)를 쓴다. "프로덕션 변경 0건" 같은 판정을 이 명령에 근거해 내리므로 누락이 곧 오판이다
 - **커밋은 명시 지시 후에만** 실행한다 (auto mode에서도 자동 커밋 금지)
 
+## Git & 커밋 컨벤션
+
+- 형식: **`type(scope): 한국어 설명`** (Conventional Commits) — 실측 type: `feat`(25) `test`(18) `fix`(18) `docs`(16) `refactor`(4) `chore`(2)
+  - scope는 도메인·모듈명: `team` `auth` `role` `entities` `e2e` `infra` `ci` `monitor`
+  - 예: `fix(team): joinTeam의 인증 없음 폴백을 조기 차단으로 전환`
+  - 예: `test(e2e): WS 팀 게이트웨이 실제 소켓 검증 (D6)`
+- 한 커밋 = 한 의도. 포맷팅 전용 변경과 행위 변경을 섞지 않는다.
+- **본문에 "왜"를 남긴다** — 제목이 "무엇"이면 본문이 "왜"다. `fix` 커밋 18건 전부 본문에 원인이 기재되어 있어 반복 결함 분류가 가능했다([playbook](docs/playbooks/recurring-issues-playbook.md) "판정 불가: 없음") — **이 상태를 유지한다**. 특히 revert는 본문에 원인 1줄 필수 (현재 revert 커밋 0건).
+- **API 계약이 바뀌면 본문에 명시**한다 (상태코드·에러코드 변경 등) — 프론트 대응 필요 여부까지.
+
 ## Definition of Done (이 프로젝트)
 
 글로벌 DoD(`~/.claude/CLAUDE.md`)에 더해 이 프로젝트에서 추가로 요구되는 항목:
 
-1. **`pnpm build` 통과** (tsc 에러 0건) + **`pnpm lint` 에러 0건** (경고는 기존 수준 유지)
+1. **`pnpm ci:core` 통과** (= lint → test → build) — 에러 0건, 경고는 기존 수준 유지(현재 7건). PR 직전에는 `pnpm ci:all`(+ 스텁 검사 + E2E)
 2. **변경 심볼 grep 전수 확인** — 호출처를 빠뜨리지 않았음을 증거로 제시
 3. **DB 변경이 있으면** 마이그레이션 파일 + Entity 수정을 세트로 제출. 실행은 담당자에게 요청하고, **실행 여부를 완료 조건에서 분리해 명시**
 4. **인증이 필요해 검증 못 한 경로는 "미검증"으로 명시** — 빌드 통과를 동작 검증으로 포장하지 않는다
@@ -99,41 +162,8 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ## Deployment — 작업 시 알아야 할 것
 
-스택 구성·노드·볼륨 등 전체는 [`docs/deploy.md`](docs/deploy.md)가 SSOT다. 코드 작업에 영향을 주는 부분만:
+스택 구성·노드·볼륨·서비스 DNS·이미지 태그는 [`docs/deploy.md`](docs/deploy.md)가 SSOT다. **코드를 쓸 때 지켜야 할 것만**:
 
 - **멀티 레플리카 전제** (NestJS 3 replicas) — 인메모리 상태·타이머·스케줄러는 레플리카별로 중복 실행된다. 공유 상태는 Redis, 단일 실행이 필요한 작업은 `TASK_SLOT` 가드를 쓴다.
-- **서비스 간 DNS**: 백엔드 `prod_nest_app:3500` · 프론트 `prod_next_app:3000` · Redis `infra_redis:6379`
 - **Caddyfile은 Git에 커밋하지 않는다** (공개 저장소 보안 정책 — 서버에서 직접 관리)
-- 배포는 `main` push → CI/CD 자동. 이미지 태그는 git SHA 7자 (`latest` 없음)
 
-## Active Work
-- **팀 단위 실시간 채팅**: 백엔드+프론트 구현 완료 (저장 없음, 빌드/타입체크/코드리뷰 통과) — 수동 E2E·배포 대기. `docs/tasks/tasks-team-chat.md`
-- **에러 DTO 리팩토링 (defineDomainError)**: ✅ 구현·검증·커밋 완료 (2026-07-22, 커밋 `73adc28`~`8b678c4`) — 잔여: 인증 필요 수동 E2E 2건 (팀 미존재 404, WS FORBIDDEN/CHAT_NOT_JOINED)
-- **DB 마이그레이션 환경 (D33)**: ✅ 완료 (2026-07-23, 커밋 `169ee9a`) — init fake 등록 + TOKEN 확장 up 실행까지 검증
-- **Entity↔DB 정합화 (D27/D34)**: ✅ 완료 (2026-07-31, 커밋 `f9d2a35`·`669e338`) — 배포 후 카카오 로그인·초대 생성/수락·댓글 생성 전부 검증
-- **토큰 Unique Index (D23)**: ✅ 완료 (2026-08-05, 커밋 `02aefd8`·`4f0260c`) — jti 선행 수정 후 인덱스 2개 생성. 실측 확인 완료
-- **테스트 인프라 (D2)**: ✅ 완료 (2026-08-05) — Factory(`src/entities/__spec__/entity.factory.ts`) + Mock 헬퍼(`src/common/__spec__/mock-repository.ts`) 표준 수립. 테스트 작성 시 이 둘을 반드시 사용한다
-- **단위 테스트 (D5)**: 🔄 진행 중 — **Service·Guard·Filter·Gateway 전 계층 완료** (Phase A~C-9, 2026-08-05~08-10). **639/639 통과, 커버리지 8.73% → 62.7%**. 이력·근거·발견 사항은 `docs/tasks/tasks-nestjs-improvements.md` D5 절이 SSOT
-  - **▶ 다음 작업은 결정이 필요하다**: Controller 8개(0%, `team.controller.ts` 858줄 포함)를 단위 테스트로 덮을지, E2E(D6)로 넘길지. 서비스 위임이라 단위 테스트 효용이 낮다는 판정 근거를 문서에 남겨 뒀다
-  - **E2E는 DB에 접속하지 않는다** — Repository를 mock으로 끊고 `AppModule`을 쓰지 않으며(`TypeOrmModule`이 부팅만으로 상용 DB에 붙는다), `test/setup/forbid-db.ts`가 oracledb 드라이버 레벨에서 차단한다. 롤백이 아니라 **연결 자체가 없다**. E2E 작성 시 `AppModule` import 금지 — `test/helpers/e2e-app.ts`의 `createE2eApp()`을 쓴다
-  - **접근 제어 검증 자동화 완료 (D6, 2026-08-12)**: 수동 대기였던 **4건 전부 E2E로 자동화**했다 — HTTP 3건(비멤버 태스크 생성, 탈퇴자 댓글 수정·삭제)은 `test/team-access-control.e2e-spec.ts`, WS `joinTeam` 인증 차단은 `test/team-gateway.e2e-spec.ts`(실제 소켓). **수동 확인 잔여 없음**
-  - **⚠️ API 계약 변경 1건** (푸시 시 주의): 태스크 생성에서 팀 미존재·비활성 시 `404 TEAM_NOT_FOUND` → `403 TEAM_FORBIDDEN`. 프론트는 이미 403 문구를 갖고 있어 대응 불필요
-  - 테스트 작성 시 반드시 기존 표준 사용: Factory `src/entities/__spec__/entity.factory.ts`(쿼리 결과용 `create*View` 포함), Mock `src/common/__spec__/mock-repository.ts`. spec은 도메인별 분리(`team.service.<도메인>.spec.ts`)
-
-## Docs
-
-```
-docs/
-├── architecture.md          # 아키텍처 & 주요 파일 (구조 파악 기준)
-├── deploy.md                # 배포 & 인프라
-├── prd-redis-pubsub.md      # Redis Pub/Sub PRD
-└── tasks/                   # 진행 중 태스크
-    ├── tasks-nestjs-improvements.md   # NestJS 고도화 (D1~D34, 진행률 27/50)
-    ├── tasks-error-dto-refactor.md    # 에러 DTO (구현 완료, E2E 2건 잔여)
-    ├── tasks-team-chat.md             # 실시간 채팅 (구현 완료, E2E·배포 대기)
-    ├── tasks-redis-pubsub.md          # Redis Pub/Sub (구현 완료, 검증 잔여)
-    ├── tasks-monitoring.md            # Prometheus + Grafana + node_exporter
-    ├── tasks-logging.md               # Loki + Promtail (Step 1~5 배포 완료)
-    └── archive/                       # 완료 태스크
-        └── tasks-swarm-stack-migration.md   # ✅ 완료 (2026-04-18)
-```
