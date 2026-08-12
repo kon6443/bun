@@ -19,3 +19,6 @@ logs/
 
 # 테스트 커버리지 리포트 (pnpm test:cov 산출물)
 coverage/
+
+# 파일 공유 런타임 디렉토리 (LOCAL 실행 시 자동 생성, E2E도 사용)
+shared/
