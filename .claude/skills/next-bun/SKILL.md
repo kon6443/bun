@@ -14,7 +14,7 @@ description: 프론트엔드 레포(../next-bun, Next.js)가 백엔드 API·소�
   ```
   Read ../next-bun/CLAUDE.md
   ```
-- 영역별 규칙은 그 문서의 라우팅 표가 가리키는 `../next-bun/docs/assistant_*.md`에서 필요한 것만 읽는다.
+- UI·NextAuth 규칙은 `../next-bun/.claude/rules/`(`ui.md`·`nextauth.md`)에 있고 해당 프론트 파일을 건드리면 훅이 주입한다. 설계 단계라면 필요한 것만 직접 읽는다. 진단·작업 절차는 그 문서의 라우팅 표가 가리키는 `../next-bun/docs/assistant_*.md`.
 
 ## 2. 계약 접점 — 백엔드를 바꾸면 여기서 프론트가 깨진다
 값의 SSOT는 이 레포 `.claude/rules/code-patterns.md`다. 바꾸기 전에 프론트 쪽 사용처를 grep한다.
