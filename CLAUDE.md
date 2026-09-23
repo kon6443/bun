@@ -21,7 +21,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 | 트리거 (요청 키워드 / 작업 성격) | 즉시 읽을 파일 |
 |---|---|
-| **코드 작성·수정·구현 (모든 `src` 작업)** · 신규 API/WS 이벤트 · 테스트 작성 | `docs/conventions/code-patterns.md` — 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) |
+| **코드 작성·수정·구현 (모든 `src` 작업)** · 신규 API/WS 이벤트 · 테스트 작성 | `.claude/rules/code-patterns.md` — 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT. **`src`·`test`의 `.ts`를 읽는 순간 자동 로드**되므로 이 행은 폴백이다 — 코드를 아직 안 연 설계 단계라면 직접 Read한다 |
 | **버그 · 장애 · 에러 · 회귀 · "안 됨" 조사** | `docs/playbooks/recurring-issues-playbook.md` — 반복 결함 클러스터별 **최우선 확인 지점**부터 진단 |
 | 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
 | 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
@@ -89,7 +89,8 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ## Key Patterns
 
-> 요약만 둔다. **코드를 쓰기 전에 상세와 실측 카운트는 [`docs/conventions/code-patterns.md`](docs/conventions/code-patterns.md)를 읽는다** (라우팅 표 1행).
+> 요약만 둔다. 상세와 실측 카운트는 [`.claude/rules/code-patterns.md`](.claude/rules/code-patterns.md)(`.ts`를 읽으면 자동 로드).
+> **이 요약이 그 파일과 겹치는 것은 의도된 것이다** — rule은 `.ts`를 읽을 때 로드되므로, 코드를 아직 안 연 설계·계획 단계에는 이 요약이 유일한 출처다.
 
 - **응답 포맷**: `{ code, data, message }` — 전역 인터셉터 없음, 컨트롤러가 **객체 리터럴을 직접 반환**한다. `ApiSuccessResponseDto` 상속 DTO는 **Swagger 명세용 타입 선언 전용**(`new`로 만들어 반환하지 않는다)
 - **에러**: `defineDomainError` 팩토리로 정의 후 throw → `HttpExceptionFilter`가 `{ code, message, timestamp }`로 통일. 응답 바디에 `statusCode` 필드는 **없다**

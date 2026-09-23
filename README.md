@@ -207,7 +207,7 @@ AI 에이전트용 작업 규약은 [`CLAUDE.md`](CLAUDE.md)가 진입점(SSOT)�
 
 | 문서 | 담당 |
 |---|---|
-| **[코드 패턴](docs/conventions/code-patterns.md)** | 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) — `src` 작업 전 필독 |
+| **[코드 패턴](.claude/rules/code-patterns.md)** | 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) — `src`·`test`의 `.ts`를 읽으면 자동 로드 |
 | **[반복 이슈 플레이북](docs/playbooks/recurring-issues-playbook.md)** | 결함 클러스터별 최우선 확인 지점 — 버그·장애 조사 진입점 |
 | **[교훈 로그](docs/lessons.md)** | 작업 방식의 누적 교훈 — 리팩터링 착수 전·교정 직후 |
 | **[배포 & 인프라](docs/deploy.md)** | Swarm 스택, 노드, 볼륨, CI/CD |
