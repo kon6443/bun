@@ -1,6 +1,6 @@
 # Claude Code 설정 고도화 — 백엔드(bun) · 프론트(next-bun) · 글로벌
 
-> 작성일: 2026-09-23 | 최종 수정: 2026-09-23 (전수 조사 완료 · 실행 계획 수립 · Q1 결정 = (A) · nerd-back·mobigo-web 패턴 분석 반영 · 추천 항목 전부 채택 확정 · **C0 완료 `4e28936`** · **C1·C2 적용·검증 완료** · 🔴 백엔드 마이그레이션 deny 빈틈 실측(F12) · F1·F8·F9 실측)
+> 작성일: 2026-09-23 | 최종 수정: 2026-09-23 (전수 조사 완료 · 실행 계획 수립 · Q1 결정 = (A) · nerd-back·mobigo-web 패턴 분석 반영 · 추천 항목 전부 채택 확정 · **C0 완료 `4e28936`** · 레포 쪽 전부 완료·커밋(push 안 함) · C6 3건은 사용자 별도 세션 · F1·F8·F9 실측)
 > 브랜치: `feat-onam` (백엔드) / 프론트는 별도 레포 `../next-bun`
 > 목표: ① 글로벌 설정의 검증된 패턴을 두 프로젝트에 전파 ② **교차 프로젝트 규약의 조건부 로드**를 양방향으로 동작시키기 ③ 설정·문서 드리프트 정리
 > **SSOT**: 이 파일이 두 레포 공통의 Claude 설정 작업 SSOT다. 프론트 레포에는 이 파일로 가는 링크만 둔다(C2-4). 복사본을 만들지 않는다.
@@ -355,4 +355,7 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 | 1차 | R1~R4 결함 0 (훅 테스트 26/0 ×2, JSON 유효, 인자 대칭, 끝 `:*` deny 0, 옛 이름 잔존 0, 상대 링크 전부 실존, 상한·422·Swagger 표기 전 파일 일치, CLAUDE.md 175·59줄). R5 샘플 12건 중 **이번 작업이 쓴 줄의 결함 2건 수정**: ① `code-patterns.md` §4 주석 — 파일명 패턴을 `-error.dto.ts`로 고치면서 "7개 파일"이 그 패턴 기준으론 틀려짐(실측 6개·정의 38건) ② 프론트 CLAUDE.md "main push가 곧 배포" — 워크플로 `paths-ignore: docs/**, *.md` 누락. **원래 있던 부정확 2건은 범위 밖 → 후속**: `code-patterns.md` §3 `telegram.service.ts:343,442`(실제 342·441), §1 `*repository*.ts 0건`(테스트용 `mock-repository.ts` 2개가 걸림 — 의도는 맞음) |
 | 2차(최종) | 같은 5개 항목을 수정분·회귀에 한해 재점검 — 훅 테스트 26/0 ×2, JSON 유효, CLAUDE.md 175·59줄(프론트 2,840자 — 상한 이하 유지), 편집 문서 11개 링크 깨짐 0, 옛 이름 잔존 0. **결함 0 — 종료** |
 
-**커밋**: C0 `4e28936` · `fca31b7`(마이그레이션 deny 빈틈). 나머지는 리뷰 통과 후 분할안대로.
+**커밋 (2026-09-23, push 안 함)** — 이 세션 이전부터 있던 변경(bun: `auth.service.ts`·기존 태스크 문서 3개·CLAUDE.md 카카오 행 / next-bun: `src/lib/auth.ts`·`taskUtils.test.ts`)은 제외했고, 커밋 후 제외 파일 혼입 0건·훅 테스트 26/0 ×2 확인.
+- bun: `4e28936` 기준선 · `fca31b7` 마이그레이션 deny 빈틈 · `412a962` 훅 일반화 · `d742649` code-patterns → path rule · `5f90442` architecture 날짜 정정 · `855ab14` DoD·라우팅·이 문서 · `1ee39b9` review-flow 개명 · `45ba44d` next-bun 스킬 · `19d656d` precompact 주석
+- next-bun: `55e6fd5` 설정 신설(훅·DB deny) · `5687b7b` bun 스킬 · `530d8d5` review-flow 개명 · `c22195a` CLAUDE.md 재구성 · `de8417b` README 통합 · `e226c6b` Swagger·카카오 링크 · `eb77f3e` docs/tasks 이동 · `650673b` typecheck·ci:core · `c0b5a52` CI verify 게이트
+- **push 전 주의**: next-bun `c0b5a52`는 main push 시 배포 파이프라인이 바뀐다(첫 실행 미검증). 문제 시 그 커밋만 revert.
