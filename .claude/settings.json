@@ -174,7 +174,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-frontend-claudemd.sh\"",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-sibling-claudemd.sh\" next-bun",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-sibling-claudemd.sh\" --reset next-bun",
             "timeout": 5
           }
         ]
