@@ -17,7 +17,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ## 자동 로드되는 것 (읽으라고 지시하지 않는다)
 
-- `.claude/rules/code-patterns.md` — `src`·`test`의 `.ts`를 읽는 순간 하네스가 로드. 코드를 아직 안 연 설계 단계엔 아래 Key Patterns 요약을 보고, 상세가 필요하면 직접 Read한다
+- `.claude/rules/code-patterns.md` — `src`·`test`·`migrations`의 `.ts`를 읽는 순간 하네스가 로드. 코드를 아직 안 연 설계 단계엔 아래 Key Patterns 요약을 보고, 상세가 필요하면 직접 Read한다
 - 프론트(`../next-bun`) 규약 — 그 레포 파일을 건드리는 순간 PreToolUse 훅이 `CLAUDE.md`·경로에 맞는 rule을 주입 (↓ Key Patterns 마지막 줄)
 - 스킬 `next-bun` — 프론트가 API·소켓을 어떻게 쓰는지 보고 **설계하는 단계**에 요청 의도로 발동
 
