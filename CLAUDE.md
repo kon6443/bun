@@ -26,6 +26,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
 | 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
 | 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `docs/architecture.md` — 모듈 구성은 `README.md`가 더 정확하다 |
+| Claude 설정 · 훅 · 권한 규칙 · 형제 레포(`../next-bun`) 교차 로드 | `docs/tasks/tasks-claude-config.md` — 두 레포 공통 SSOT. 권한 deny를 추가하면 **탐침으로 반드시 시험**한다(`docs/lessons.md` 2026-09-23) |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 | 이 문서 **DB Migrations** 섹션 + `docs/tasks/tasks-nestjs-improvements.md` D33/D34 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (D2/D5 등 해당 태스크) |
@@ -48,7 +49,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 | 금지 | 이유 |
 |---|---|
-| **DB에 접속하는 명령 실행** — `db:migrate:up`/`fake`/`revert`/**`list`**, `sqlplus`, DataSource를 직접 여는 스크립트(`tsx`·`node` 포함) | **LOCAL과 PROD가 동일 DB** — 모든 `up`이 곧 상용 적용. `list`조차 첫 실행 시 이력 테이블을 생성한다. AI는 **파일 작성까지만** (↓ DB Migrations) |
+| **DB에 접속하는 명령 실행** — `db:migrate:up`/`fake`/`revert`/**`list`**, `sqlplus`, DataSource를 직접 여는 스크립트(`tsx`·`node` 포함) | **LOCAL과 PROD가 동일 DB** — 모든 `up`이 곧 상용 적용. `list`조차 첫 실행 시 이력 테이블을 생성한다. AI는 **파일 작성까지만** (↓ DB Migrations). `.claude/settings.json` deny가 `pnpm run`·`--dir` 형태까지 막는다. **근거의 유효기간**: LOCAL과 PROD의 DB가 분리되면 재검토한다 |
 | `db:migrate:fake`를 평상시 사용 | pending이 있는 상태면 DDL 없이 기록만 되어 **조용히 미적용** (↓ Pitfalls #1) |
 | Caddyfile을 Git에 커밋 | 공개 저장소 — 도메인·IP 노출 (↓ Deployment) |
 | 시크릿(JWT_SECRET·wallet·봇 토큰)을 코드·로그·응답·문서에 기입 | 커밋 이력에 영구 보존된다 |
@@ -160,6 +161,11 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 4. **인증이 필요해 검증 못 한 경로는 "미검증"으로 명시** — 빌드 통과를 동작 검증으로 포장하지 않는다
 5. **Verification Story 1~2줄** — 무엇이 어떻게 바뀌었고 어떻게 확인했는가
 
+6. **결정이 바뀌면 코드보다 태스크 문서를 먼저 고친다** — 진행 상황·결정 근거의 SSOT는 `docs/tasks/*.md`다
+7. **남은 항목은 게이트로 분류해 보고한다** — 코드 결함과 배포 환경 의존성을 섞지 않는다. 코드 수정 항목은 게이트로 분류하지 말고 고쳐서 같은 작업에 담는다
+   - **머지 전 차단**: 미충족 상태로 배포하면 장애 (예: 마이그레이션 미실행 상태의 Entity 변경, 스택 YAML·시크릿 미반영)
+   - **배포 직후 조치**: 머지는 가능하나 배포하면 즉시 해야 함 (예: 담당자의 마이그레이션 실행, 기능 플래그 활성화)
+   - **후속**: 품질·일관성 — 별건으로 태스크 문서에 등재
 ## Deployment — 작업 시 알아야 할 것
 
 스택 구성·노드·볼륨·서비스 DNS·이미지 태그는 [`docs/deploy.md`](docs/deploy.md)가 SSOT다. **코드를 쓸 때 지켜야 할 것만**:
