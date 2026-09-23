@@ -80,6 +80,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - 검증: **`pnpm ci:core`**(lint → test → build) · PR 직전 **`pnpm ci:all`**(+ 스텁 검사 + E2E). 개별 실행은 `pnpm build`·`pnpm lint`·`pnpm test`·`pnpm test:e2e`
   - **테스트는 전부 통과하는 상태가 기준선이다 — 실패가 보이면 내 변경 탓이다** (기준선 수치는 [`README.md`](README.md#주요-명령어))
   - E2E는 **DB·Redis에 접속하지 않는다** (아래 Never 표 참조)
+  - ⚠️ Claude Code **sandbox 안에서는 E2E가 `listen EPERM`으로 대량 실패**한다(테스트 서버가 포트를 못 연다) — 코드 회귀가 아니다. sandbox 밖에서 다시 돌려 판정한다
 - 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
 - 부분 테스트로 좁혀 돌리는 방법은 [`README.md`](README.md#주요-명령어) 참조
   - ⚠️ `--testPathPattern`(구 단수형)은 jest 30에서 **동작하지 않는다** — 실측 에러: `Option "testPathPattern" was replaced by "--testPathPatterns"`. 복수형을 쓴다.
