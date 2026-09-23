@@ -2,6 +2,8 @@
 paths:
   - "src/**/*.ts"
   - "test/**/*.ts"
+  - "migrations/**/*.ts"
+  - "migration-datasource.ts"
 ---
 
 # 코드 패턴 (SSOT)
