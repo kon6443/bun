@@ -15,13 +15,18 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ---
 
-## 자동 라우팅 표 (MUST OBEY)
+## 자동 로드되는 것 (읽으라고 지시하지 않는다)
 
-요청에서 아래 트리거가 매칭되면 **작업 시작 전에** 해당 문서를 `Read`한다. 둘 이상 매칭되면 모두 읽는다.
+- `.claude/rules/code-patterns.md` — `src`·`test`의 `.ts`를 읽는 순간 하네스가 로드. 코드를 아직 안 연 설계 단계엔 아래 Key Patterns 요약을 보고, 상세가 필요하면 직접 Read한다
+- 프론트(`../next-bun`) 규약 — 그 레포 파일을 건드리는 순간 PreToolUse 훅이 `CLAUDE.md`·경로에 맞는 rule을 주입 (↓ Key Patterns 마지막 줄)
+- 스킬 `next-bun` — 프론트가 API·소켓을 어떻게 쓰는지 보고 **설계하는 단계**에 요청 의도로 발동
+
+## 문서 라우팅 — 자동 로드되지 않는 문서 (MUST OBEY)
+
+요청에서 아래 트리거가 매칭되면 **작업 시작 전에** 해당 문서를 `Read`한다. 둘 이상 매칭되면 모두 읽는다. 대화 상황(버그·교정·배포 등)으로만 판단할 수 있어 경로로 자동 로드할 수 없는 문서만 둔다.
 
 | 트리거 (요청 키워드 / 작업 성격) | 즉시 읽을 파일 |
 |---|---|
-| **코드 작성·수정·구현 (모든 `src` 작업)** · 신규 API/WS 이벤트 · 테스트 작성 | `.claude/rules/code-patterns.md` — 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT. **`src`·`test`의 `.ts`를 읽는 순간 자동 로드**되므로 이 행은 폴백이다 — 코드를 아직 안 연 설계 단계라면 직접 Read한다 |
 | **버그 · 장애 · 에러 · 회귀 · "안 됨" 조사** | `docs/playbooks/recurring-issues-playbook.md` — 반복 결함 클러스터별 **최우선 확인 지점**부터 진단 |
 | 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
 | 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
@@ -35,7 +40,6 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | 메트릭 · Prometheus · Grafana | `docs/tasks/tasks-monitoring.md` |
 | 로그 수집 · Loki · Promtail | `docs/tasks/tasks-logging.md` |
 | Redis Pub/Sub · 멀티 레플리카 브로드캐스트 | `docs/prd-redis-pubsub.md` + `docs/tasks/tasks-redis-pubsub.md` |
-| **프론트(`../next-bun`) 코드 확인 또는 작업** (API 계약·소켓 이벤트·날짜 표시 대조) | `../next-bun/CLAUDE.md` — **PreToolUse 훅이 자동 주입한다**(`.claude/hooks/inject-sibling-claudemd.sh`, 에이전트별 1회, compact/clear 후 재주입). 도구 입력 경로가 `../next-bun/…` 또는 그 절대경로일 때 주입되므로 **평소엔 수동 Read 불필요**. 주입 상한(약 9천 자)을 넘는 파일은 "지금 Read하라"는 지시만 온다 — 그 지시를 따른다. 주입 문구가 뜨지 않았는데 프론트 규약이 필요하면 직접 Read한다 |
 
 **면제**: 단일 한 줄 수정, 단순 정보 조회, 1회성 명령 실행.
 
@@ -102,7 +106,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **ValidationPipe**: `whitelist: true`, **`forbidNonWhitelisted: true`**, `transform: true`, `enableImplicitConversion: true` — 설정 본체는 `src/common/pipes/global-validation-pipe.ts` 한 곳에 있고 E2E와 공유한다(한쪽만 바꾸면 E2E가 다른 규칙으로 검증하게 된다)
 - **Rate Limiting**: 글로벌 2단계 (초당 5회 + 분당 60회), 제외는 `@SkipThrottle()`
 - **WS**: namespace `/teams`·`/fishing`, room `team-{teamId}` — 멀티 레플리카는 Redis Pub/Sub, 온라인 상태는 인메모리 금지(Redis)
-- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun) — 그쪽 `CLAUDE.md`·path-scoped rules는 PreToolUse 훅이 자동 주입한다(라우팅 표 마지막 행)
+- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun) — 그쪽 `CLAUDE.md`·path-scoped rules는 PreToolUse 훅(`.claude/hooks/inject-sibling-claudemd.sh`)이 자동 주입한다. 주입 상한(약 9천 자)을 넘는 파일은 "지금 Read하라" 지시만 온다 — 따른다
 
 ## Date/Time Handling
 - UTC 저장, 로컬 표시 — DB 컬럼 전부 `TIMESTAMP WITH TIME ZONE`
@@ -161,12 +165,12 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 3. **DB 변경이 있으면** 마이그레이션 파일 + Entity 수정을 세트로 제출. 실행은 담당자에게 요청하고, **실행 여부를 완료 조건에서 분리해 명시**
 4. **인증이 필요해 검증 못 한 경로는 "미검증"으로 명시** — 빌드 통과를 동작 검증으로 포장하지 않는다
 5. **Verification Story 1~2줄** — 무엇이 어떻게 바뀌었고 어떻게 확인했는가
-
 6. **결정이 바뀌면 코드보다 태스크 문서를 먼저 고친다** — 진행 상황·결정 근거의 SSOT는 `docs/tasks/*.md`다
 7. **남은 항목은 게이트로 분류해 보고한다** — 코드 결함과 배포 환경 의존성을 섞지 않는다. 코드 수정 항목은 게이트로 분류하지 말고 고쳐서 같은 작업에 담는다
    - **머지 전 차단**: 미충족 상태로 배포하면 장애 (예: 마이그레이션 미실행 상태의 Entity 변경, 스택 YAML·시크릿 미반영)
    - **배포 직후 조치**: 머지는 가능하나 배포하면 즉시 해야 함 (예: 담당자의 마이그레이션 실행, 기능 플래그 활성화)
    - **후속**: 품질·일관성 — 별건으로 태스크 문서에 등재
+
 ## Deployment — 작업 시 알아야 할 것
 
 스택 구성·노드·볼륨·서비스 DNS·이미지 태그는 [`docs/deploy.md`](docs/deploy.md)가 SSOT다. **코드를 쓸 때 지켜야 할 것만**:

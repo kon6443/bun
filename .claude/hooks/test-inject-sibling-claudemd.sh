@@ -51,6 +51,11 @@ check "V1 자기 레포 파일"         "$(run "$B" next-bun s6 - "{\"file_path\
 check "V1 연속 슬래시 경로"         "$(run "$B" next-bun s8 - "{\"file_path\":\"$T//node/next-bun//src/a.tsx\"}")" "FRONT-MD"
 check "V1 Edit content 오탐 없음" "$(run "$B" next-bun s7 - "{\"file_path\":\"$B/x.md\",\"new_string\":\"../next-bun/a\"}")" "-"
 
+# 헤더가 온전하고 stderr가 비어 있어야 한다 (헤더 문자열 안의 따옴표가 셸 문법을 깨뜨린 전례 — 2026-09-23)
+err=$(printf '{"session_id":"h1","tool_input":{"file_path":"%s/src/a.tsx"}}' "$F" | CLAUDE_PROJECT_DIR="$B" sh "$HOOK" next-bun 2>&1 >/dev/null)
+check "V1 정상 호출 시 stderr 없음" "${err:-EMPTY}" "EMPTY"
+check "V1 헤더 온전" "$(run "$B" next-bun h2 - "{\"file_path\":\"$F/src/a.tsx\"}")" "직접 읽는다.)"
+
 # ── V1 역방향 (프론트 세션 → 백엔드 형제): 'bun' 부분문자열 함정 ──────
 check "역 next-bun 경로는 bun 아님" "$(run "$F" bun r1 - "{\"file_path\":\"$F/src/a.tsx\"}")" "-"
 check "역 bun run 명령"             "$(run "$F" bun r2 - '{"command":"bun run test:run"}')" "-"
