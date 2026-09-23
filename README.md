@@ -156,7 +156,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > ⚠️ **CI 파이프라인은 lint·test·E2E를 실행하지 않는다.** `deploy-to-oci.yml`은 docker build → push → ssh deploy만 하고, `Dockerfile`도 `pnpm install` 후 `pnpm run build`만 돌린다. 즉 **테스트를 통과시키는 관문은 로컬의 `pnpm ci:all`이 유일하다** — `main` push는 검증 없이 배포로 직행한다.
 >
-> `pnpm ci:all` 기준선(2026-08-12 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **639/639**, E2E **79/79**, build 통과.
+> `pnpm ci:all` 기준선(2026-09-23 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **647/647**, E2E **79/79**, build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 jest 30에서 동작하지 않는다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
@@ -207,12 +207,12 @@ AI 에이전트용 작업 규약은 [`CLAUDE.md`](CLAUDE.md)가 진입점(SSOT)�
 
 | 문서 | 담당 |
 |---|---|
-| **[코드 패턴](docs/conventions/code-patterns.md)** | 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) — `src` 작업 전 필독 |
+| **[코드 패턴](.claude/rules/code-patterns.md)** | 계층·DB·트랜잭션·에러·인증·응답·테스트 규약 SSOT (실측 카운트 병기) — `src`·`test`의 `.ts`를 읽으면 자동 로드 |
 | **[반복 이슈 플레이북](docs/playbooks/recurring-issues-playbook.md)** | 결함 클러스터별 최우선 확인 지점 — 버그·장애 조사 진입점 |
 | **[교훈 로그](docs/lessons.md)** | 작업 방식의 누적 교훈 — 리팩터링 착수 전·교정 직후 |
 | **[배포 & 인프라](docs/deploy.md)** | Swarm 스택, 노드, 볼륨, CI/CD |
 | **[태스크 문서](docs/tasks/)** | 태스크별 상태·이력·결정 근거 (완료분은 [`archive/`](docs/tasks/archive/)) |
-| [아키텍처 & 주요 파일](docs/architecture.md) | ⚠️ **날짜 처리 섹션은 폐기된 옛 정책**이다 — 모듈 구성은 위 "아키텍처 개요"가 정확하다 |
+| [아키텍처 & 주요 파일](docs/architecture.md) | 주요 파일·날짜 처리 요지 — 모듈 구성은 위 "아키텍처 개요"가 정확하다 |
 | [Redis Pub/Sub PRD](docs/prd-redis-pubsub.md) · [API 스로틀링 가이드](docs/blog-api-throttling.md) | 배경 문서 (후자는 외부 발행용 초안, 프로젝트 규약 아님) |
 
 **프로젝트를 처음 접하는 사람/AI는:**

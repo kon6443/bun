@@ -1,8 +1,16 @@
+---
+paths:
+  - "src/**/*.ts"
+  - "test/**/*.ts"
+---
+
 # 코드 패턴 (SSOT)
+
+> **로드 방식**: 위 `paths`의 파일을 읽는 순간 하네스가 자동 로드한다(path-scoped rule). 형제 레포(`../next-bun`) 세션에서는 `inject-sibling-claudemd.sh`가 같은 glob으로 주입한다(C1-5). 2026-09-23 `docs/conventions/`에서 이동.
 
 > 최종 확인일: 2026-08-12 · 근거: `src` 전체 113개 `.ts`(spec 27개 포함) 실측 — 각 규약에 사용 카운트 병기
 > **용도**: 새 코드를 "이 프로젝트 모양"으로 작성하기 위한 규약. 신규 API·모듈·Gateway·테스트 작성 **전에** 해당 섹션을 확인한다.
-> **경계**: 여기는 *코드를 어떻게 쓰는가*. 금지·함정·현재 상태는 [`CLAUDE.md`](../../CLAUDE.md), 사실·사용법은 [`README.md`](../../README.md), 반복 결함 진단은 [`playbooks/recurring-issues-playbook.md`](../playbooks/recurring-issues-playbook.md).
+> **경계**: 여기는 *코드를 어떻게 쓰는가*. 금지·함정·현재 상태는 [`CLAUDE.md`](../../CLAUDE.md), 사실·사용법은 [`README.md`](../../README.md), 반복 결함 진단은 [`docs/playbooks/recurring-issues-playbook.md`](../../docs/playbooks/recurring-issues-playbook.md).
 
 규모 참고: 컨트롤러 7 · 서비스 9 · Gateway 2 · Entity 8 · 마이그레이션 3.
 
@@ -53,7 +61,7 @@ await this.dataSource.transaction(async (manager: EntityManager) => {
 ## 4. 에러 처리 — `defineDomainError` 팩토리
 
 ```typescript
-// {module}.error.dto.ts — 7개 파일, 정의 39건
+// {module}-error.dto.ts — 6개 파일(`common/dto/api-error.dto.ts` 포함), 정의 38건 (2026-09-23 재실측)
 export const TeamNotFoundErrorResponseDto = defineDomainError({
   code: 'TEAM_NOT_FOUND',
   status: 404,
@@ -164,7 +172,7 @@ private shouldSkip(): boolean {
 - 🚫 **`ORA_SDTZ` 설정 금지** — oracledb가 로컬 TZ 기준으로 Date를 저장하므로 세션 TZ를 자동 일치시켜야 한다.
 - 🚫 Oracle `FROM_TZ()`에 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`) 사용 (ORA-01805 방지).
 - 텔레그램 등 알림 포맷은 `src/common/utils/date.utils.ts`의 `formatDateTime()`을 쓴다.
-- ⚠️ `docs/architecture.md`의 "투과 방식(변환 없음) / timezone-naive" 서술은 **2026-04-14 커밋 `2c86d73`으로 폐기된 옛 정책**이다 — 그 문서를 근거로 삼지 말 것 (playbook 클러스터 3).
+- 옛 "투과 방식(변환 없음) / timezone-naive" 정책은 2026-04-14 커밋 `2c86d73`으로 폐기됐다 (playbook 클러스터 3). `docs/architecture.md`는 2026-09-23 이 절 기준으로 갱신됐다.
 
 ---
 

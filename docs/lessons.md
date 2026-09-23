@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-09-23 — 글로벌 훅을 프로젝트에 복사하면 사본이 먼저 낡는다 (타 레포 관찰)
+
+- **실패 양상**: nerd-back 레포가 글로벌 `check-secrets.sh`를 `.claude/hooks/`에 복사해 등록했는데, 사본(47줄)에는 글로벌(22줄)이 이후 추가한 시크릿 패턴 6종(`sk_live`·`glpat`·`npm_`·`hf_`·`AGE-SECRET`·`eyJ`)이 **0건**이었다. 글로벌 훅도 같은 이벤트에 등록돼 있어 두 벌이 이중 실행됐다.
+- **탐지 신호**: 같은 이름의 스크립트가 `~/.claude/`와 프로젝트 `.claude/hooks/`에 동시에 있다. 두 파일을 grep하면 패턴 수가 다르다.
+- **근본 원인**: 복사는 "그 시점의 원본"만 가져온다. 이후 원본만 갱신된다 — 같은 사실을 두 곳에 두면 어긋난다는 2026-08-12 교훈과 같은 구조다.
+- **예방 규칙**: 글로벌 훅은 프로젝트에 복사하지 않는다. **예외는 팀 공유가 목적일 때뿐**이고(개인 dotfiles가 없는 팀원도 받아야 할 때), 그때는 두 벌을 비교하는 검사를 함께 둔다 — 이 레포의 `inject-sibling-claudemd.sh`는 형제 레포와 `cmp` 검사(C2-5)로 묶여 있다.
+
+## 2026-09-23 — 권한 deny 규칙을 끝이 `:*`인 모양으로 써서 마이그레이션 차단이 무효였다
+
+- **실패 양상**: 프론트 `.claude/settings.json`에 `Bash(npm run db:migrate:*)`·`Bash(npm * db:migrate:*)`를 넣었는데, headless 세션 탐침에서 `npm run db:migrate:fake-probe`가 **그대로 실행**됐다. 같은 파일의 `Bash(pnpm db:migrate:up*)`는 막혔다. 같은 조사에서 백엔드도 `pnpm run db:migrate:up`·`pnpm --dir . …`이 deny를 빠져나가는 것을 확인했다(`pnpm db:migrate:up*`만 있었다).
+- **탐지 신호**: 존재하지 않는 스크립트명(`…-probe`)으로 실행했을 때 권한 거부가 아니라 `Missing script`가 나온다.
+- **근본 원인**: ① 끝이 `:*`인 규칙은 옛 접두사 문법으로 해석돼 `db:migrate` 뒤에 `:fake…`가 이어진 명령을 못 잡는다(실측, 해석 규칙 자체는 추정) ② 패턴을 "스크립트명 바로 앞이 `pnpm`"인 한 가지 모양만 썼고, 중간에 `run`·`--dir`이 끼는 형태를 시험하지 않았다. 규칙을 쓰고 **실제로 막히는지 시험하지 않았다**.
+- **예방 규칙**: deny 패턴은 끝을 `…up*`처럼 글자 뒤 `*`로 쓰고 `:*`로 끝내지 않는다. 중간 토큰이 끼는 형태(`pnpm run`, `pnpm --dir x`, `npm --prefix x run`, `cd x && …`)를 함께 넣는다. **추가한 deny는 반드시 탐침으로 시험한다** — 실존하지 않는 스크립트명을 쓰면 규칙이 빗나가도 `Missing script`로 끝나 안전하다. 실제 스크립트명으로 시험하지 않는다(`Bash(pnpm:*)`가 allow라 빗나가면 곧 상용 적용).
+
 ## 2026-08-12 — 로컬 빌드 성공이 Docker 빌드 성공을 뜻하지 않는다
 
 - **실패 양상**: CI Docker 빌드가 `error TS5058: The specified path does not exist: 'tsconfig.build.json'`으로 실패했다. 로컬 `pnpm build`는 계속 통과하고 있었다. `13d5308`(2026-08-07)에서 `tsconfig.build.json`을 도입하고 `build` 스크립트를 `tsc -p tsconfig.build.json`으로 바꿨는데, **`Dockerfile`의 `COPY` 목록을 함께 갱신하지 않았다**(Dockerfile 최종 변경은 2026-04-06). 5일간 깨진 채였고 `main` 미푸시 상태라 드러나지 않았다.

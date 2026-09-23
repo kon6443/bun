@@ -19,13 +19,12 @@
 ## DB
 - Oracle Autonomous DB (Free Tier)
 - TypeORM — 엔티티: `src/entities/`
-- 날짜 컬럼: Oracle `TIMESTAMP` (timezone-naive)
+- 시각 컬럼: 전부 `timestamp with time zone`
 
-## 날짜 처리 (투과 방식 — UTC+0)
-- 원칙: 사용자 입력값 = 저장값 = 표시값 (변환 없음)
-- 프론트: Z suffix 필수 (`"2026-03-27T14:00:00Z"`), `timeZone: 'UTC'`로 표시
-- 백엔드: Dockerfile `TZ=UTC`, Oracle DBTIMEZONE `+00:00`
-- API 응답: `toISOString()` (UTC)
-- 텔레그램 알림: `formatDateTime()` → `timeZone: 'UTC'` (프론트와 동일, 변환 없음)
-- `src/common/utils/date.utils.ts` — `formatDateTime()` (텔레그램 알림용 포맷)
+## 날짜 처리 — UTC 저장, 표시 시점 변환
+> 최종 확인: 2026-09-23 · 근거: `src/entities/**` 컬럼 타입, `Dockerfile:32`(`TZ=UTC`), `src/common/utils/date.utils.ts`(`timeZone: 'Asia/Seoul'`)
+> **규약 SSOT는 [`.claude/rules/code-patterns.md`](../.claude/rules/code-patterns.md) §12**다. 여기는 요지만 둔다.
+- 저장·처리는 UTC, 표시 단계에서만 로컬(KST) 변환 — 텔레그램 알림은 `formatDateTime()`이 `Asia/Seoul`로 포맷한다
+- 🚫 `ORA_SDTZ` 설정 금지 · 🚫 `FROM_TZ()`에 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`)
 - DTO: `@IsDate()` + `enableImplicitConversion` (class-transformer `@Type` 미사용)
+- 이력: 2026-04-14 커밋 `2c86d73`이 옛 "투과 방식(변환 없음)"을 폐기했다. 이 문서는 2026-09-23에야 갱신됐다(playbook 클러스터 3)
