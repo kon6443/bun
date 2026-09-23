@@ -212,7 +212,7 @@ AI 에이전트용 작업 규약은 [`CLAUDE.md`](CLAUDE.md)가 진입점(SSOT)�
 | **[교훈 로그](docs/lessons.md)** | 작업 방식의 누적 교훈 — 리팩터링 착수 전·교정 직후 |
 | **[배포 & 인프라](docs/deploy.md)** | Swarm 스택, 노드, 볼륨, CI/CD |
 | **[태스크 문서](docs/tasks/)** | 태스크별 상태·이력·결정 근거 (완료분은 [`archive/`](docs/tasks/archive/)) |
-| [아키텍처 & 주요 파일](docs/architecture.md) | ⚠️ **날짜 처리 섹션은 폐기된 옛 정책**이다 — 모듈 구성은 위 "아키텍처 개요"가 정확하다 |
+| [아키텍처 & 주요 파일](docs/architecture.md) | 주요 파일·날짜 처리 요지 — 모듈 구성은 위 "아키텍처 개요"가 정확하다 |
 | [Redis Pub/Sub PRD](docs/prd-redis-pubsub.md) · [API 스로틀링 가이드](docs/blog-api-throttling.md) | 배경 문서 (후자는 외부 발행용 초안, 프로젝트 규약 아님) |
 
 **프로젝트를 처음 접하는 사람/AI는:**

@@ -172,7 +172,7 @@ private shouldSkip(): boolean {
 - 🚫 **`ORA_SDTZ` 설정 금지** — oracledb가 로컬 TZ 기준으로 Date를 저장하므로 세션 TZ를 자동 일치시켜야 한다.
 - 🚫 Oracle `FROM_TZ()`에 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`) 사용 (ORA-01805 방지).
 - 텔레그램 등 알림 포맷은 `src/common/utils/date.utils.ts`의 `formatDateTime()`을 쓴다.
-- ⚠️ `docs/architecture.md`의 "투과 방식(변환 없음) / timezone-naive" 서술은 **2026-04-14 커밋 `2c86d73`으로 폐기된 옛 정책**이다 — 그 문서를 근거로 삼지 말 것 (playbook 클러스터 3).
+- 옛 "투과 방식(변환 없음) / timezone-naive" 정책은 2026-04-14 커밋 `2c86d73`으로 폐기됐다 (playbook 클러스터 3). `docs/architecture.md`는 2026-09-23 이 절 기준으로 갱신됐다.
 
 ---
 

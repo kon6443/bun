@@ -25,7 +25,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | **버그 · 장애 · 에러 · 회귀 · "안 됨" 조사** | `docs/playbooks/recurring-issues-playbook.md` — 반복 결함 클러스터별 **최우선 확인 지점**부터 진단 |
 | 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
 | 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
-| 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `docs/architecture.md` — ⚠️ **날짜 처리 섹션은 2026-04-14 커밋 `2c86d73`으로 폐기된 옛 정책**이다(playbook 클러스터 3). 모듈 구성은 `README.md`가 더 정확하다 |
+| 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `docs/architecture.md` — 모듈 구성은 `README.md`가 더 정확하다 |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 | 이 문서 **DB Migrations** 섹션 + `docs/tasks/tasks-nestjs-improvements.md` D33/D34 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (D2/D5 등 해당 태스크) |

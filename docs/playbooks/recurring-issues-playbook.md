@@ -35,10 +35,10 @@
 
 - **증상**: AI/사람이 문서를 근거로 작업했는데 코드와 정반대다. 라우팅 표가 그 문서를 진입점으로 지정하고 있으면 **작업 시작 시점부터 틀린 전제**를 갖는다.
 - **대표 커밋**: `2c86d73`(2026-04-14) — 날짜 정책을 "투과 방식(UTC+0, 변환 없음)" → **"UTC 저장 + 로컬(KST) 표시"** 로 전환하고 Entity 14개 컬럼을 `timestamp with time zone`으로 마이그레이션, `formatDateTime`의 timeZone을 `'UTC'` → `'Asia/Seoul'`로 변경, CLAUDE.md도 같은 커밋에서 갱신했다.
-- **🔴 미해결 잔재**: **`docs/architecture.md`는 갱신되지 않아 약 4개월간 옛 정책을 유지하고 있다** (2026-08-12 실측):
+- **✅ 잔재 해소 (2026-09-23)**: `docs/architecture.md`를 현행 정책으로 갱신했다(최종 확인일·근거 헤더 추가). 아래는 해소 전 상태 기록이다. **당시** `docs/architecture.md`는 갱신되지 않아 약 4개월간 옛 정책을 유지했다 (2026-08-12 실측):
   - L22 "날짜 컬럼: Oracle `TIMESTAMP` (timezone-naive)" ← 실제는 전 컬럼 `timestamp with time zone`
   - L24–31 "투과 방식 — 입력값=저장값=표시값(변환 없음), 프론트 `timeZone:'UTC'`로 표시" ← CLAUDE.md·`docs/deploy.md:50`과 정면 충돌
-  - → **이 문서의 날짜 섹션을 근거로 삼지 말 것.** 날짜 규약의 SSOT는 CLAUDE.md "Date/Time Handling"과 [`.claude/rules/code-patterns.md`](../../.claude/rules/code-patterns.md) §12다.
+  - → 날짜 규약의 SSOT는 CLAUDE.md "Date/Time Handling"과 [`.claude/rules/code-patterns.md`](../../.claude/rules/code-patterns.md) §12다.
 - **근본 원인**: 정책 전환 커밋이 **그 정책을 서술한 모든 문서를 찾지 않았다.** 문서에 최종 확인일이 없어서 낡음을 감지할 신호도 없었다.
 - **예방책**: 정책을 바꾸는 커밋에서는 **바뀐 용어로 `docs/` 전체를 grep**해 서술이 남은 문서를 전부 같은 커밋에서 갱신한다. 새 문서에는 헤더에 **최종 확인일 + 근거**를 적는다. 같은 유형의 낡음이 세션 메모리에서도 발생했다(`MEMORY.md`의 배포 명령·Redis 호스트가 4개월 낡아 매 세션 오염 — 삭제된 `infra/setup-redis.sh` 실행을 지시하고 있었다).
 
