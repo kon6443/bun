@@ -8,7 +8,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 |---|---|---|
 | [`README.md`](README.md) | **사실·사용법** (What / How) — 사람·AI 공통 | 기술 스택, 모듈 구성, 명령어, 환경변수, 배포 구성, **문서 목록** |
 | **이 문서** | **규약·금지·함정** (Rules) — AI 행동 지침 | 라우팅 표, 금지 사항, Pitfalls, DoD, 커밋 컨벤션 |
-| [`docs/conventions/`](docs/conventions/) · [`docs/playbooks/`](docs/playbooks/) | **코드 규약 상세 · 결함 진단** | 계층·트랜잭션·테스트 패턴, 반복 결함 클러스터 |
+| [`.claude/rules/code-patterns.md`](.claude/rules/code-patterns.md) · [`docs/playbooks/`](docs/playbooks/) | **코드 규약 상세 · 결함 진단** | 계층·트랜잭션·테스트 패턴, 반복 결함 클러스터 |
 | [`docs/tasks/*.md`](docs/tasks/) | **진행 상황·이력·결정 근거** (Status / Why) | 각 문서 헤더의 상태, 커밋 해시, 잔여 항목, 판정 근거 |
 
 **이 문서에 진행 상황·완료 이력·커버리지 수치를 쓰지 않는다.** 두 곳에 두면 반드시 어긋난다 — 실제로 커버리지가 이 문서엔 `62.7%`, 태스크 문서엔 `62.64%`로 갈렸던 전례가 있다. 사실은 README를, 진행 상황은 해당 태스크 문서를 링크한다.

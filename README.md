@@ -156,7 +156,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > ⚠️ **CI 파이프라인은 lint·test·E2E를 실행하지 않는다.** `deploy-to-oci.yml`은 docker build → push → ssh deploy만 하고, `Dockerfile`도 `pnpm install` 후 `pnpm run build`만 돌린다. 즉 **테스트를 통과시키는 관문은 로컬의 `pnpm ci:all`이 유일하다** — `main` push는 검증 없이 배포로 직행한다.
 >
-> `pnpm ci:all` 기준선(2026-08-12 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **639/639**, E2E **79/79**, build 통과.
+> `pnpm ci:all` 기준선(2026-09-23 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **647/647**, E2E **79/79**, build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 jest 30에서 동작하지 않는다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
