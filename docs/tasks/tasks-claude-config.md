@@ -359,3 +359,4 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 - bun: `4e28936` 기준선 · `fca31b7` 마이그레이션 deny 빈틈 · `412a962` 훅 일반화 · `d742649` code-patterns → path rule · `5f90442` architecture 날짜 정정 · `855ab14` DoD·라우팅·이 문서 · `1ee39b9` review-flow 개명 · `45ba44d` next-bun 스킬 · `19d656d` precompact 주석
 - next-bun: `55e6fd5` 설정 신설(훅·DB deny) · `5687b7b` bun 스킬 · `530d8d5` review-flow 개명 · `c22195a` CLAUDE.md 재구성 · `de8417b` README 통합 · `e226c6b` Swagger·카카오 링크 · `eb77f3e` docs/tasks 이동 · `650673b` typecheck·ci:core · `c0b5a52` CI verify 게이트
 - **push 전 주의**: next-bun `c0b5a52`는 main push 시 배포 파이프라인이 바뀐다(첫 실행 미검증). 문제 시 그 커밋만 revert.
+- **PR (2026-09-23)**: bun [#238](https://github.com/kon6443/bun/pull/238) · next-bun [#316](https://github.com/kon6443/next-bun/pull/316) — 둘 다 `feat-onam → develop`, MERGEABLE, 커밋 10·9개(이번 작업분만). `develop` 머지는 배포를 트리거하지 않는다(배포 워크플로는 `main` push 전용).
