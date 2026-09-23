@@ -34,7 +34,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | 메트릭 · Prometheus · Grafana | `docs/tasks/tasks-monitoring.md` |
 | 로그 수집 · Loki · Promtail | `docs/tasks/tasks-logging.md` |
 | Redis Pub/Sub · 멀티 레플리카 브로드캐스트 | `docs/prd-redis-pubsub.md` + `docs/tasks/tasks-redis-pubsub.md` |
-| **프론트(`../next-bun`) 코드 확인 또는 작업** (API 계약·소켓 이벤트·날짜 표시 대조) | `../next-bun/CLAUDE.md` — 🔴 **자동 로드되지 않는다** (추가 작업 디렉터리라 세션 시작 시 컨텍스트에 없음). "코드만 잠깐 본다"도 예외 아님 — 미로드 시 그쪽 고유 규약을 놓친다 |
+| **프론트(`../next-bun`) 코드 확인 또는 작업** (API 계약·소켓 이벤트·날짜 표시 대조) | `../next-bun/CLAUDE.md` — **PreToolUse 훅이 자동 주입한다**(`.claude/hooks/inject-frontend-claudemd.sh`, 세션당 1회). 경로에 `next-bun`이 든 Read/Edit/Grep/Bash 호출 직전에 주입되므로 **평소엔 수동 Read 불필요**. 단 훅은 도구 입력의 경로 필드만 보므로, 주입 문구가 뜨지 않았는데 프론트 규약이 필요하면 직접 Read한다 |
 
 **면제**: 단일 한 줄 수정, 단순 정보 조회, 1회성 명령 실행.
 
@@ -99,7 +99,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - **ValidationPipe**: `whitelist: true`, **`forbidNonWhitelisted: true`**, `transform: true`, `enableImplicitConversion: true` — 설정 본체는 `src/common/pipes/global-validation-pipe.ts` 한 곳에 있고 E2E와 공유한다(한쪽만 바꾸면 E2E가 다른 규칙으로 검증하게 된다)
 - **Rate Limiting**: 글로벌 2단계 (초당 5회 + 분당 60회), 제외는 `@SkipThrottle()`
 - **WS**: namespace `/teams`·`/fishing`, room `team-{teamId}` — 멀티 레플리카는 Redis Pub/Sub, 온라인 상태는 인메모리 금지(Redis)
-- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun) — 코드 확인 시 그쪽 `CLAUDE.md`를 먼저 읽는다(자동 로드 안 됨)
+- **프론트엔드 프로젝트**: `../next-bun` (Next.js 15 App Router + Bun) — 그쪽 `CLAUDE.md`는 PreToolUse 훅이 자동 주입한다(라우팅 표 마지막 행)
 
 ## Date/Time Handling
 - UTC 저장, 로컬 표시 — DB 컬럼 전부 `TIMESTAMP WITH TIME ZONE`

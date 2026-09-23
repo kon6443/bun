@@ -157,6 +157,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Glob|Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-frontend-claudemd.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
