@@ -125,3 +125,8 @@
 - Low 처리: ①`tasks-kakao-login-latency.md`의 운영 도메인 — 이미 커밋된 문서 3개(21회)·프론트 빌드 env에 있는 공개 API 주소라 유지(Caddyfile류 내부 설정과 다름, 타 작업 문서 내용 불변) ②권한 축소 — 정적 확인(프로젝트·글로벌·로컬 allow에 curl·nc 없음 → 실행 시 확인). auto mode에서는 실행 탐침이 분류기 승인과 구분되지 않아 생략 ③훅 병렬 호출 중복 주입 창 — 부작용 컨텍스트 중복뿐, 조치 없음
 - 범위 밖 발견(후속): README `migrationsRun: false` 서술이 코드에 키 없음과 어긋날 수 있음
 - 커밋: `86bf73d` 카카오 문서(CLAUDE.md 참조 대상 선커밋) · `2eacccd` 설정·문서 정비(22파일) · 이어서 이 태스크 기록. 제외: `auth.service.ts`·`tasks-error-dto-refactor.md`·`tasks-nestjs-improvements.md`(다른 작업)
+
+## 2026-10-08 — PR 머지
+- push `b5e3c8a..5fb4148` → PR #243(feat-onam → develop) MERGEABLE/CLEAN, 머지 `00d2d1a` → PR #244(develop → main) 머지 `27169a5`
+- 배포: 변경 경로가 `.claude/`·문서뿐 — 배포 워크플로 3종(`src/**`·`infra/**`·`Dockerfile` 등 경로 한정) 미해당. 머지 후 `gh run list --branch main`에 새 실행 없음 확인
+- 로컬 `main`·`develop`을 원격으로 fast-forward
