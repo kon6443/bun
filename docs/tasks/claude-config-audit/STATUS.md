@@ -1,6 +1,6 @@
 # Claude 설정·문서 전수조사 및 베스트 프랙티스 적용 추천
 
-- **상태**: 🟡 진행 중 — 리뷰 통과·커밋 완료, PR 머지(feat-onam → develop → main) 진행 (2026-10-08)
+- **상태**: 🟢 완료 — 커밋·PR 머지 완료(main 반영, 배포 미트리거) (2026-10-08)
 - **브랜치**: `feat-onam` · **최종수정**: 2026-10-08
 - **관련 문서**: RECOMMENDATIONS.md(추천안) · DECISIONS.md · WORKLOG.md · 선행 이력 `../tasks-claude-config.md`(평면 문서, 그대로 유지)
 
@@ -17,8 +17,7 @@
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: 조사·추천(S1~S8), 백엔드 적용(WORKLOG "적용 (백엔드)" 절), prompt-audit 대체 감사 반영, 프론트 패치 반영 확인
 - **다음 할 일**:
-  1. PR: `feat-onam → develop` → `develop → main` (main 머지 = 배포)
-  2. 후속(별건): WS 핸들러 입력 검증 보강, 큰 태스크 문서 정리, 문서 중복 4건, README `migrationsRun` 서술 확인
+  1. 후속(별건): WS 핸들러 입력 검증 보강, 큰 태스크 문서 정리, 문서 중복 4건, README `migrationsRun` 서술 확인
 
 ## 진행 체크리스트
 - [x] S1 — 백엔드 레포 Claude 설정·문서 전수조사
@@ -32,7 +31,7 @@
 - [x] S9 — 백엔드·프론트 적용·검증
 - [x] S10 — 사용자 직접 적용 항목(settings.json·메모리) 확인
 - [x] S11 — `/doctor prompt-audit` · 독립 리뷰(High·Med 0) · 커밋 `86bf73d`(카카오 문서) · `2eacccd`(설정·문서 정비) · 이 기록 커밋
-- [ ] S12 — PR 머지 feat-onam → develop → main
+- [x] S12 — PR 머지: #243 feat-onam → develop(`00d2d1a`) · #244 develop → main(`27169a5`)
 
 ## 미해결 질문 · 차단
 | # | 질문 | 누구에게 | 권장 디폴트 | 상태 |
