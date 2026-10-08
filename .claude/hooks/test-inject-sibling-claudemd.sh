@@ -16,7 +16,8 @@ B="$T/node/bun"; F="$T/node/next-bun"
 mkdir -p "$B/.claude/rules" "$F/src" "$B/src"
 printf '# FRONT-MD\n' > "$F/CLAUDE.md"
 printf '# BACK-MD\n' > "$B/CLAUDE.md"
-printf -- '---\npaths:\n  - "src/**/*.ts"\n  - "test/**/*.ts"\n---\n# BACK-RULE-CODE\n' > "$B/.claude/rules/code-patterns.md"
+printf -- '---\npaths:\n  - "src/**/*.ts"\n  - "test/**/*.ts"\n---\n# BACK-RULE-CODE\n' > "$B/.claude/rules/core.md"
+printf -- '---\npaths:\n  - "src/**/*.controller.ts"\n---\n# BACK-RULE-CTRL\n' > "$B/.claude/rules/api-http.md"
 printf -- '---\npaths: ["docs/**/*.md"]\n---\n# BACK-RULE-DOCS\n' > "$B/.claude/rules/docs.md"
 printf '# BACK-RULE-ALWAYS\n' > "$B/.claude/rules/always.md"
 
@@ -67,6 +68,8 @@ o=$(run "$F" bun p1 - "{\"file_path\":\"$B/src/x.ts\"}")
 check "C1-5 src/*.ts → code rule"      "$o" "BACK-RULE-CODE" "BACK-RULE-DOCS"
 check "C1-5 paths 없는 rule은 상시"    "$o" "BACK-RULE-ALWAYS"
 check "C1-5 docs md → docs rule만"     "$(run "$F" bun p2 - "{\"file_path\":\"$B/docs/a.md\"}")" "BACK-RULE-DOCS" "BACK-RULE-CODE"
+check "C1-5 일반 .ts는 파일종류 rule 제외" "$o" "BACK-RULE-CODE" "BACK-RULE-CTRL"
+check "C1-5 중첩 컨트롤러 → 종류별 rule" "$(run "$F" bun p3 - "{\"file_path\":\"$B/src/modules/team/team.controller.ts\"}")" "BACK-RULE-CTRL"
 check "C1-5 같은 rule 재주입 없음"     "$(run "$F" bun p1 - "{\"file_path\":\"$B/src/y.ts\"}")" "-"
 check "C1-5 나중에 docs rule만 추가"   "$(run "$F" bun p1 - "{\"file_path\":\"$B/docs/b.md\"}")" "BACK-RULE-DOCS" "BACK-MD"
 
@@ -85,6 +88,16 @@ python3 -c "print('# BIG\n' + '가'*9500)" > "$F/CLAUDE.md"
 o=$(run "$B" next-bun s10 - "{\"file_path\":\"$F/a\"}")
 check "V5 큰 파일은 Read 지시"   "$o" "Read 도구로 전부 읽는다" "가가가가"
 printf '# FRONT-MD\n' > "$F/CLAUDE.md"
+
+# ── V6: 출력 jq 가 실패하면 마커를 남기지 않는다 (다음 호출에서 재주입) ──
+# 가짜 jq: 출력 생성(-n)만 실패시키고 나머지 파싱은 진짜 jq 에 넘긴다.
+REAL_JQ=$(command -v jq)
+mkdir -p "$T/fakebin"
+printf '#!/bin/sh\n[ "$1" = "-n" ] && exit 1\nexec "%s" "$@"\n' "$REAL_JQ" > "$T/fakebin/jq"
+chmod +x "$T/fakebin/jq"
+o=$(printf '{"session_id":"s11","tool_input":{"file_path":"%s/a"}}' "$F" | PATH="$T/fakebin:$PATH" CLAUDE_PROJECT_DIR="$B" sh "$HOOK" next-bun)
+check "V6 출력 실패 시 무출력"     "$o" "-"
+check "V6 실패 뒤 다음 호출 재주입" "$(run "$B" next-bun s11 - "{\"file_path\":\"$F/b\"}")" "FRONT-MD"
 
 # ── fail-open: 비정상 입력에도 exit 0 ────────────────────────────────
 printf 'not json' | CLAUDE_PROJECT_DIR="$B" sh "$HOOK" next-bun >/dev/null 2>&1; rc1=$?

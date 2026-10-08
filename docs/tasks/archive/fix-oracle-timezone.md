@@ -1,3 +1,5 @@
+> ⚠️ **보관 문서 — 폐기된 정책을 담고 있다.** 현행 날짜 규약은 [`.claude/rules/datetime.md`](../../../.claude/rules/datetime.md)다. 이 문서를 근거로 코드를 쓰지 않는다.
+
 # Oracle 타임존 이슈 수정
 
 ## 문제 요약

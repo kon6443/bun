@@ -75,6 +75,7 @@ RELS=$(printf '%s\n' "$TARGETS" | awk -v sib="$SIB" -v sibp="$SIB_P" -v name="$N
 
 mkdir -p "$MARK_DIR" 2>/dev/null || exit 0
 CONTEXT=""
+MARKS=""   # 이번에 주입한 항목의 마커 이름 — 출력에 성공한 뒤에만 만든다
 
 append() {
   CONTEXT="${CONTEXT}${CONTEXT:+
@@ -100,7 +101,7 @@ $(cat "$1")"
 
 # 1) 형제 CLAUDE.md — 에이전트당 1회
 if [ -r "$SIB/CLAUDE.md" ] && [ ! -e "$MARK_DIR/CLAUDE.md" ]; then
-  : > "$MARK_DIR/CLAUDE.md" 2>/dev/null
+  MARKS="$MARKS CLAUDE.md"
   emit_file "$SIB/CLAUDE.md" "형제 레포 CLAUDE.md"
 fi
 
@@ -134,7 +135,7 @@ if [ -d "$SIB/.claude/rules" ]; then
       set +f
     fi
     if [ "$hit" = 1 ]; then
-      : > "$MARK_DIR/rule-$rname" 2>/dev/null
+      MARKS="$MARKS rule-$rname"
       emit_file "$rule" "형제 레포 rule"
     fi
   done
@@ -146,10 +147,17 @@ HEADER="[자동 주입] 형제 레포($SIB)를 건드리는 도구 호출이 감
 아래는 그 레포의 규약이다. 형제 레포 파일을 읽거나 고칠 때 이 규약을 따른다.
 (형제 레포 규약은 이 주입으로 충족된다 — 지금 Read하라는 지시가 붙은 파일만 직접 읽는다.)"
 
-jq -n --arg ctx "$HEADER
+OUT=$(jq -n --arg ctx "$HEADER
 
 $CONTEXT" '{
   hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: $ctx }
-}' 2>/dev/null
+}' 2>/dev/null) || exit 0
+[ -n "$OUT" ] || exit 0
+printf '%s\n' "$OUT"
+
+# 마커는 출력에 성공한 뒤에만 남긴다 — jq 가 실패하면 다음 호출에서 다시 주입된다.
+for m in $MARKS; do
+  : > "$MARK_DIR/$m" 2>/dev/null
+done
 
 exit 0
