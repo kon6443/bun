@@ -1,6 +1,6 @@
 # Claude Code 설정 고도화 — 백엔드(bun) · 프론트(next-bun) · 글로벌
 
-> 작성일: 2026-09-23 | 최종 수정: 2026-09-23 (전수 조사 완료 · 실행 계획 수립 · Q1 결정 = (A) · nerd-back·mobigo-web 패턴 분석 반영 · 추천 항목 전부 채택 확정 · **C0 완료 `4e28936`** · 레포 쪽 전부 완료·커밋(push 안 함) · C6 3건은 사용자 별도 세션 · F1·F8·F9 실측)
+> 작성일: 2026-09-23 | 최종 수정: 2026-09-23 (전수 조사 완료 · 실행 계획 수립 · Q1 결정 = (A) · 참고 레포 A·참고 레포 C 패턴 분석 반영 · 추천 항목 전부 채택 확정 · **C0 완료 `4e28936`** · 레포 쪽 전부 완료·커밋(push 안 함) · C6 3건은 사용자 별도 세션 · F1·F8·F9 실측)
 > 브랜치: `feat-onam` (백엔드) / 프론트는 별도 레포 `../next-bun`
 > 목표: ① 글로벌 설정의 검증된 패턴을 두 프로젝트에 전파 ② **교차 프로젝트 규약의 조건부 로드**를 양방향으로 동작시키기 ③ 설정·문서 드리프트 정리
 > **SSOT**: 이 파일이 두 레포 공통의 Claude 설정 작업 SSOT다. 프론트 레포에는 이 파일로 가는 링크만 둔다(C2-4). 복사본을 만들지 않는다.
@@ -15,7 +15,7 @@
 | `~/dotfiles/claude-config/**`, `~/.claude/**` | AI 쓰기 불가 (글로벌 deny + sandbox) | 동일 — 사용자 적용 |
 | `next-bun/.claude/` | 현재 `settings.local.json`(git 미추적, allow만)만 존재. 팀 공유 `settings.json` 없음 | 신설 필요. 쓰기 가능 여부는 착수 시 확인 |
 | 권한 배열 병합 | 공식 문서: *"Arrays merge across layers"* (settings.md) — user·project·local의 allow/deny/ask는 **합쳐지고 deny가 우선** | 글로벌 deny는 프로젝트에서도 살아 있다. 단 **프로젝트 전용 deny는 그 프로젝트에서 세션을 열 때만** 적용된다 (→ C2-2) |
-| 추가 디렉터리의 CLAUDE.md·`.claude/rules`·skills | **추가 방식에 따라 다르다** (large-codebases.md "Grant access across packages or repositories" 표): `additionalDirectories` **설정** → CLAUDE.md·rules **Never**, skills **Never**, 환경변수도 *"has no effect"*. `--add-dir` 플래그·`/add-dir` → skills **Yes**, CLAUDE.md·rules는 `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`일 때만(세션 시작 시 전부) | 우리는 설정 방식이라 env로는 **아예 안 된다**(2026-09-23 정정 — 이전 서술 "env면 로드"는 `--add-dir`에만 맞다. mobisell-back F37이 먼저 발견). 어느 쪽이든 "필요할 때만"은 불가 → 훅 방식 유지 |
+| 추가 디렉터리의 CLAUDE.md·`.claude/rules`·skills | **추가 방식에 따라 다르다** (large-codebases.md "Grant access across packages or repositories" 표): `additionalDirectories` **설정** → CLAUDE.md·rules **Never**, skills **Never**, 환경변수도 *"has no effect"*. `--add-dir` 플래그·`/add-dir` → skills **Yes**, CLAUDE.md·rules는 `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`일 때만(세션 시작 시 전부) | 우리는 설정 방식이라 env로는 **아예 안 된다**(2026-09-23 정정 — 이전 서술 "env면 로드"는 `--add-dir`에만 맞다. 비교 레포 B F37이 먼저 발견). 어느 쪽이든 "필요할 때만"은 불가 → 훅 방식 유지 |
 | `@import` | 세션 시작 시 항상 로드 (조건부 불가) | 기각 |
 | `.claude/rules` `paths:` | 프로젝트 루트 기준 상대 glob. **추가 디렉터리의 rules는 로드되지 않음** | 교차 세션에서 필요한 규칙을 path-scoped rule로 옮기면 형제 세션에선 **안 보이게 된다** → **C1-5(형제 rules 주입)가 두 레포에 배포된 뒤에만** 옮긴다 (C3-4) |
 
@@ -59,28 +59,28 @@
 | F8 | 훅 주입 크기 상한이 **문서에 없다** — 백엔드 CLAUDE.md는 10,836자 | ✅ **실측**(2026-09-23, 프론트 CLAUDE.md를 임시로 키워 주입 후 원복): 총 9,901자 → 전문 도착 / 15,088자 → `<persisted-output>`으로 파일에 저장되고 **앞 2KB 미리보기만** 컨텍스트에 남음. 상한은 그 사이 → LIMIT 9,000자(누적) 채택. **백엔드 CLAUDE.md(10,836자)는 역방향에서 전문 주입 불가 → Read 지시로 대체**된다 |
 | F9 | `PreToolUse additionalContext`가 서브에이전트 컨텍스트로 들어가는지 **문서에 없음** — ✅ **실측: 들어간다**(서브에이전트가 주입 본문의 `glass-morphism` 줄을 그대로 인용) | hooks.md *"When a subagent calls a tool, tool events such as PreToolUse … fire the same configured hooks"* |
 
-### 타 프로젝트 패턴 분석 (2026-09-23 — nerd-back · mobigo-web)
+### 타 프로젝트 패턴 분석 (2026-09-23 — 참고 레포 A · 참고 레포 C)
 
-대상: `../wanted_ai_2026/nerd-back`(pnpm 모노레포 apps/back·apps/front), `../mobisell/mobigo-web`(PHP, rules 15·skills 2·agents 5·templates 6). 채택한 것은 각 태스크에 근거와 함께 반영했다.
+대상: `참고 레포 A`(pnpm 모노레포 apps/back·apps/front), `참고 레포 C`(PHP, rules 15·skills 2·agents 5·templates 6). 채택한 것은 각 태스크에 근거와 함께 반영했다.
 
 | 패턴 | 출처 | 판정 | 반영 위치 |
 |---|---|---|---|
-| 코드 규약을 `.claude/rules/` + `paths:`로 자동 로드, 라우팅 표는 폴백 | nerd-back `.claude/rules/back-code-patterns.md:1-6`, `CLAUDE.md:59` · mobigo rules 8/15 | **채택** | C3-4 (+ 형제 세션 보완 C1-5) |
-| rule과 CLAUDE.md 요약의 **의도된 중복**을 이유와 함께 명시 | nerd-back `apps/back/CLAUDE.md:16-19` | **채택** | C3-4 |
-| DoD 잔여 항목 게이트 3분류 · "결정 바뀌면 태스크 문서 먼저" | nerd-back `CLAUDE.md:126-139` | **채택** | C3-5 |
-| Never 규칙에 "근거의 유효기간" | nerd-back `apps/back/CLAUDE.md:14` | **채택** | C3-5 |
-| Never 표 ↔ deny 배열 1:1 대조 | nerd-back에서 `db:migrate:list` 누락 독립 재현 → bun에도 같은 불일치 있음 | **채택** | C2-2 · C4-6 |
-| 훅 헤더 표준 주석(역할/트리거/입출력/실패 정책/의존성) | mobigo `.claude/hooks/check-secrets.sh:1-32` | **채택** | C1-1 |
-| 팀 공유 목적의 훅·에이전트는 프로젝트에 커밋 | mobigo `.claude/hooks/README.md:16-19` | **Q1=(A) 보강 근거** | Q1 |
-| 형제 레포 **안내 스킬**(`/mobisell-front`) — 로드 절차 + 형제 rules 색인 + 계약 접점, `paths` 의도적 미사용 | mobisell-back `.claude/skills/mobisell-front/SKILL.md` · 같은 레포 `docs/tasks/claude-config-improvement-round2-tasks.md` F37~F42 | **채택(훅의 보조)** — 2026-09-23 사용자 결정 | C3-6 |
-| 명령·스킬 역할을 "도구 \| 종류 \| 언제" 표로 명문화 | mobigo `.claude/CLAUDE.md:119-127` | 채택 안 함 — 이름 충돌이 남는다. **개명으로 확정** | C4-1 |
-| 글로벌 훅의 프로젝트 사본 | nerd-back `check-secrets.sh` — 글로벌보다 구버전·이중 실행 | **반면교사** | C6-5 |
-| 중첩 CLAUDE.md on-demand 로드 | nerd-back `apps/*/CLAUDE.md` | 적용 불가 — 같은 레포 하위 트리 전용. 별도 레포는 훅으로 흉내낸다(C1). 모노레포 통합은 C1-5에 대안으로만 기록 | — |
-| `.claude/CLAUDE.md`(AI 절차) / 루트 `CLAUDE.md`(코드 지식) 이원화 | mobigo `.claude/CLAUDE.md:3` | 채택 안 함 — bun은 README(사실)/CLAUDE.md(규약) 경계가 이미 같은 역할이고 168줄로 한도 내. 파일을 늘리면 경계만 하나 더 생긴다 | — |
-| `role-*.md` 상시 로드 역할 규칙 | mobigo `rules/role-*.md` | 채택 안 함 — bun/next-bun은 **레포 자체가 역할 경계**. 상시 로드라 토큰만 는다 | — |
-| 글로벌 rules(context/workflow/git-hygiene 등)의 프로젝트 사본 | mobigo `rules/` 7개 | 채택 안 함 — 글로벌이 이미 매 세션 로드. 사본은 드리프트 확정 | — |
-| `deploy-qa-report` 생성자/평가자/판정자 하네스 | mobigo `.claude/skills/deploy-qa-report/` | 채택 안 함 — 대응 프로세스(비개발자 stag QA → Notion)가 없다. 과설계 | — |
-| plan/bugfix 템플릿을 레포에 커밋 | nerd-back·mobigo `.claude/templates/` | **보류** — 팀 전파가 필요할 때만 의미. 현재 글로벌 스킬 `/plan`·`/bugfix`로 충족 | — |
+| 코드 규약을 `.claude/rules/` + `paths:`로 자동 로드, 라우팅 표는 폴백 | 참고 레포 A `.claude/rules/back-code-patterns.md:1-6`, `CLAUDE.md:59` · 참고 레포 C rules 8/15 | **채택** | C3-4 (+ 형제 세션 보완 C1-5) |
+| rule과 CLAUDE.md 요약의 **의도된 중복**을 이유와 함께 명시 | 참고 레포 A `apps/back/CLAUDE.md:16-19` | **채택** | C3-4 |
+| DoD 잔여 항목 게이트 3분류 · "결정 바뀌면 태스크 문서 먼저" | 참고 레포 A `CLAUDE.md:126-139` | **채택** | C3-5 |
+| Never 규칙에 "근거의 유효기간" | 참고 레포 A `apps/back/CLAUDE.md:14` | **채택** | C3-5 |
+| Never 표 ↔ deny 배열 1:1 대조 | 참고 레포 A에서 `db:migrate:list` 누락 독립 재현 → bun에도 같은 불일치 있음 | **채택** | C2-2 · C4-6 |
+| 훅 헤더 표준 주석(역할/트리거/입출력/실패 정책/의존성) | 참고 레포 C `.claude/hooks/check-secrets.sh:1-32` | **채택** | C1-1 |
+| 팀 공유 목적의 훅·에이전트는 프로젝트에 커밋 | 참고 레포 C `.claude/hooks/README.md:16-19` | **Q1=(A) 보강 근거** | Q1 |
+| 형제 레포 **안내 스킬**(`/비교 레포 F`) — 로드 절차 + 형제 rules 색인 + 계약 접점, `paths` 의도적 미사용 | 비교 레포 B `.claude/skills/비교 레포 F/SKILL.md` · 같은 레포 `docs/tasks/claude-config-improvement-round2-tasks.md` F37~F42 | **채택(훅의 보조)** — 2026-09-23 사용자 결정 | C3-6 |
+| 명령·스킬 역할을 "도구 \| 종류 \| 언제" 표로 명문화 | 참고 레포 C `.claude/CLAUDE.md:119-127` | 채택 안 함 — 이름 충돌이 남는다. **개명으로 확정** | C4-1 |
+| 글로벌 훅의 프로젝트 사본 | 참고 레포 A `check-secrets.sh` — 글로벌보다 구버전·이중 실행 | **반면교사** | C6-5 |
+| 중첩 CLAUDE.md on-demand 로드 | 참고 레포 A `apps/*/CLAUDE.md` | 적용 불가 — 같은 레포 하위 트리 전용. 별도 레포는 훅으로 흉내낸다(C1). 모노레포 통합은 C1-5에 대안으로만 기록 | — |
+| `.claude/CLAUDE.md`(AI 절차) / 루트 `CLAUDE.md`(코드 지식) 이원화 | 참고 레포 C `.claude/CLAUDE.md:3` | 채택 안 함 — bun은 README(사실)/CLAUDE.md(규약) 경계가 이미 같은 역할이고 168줄로 한도 내. 파일을 늘리면 경계만 하나 더 생긴다 | — |
+| `role-*.md` 상시 로드 역할 규칙 | 참고 레포 C `rules/role-*.md` | 채택 안 함 — bun/next-bun은 **레포 자체가 역할 경계**. 상시 로드라 토큰만 는다 | — |
+| 글로벌 rules(context/workflow/git-hygiene 등)의 프로젝트 사본 | 참고 레포 C `rules/` 7개 | 채택 안 함 — 글로벌이 이미 매 세션 로드. 사본은 드리프트 확정 | — |
+| `deploy-qa-report` 생성자/평가자/판정자 하네스 | 참고 레포 C `.claude/skills/deploy-qa-report/` | 채택 안 함 — 대응 프로세스(비개발자 stag QA → Notion)가 없다. 과설계 | — |
+| plan/bugfix 템플릿을 레포에 커밋 | 참고 레포 A·참고 레포 C `.claude/templates/` | **보류** — 팀 전파가 필요할 때만 의미. 현재 글로벌 스킬 `/plan`·`/bugfix`로 충족 | — |
 
 | F10 | (미재현 관측) 13:41 메인 Bash 호출 2건에서 마커는 갱신됐는데 주입 문구가 보이지 않았다 | 이후 같은 조건(단일 명령·여러 줄 복합 명령·`cd` 포함·Read)으로 4회 재시도 → 모두 정상 주입. 원인 미확정. C1-4 V4 실세션 검증 때 다시 관찰한다 |
 
@@ -136,7 +136,7 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 실패:     언제나 exit 0 (도구 호출을 막지 않는다) — 글로벌 훅 fail-open 원칙과 동일
 ```
 
-- 스크립트 헤더 주석은 **역할 / 트리거(등록 위치) / 입출력 / 실패 정책 / 의존성(jq) / 출처** 형식으로 쓴다 (mobigo-web `.claude/hooks/check-secrets.sh:1-32` 형식). 등록 timeout 같은 **설정값은 주석에 숫자로 복제하지 않는다** — bun `precompact.sh:13`이 "600s"라 적고 실제는 20인 드리프트(C4-2)의 원인이다.
+- 스크립트 헤더 주석은 **역할 / 트리거(등록 위치) / 입출력 / 실패 정책 / 의존성(jq) / 출처** 형식으로 쓴다 (참고 레포 C `.claude/hooks/check-secrets.sh:1-32` 형식). 등록 timeout 같은 **설정값은 주석에 숫자로 복제하지 않는다** — bun `precompact.sh:13`이 "600s"라 적고 실제는 20인 드리프트(C4-2)의 원인이다.
 
 ### C1-2. compact/clear 시 재주입 — SessionStart 훅
 
@@ -169,7 +169,7 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 - **무엇**: 매칭된 대상 경로를 형제 루트 기준 상대경로로 바꾼 뒤, 형제 `.claude/rules/*.md` 중 `paths:` glob이 맞는 파일을 규칙별 1회 주입 (마커에 규칙 파일명 포함). glob은 `**/`→`*` 치환 후 `case` 매칭 수준의 근사로 충분(과매칭은 토큰 비용만, 누락은 규약 누락이므로 과매칭 쪽으로 기운다).
 - **채택 이유**: C3-4만 단독 적용하면 프론트 세션에서 백엔드 코드 규약이 사라지는 **회귀**가 생긴다. 그래서 C1-5는 선택이 아니라 C3-4의 선행 조건이다. 현재 next-bun엔 `.claude/rules/`가 없어 bun 세션에선 아무 동작도 하지 않지만 무해하고, 두 벌 스크립트를 같게 유지하기 위해(C2-5) 같은 코드를 둔다.
 - **수용 기준**: 프론트 세션에서 `../bun/src/x.ts` Read → `code-patterns` 주입 1회, `../bun/docs/x.md` Read → 미주입.
-- **대안(채택 안 함)**: 두 레포를 모노레포로 합치면 중첩 CLAUDE.md·path rules가 네이티브로 동작한다(nerd-back `docs/tasks/tasks-monorepo.md`가 실제 선례). 배포 파이프라인·레포 이력 통합 비용이 이 과제 범위를 넘으므로 참고로만 남긴다.
+- **대안(채택 안 함)**: 두 레포를 모노레포로 합치면 중첩 CLAUDE.md·path rules가 네이티브로 동작한다(참고 레포 A `docs/tasks/tasks-monorepo.md`가 실제 선례). 배포 파이프라인·레포 이력 통합 비용이 이 과제 범위를 넘으므로 참고로만 남긴다.
 
 ## C2. 역방향 — 프론트에서 세션을 열 때
 
@@ -195,7 +195,7 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 - **백엔드 전용 deny 미러링** (F5): `pnpm db:migrate:up/fake/revert`, `npm run db:migrate:*`, `npx typeorm migration:run/revert`, `tsx node_modules/typeorm/cli.js migration:*`
 - **백엔드 전용 ask 미러링**: `ssh`, `scp`, `sqlplus`, `redis-cli`
 - `pnpm db:migrate:list*`는 **deny**로 둔다 (C4-6과 같은 이유)
-- **수용 기준 추가**: 백엔드 CLAUDE.md Never 표의 명령이 **전부** deny 배열에 있는지 1:1 대조표를 이 문서에 남긴다 (nerd-back에서도 같은 누락이 독립 재현됨 — `nerd-back/apps/back/CLAUDE.md:12` "4개 전부" vs `.claude/settings.json` deny에 `list` 없음)
+- **수용 기준 추가**: 백엔드 CLAUDE.md Never 표의 명령이 **전부** deny 배열에 있는지 1:1 대조표를 이 문서에 남긴다 (참고 레포 A에서도 같은 누락이 독립 재현됨 — `참고 레포 A/apps/back/CLAUDE.md:12` "4개 전부" vs `.claude/settings.json` deny에 `list` 없음)
 - `Edit/Write(.claude/settings.json)` deny (백엔드와 동일한 자기보호)
 - hooks: C1-3과 동일 구조, 인자만 `bun`
 - 기존 `settings.local.json` allow는 건드리지 않는다 (개인 설정)
@@ -239,26 +239,26 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 - **수용 기준**: `grep -n '^<<<<<<<\|^=======\|^>>>>>>>' README.md` 0건, `grep -rn 'api-docs' docs/` 0건
 - `next-bun/docs/KAKAO_LOGIN_ISSUE.md` 상단에 "부분 정정됨 → `../bun/docs/tasks/tasks-kakao-login-latency.md`" 링크 1줄
 
-### C3-4. 백엔드 `code-patterns.md`를 path-scoped rule로 전환 (nerd-back 패턴)
+### C3-4. 백엔드 `code-patterns.md`를 path-scoped rule로 전환 (참고 레포 A 패턴)
 - **무엇**: `docs/conventions/code-patterns.md` → `.claude/rules/code-patterns.md`, frontmatter `paths: ["src/**/*.ts", "test/**/*.ts"]`. 라우팅 표 1행("MUST OBEY — 모든 src 작업 전 Read")은 **폴백**으로 강등.
-- **왜**: 지금은 "라우팅 표를 기억해서 Read"하는 모델 준수에 의존한다. path rule은 `.ts`를 읽는 순간 하네스가 로드한다. 근거: `nerd-back/.claude/rules/back-code-patterns.md:1-6`, `nerd-back/CLAUDE.md:59`("rules는 자동 로드, 라우팅 표는 폴백"), mobigo-web rules 15개 중 8개가 `paths:` 사용.
-- **함께 할 것**: CLAUDE.md Key Patterns 요약은 유지하고 **"이 요약이 code-patterns와 겹치는 것은 의도된 것 — 설계 단계(코드 미접촉)엔 rule이 로드되지 않는다"** 1줄을 단다 (`nerd-back/apps/back/CLAUDE.md:16-19`). 파일 이동이므로 참조를 전부 갱신한다 — 현재 참조 3곳: `CLAUDE.md`, `README.md`, `docs/playbooks/recurring-issues-playbook.md` (`grep -rln code-patterns.md` 실측).
+- **왜**: 지금은 "라우팅 표를 기억해서 Read"하는 모델 준수에 의존한다. path rule은 `.ts`를 읽는 순간 하네스가 로드한다. 근거: `참고 레포 A/.claude/rules/back-code-patterns.md:1-6`, `참고 레포 A/CLAUDE.md:59`("rules는 자동 로드, 라우팅 표는 폴백"), 참고 레포 C rules 15개 중 8개가 `paths:` 사용.
+- **함께 할 것**: CLAUDE.md Key Patterns 요약은 유지하고 **"이 요약이 code-patterns와 겹치는 것은 의도된 것 — 설계 단계(코드 미접촉)엔 rule이 로드되지 않는다"** 1줄을 단다 (`참고 레포 A/apps/back/CLAUDE.md:16-19`). 파일 이동이므로 참조를 전부 갱신한다 — 현재 참조 3곳: `CLAUDE.md`, `README.md`, `docs/playbooks/recurring-issues-playbook.md` (`grep -rln code-patterns.md` 실측).
 - **수용 기준**: 이동 후 `grep -rn 'docs/conventions/code-patterns' .` 0건 · 백엔드 세션에서 `src/*.ts` Read 시 rule 로드 확인(`/context` 또는 `InstructionsLoaded`) · 프론트 세션에서 C1-5 수용 기준 통과. `.claude/rules/` 쓰기 가능 여부는 착수 시 확인(불가면 사용자 적용).
 - **롤백**: 파일 이동 커밋 1개를 revert.
-- **주의**: playbook·lessons처럼 **대화 트리거**("버그", "교정 직후")로 읽는 문서는 경로로 표현할 수 없으므로 라우팅 표에 그대로 둔다 (mobigo-web `.claude/rules/README.md:16-32`의 상시/경로 구분과 같은 판단).
+- **주의**: playbook·lessons처럼 **대화 트리거**("버그", "교정 직후")로 읽는 문서는 경로로 표현할 수 없으므로 라우팅 표에 그대로 둔다 (참고 레포 C `.claude/rules/README.md:16-32`의 상시/경로 구분과 같은 판단).
 - **연계**: 형제 세션 누락은 C1-5로 보완.
 
-### C3-5. 백엔드 DoD·Never 보강 (nerd-back 패턴)
-- DoD에 **잔여 항목 게이트 3분류** 추가 — 머지 전 차단 / 배포 직후 조치 / 후속. 코드 결함과 배포 환경 의존성을 섞지 않는다. 근거: `nerd-back/CLAUDE.md:126-139` (bun CLAUDE.md DoD엔 없음 — 확인함)
+### C3-5. 백엔드 DoD·Never 보강 (참고 레포 A 패턴)
+- DoD에 **잔여 항목 게이트 3분류** 추가 — 머지 전 차단 / 배포 직후 조치 / 후속. 코드 결함과 배포 환경 의존성을 섞지 않는다. 근거: `참고 레포 A/CLAUDE.md:126-139` (bun CLAUDE.md DoD엔 없음 — 확인함)
 - DoD에 "결정이 바뀌면 코드보다 태스크 문서를 먼저 고친다" 1줄 (같은 위치 3항)
-- Never 표의 DB 금지 행에 **근거의 유효기간** 1줄 — "LOCAL=PROD 동일 DB가 분리되면 재검토" (`nerd-back/apps/back/CLAUDE.md:14`). 규칙이 전제를 잃었을 때 알아챌 신호가 된다.
+- Never 표의 DB 금지 행에 **근거의 유효기간** 1줄 — "LOCAL=PROD 동일 DB가 분리되면 재검토" (`참고 레포 A/apps/back/CLAUDE.md:14`). 규칙이 전제를 잃었을 때 알아챌 신호가 된다.
 - 수용 기준: CLAUDE.md 200줄 이하 유지.
 
-### C3-6. 형제 레포 안내 스킬 — 훅의 보조 (mobisell-back 패턴, 2026-09-23 채택)
+### C3-6. 형제 레포 안내 스킬 — 훅의 보조 (비교 레포 B 패턴, 2026-09-23 채택)
 - **무엇**: `bun/.claude/skills/next-bun/SKILL.md`, `next-bun/.claude/skills/bun/SKILL.md` 신설. 내용은 ① 형제 `CLAUDE.md`를 먼저 Read하라는 절차(본문 복사 금지 — 정본을 가리킨다) ② 형제 쪽 rules 색인(있을 때) ③ **백엔드↔프론트 계약 접점** 표 — 응답 `{code, data, message}`, 에러 `{code, message, timestamp}`(`statusCode` 없음), 날짜(UTC 저장·로컬 표시), 인증 쿠키 `access_token`, WS namespace·room 규칙 ④ 수정 범위 규칙(형제 레포는 별도 커밋).
-- **왜 훅과 둘 다**: 훅은 **파일을 건드린 뒤에만** 발동한다 — 계획 단계("프론트에서 어떻게 쓰는지 보고 설계하자")엔 없다. 스킬은 요청 의도(description)로 발동하고 크기 상한이 없다(Read). 반대로 스킬은 모델 판단에 달려 누락될 수 있으므로 훅을 대체하지 않는다. 비교 근거: 2026-09-23 mobisell-back 분석(훅=확실성·서브에이전트 도달 / 스킬=계획 단계·상한 없음·계약 지식).
+- **왜 훅과 둘 다**: 훅은 **파일을 건드린 뒤에만** 발동한다 — 계획 단계("프론트에서 어떻게 쓰는지 보고 설계하자")엔 없다. 스킬은 요청 의도(description)로 발동하고 크기 상한이 없다(Read). 반대로 스킬은 모델 판단에 달려 누락될 수 있으므로 훅을 대체하지 않는다. 비교 근거: 2026-09-23 비교 레포 B 분석(훅=확실성·서브에이전트 도달 / 스킬=계획 단계·상한 없음·계약 지식).
 - **제약**:
-  - frontmatter에 `paths`를 **넣지 않는다** — 스킬 `paths`도 레포 루트 기준이라 `../`를 매칭하지 못해 자동 발동이 영구히 죽는다(mobisell-back F39, 이유를 파일 안 주석으로 남긴다).
+  - frontmatter에 `paths`를 **넣지 않는다** — 스킬 `paths`도 레포 루트 기준이라 `../`를 매칭하지 못해 자동 발동이 영구히 죽는다(비교 레포 B F39, 이유를 파일 안 주석으로 남긴다).
   - 이름이 글로벌 스킬과 겹치지 않게 한다 — 겹치면 글로벌이 이기고 프로젝트판은 가려진다(C4-1과 같은 원인). `next-bun`·`bun`은 현재 글로벌에 없음(착수 시 재확인).
   - 계약 접점 표의 사실은 백엔드 `docs/conventions/code-patterns.md`(C3-4 이후 `.claude/rules/code-patterns.md`)가 SSOT — 스킬엔 요지 + 링크만 둔다.
   - `.claude/skills/`는 AI 쓰기 차단 경로(sandbox denyWithinAllow) → 초안 작성 후 사용자 적용.
@@ -275,8 +275,8 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 
 | ID | 무엇 | 근거 |
 |---|---|---|
-| C4-1 | `/review` 이름 충돌 — **🔴 현재 프로젝트 `/review`는 실행되지 않는다**: 스킬 이름이 겹치면 personal(글로벌) > project이고 패자는 완전히 가려진다(skills.md "Resolve skills that share a name", mobisell-back F40). 실측: 이 세션 스킬 목록의 `review` 설명 = 글로벌 `SKILL.md:3`("변경된 코드에 대해…"), 프로젝트판("NestJS 백엔드 변경 코드에 대해…")은 목록에 없음. 개명이 곧 복구다 — 프로젝트 `.claude/commands/review.md`(양쪽 레포)와 글로벌 스킬 `review`. **확정: 두 레포 모두 `.claude/commands/review.md` → `review-flow.md`로 개명**(호출 `/review-flow`). 글로벌 `/review`는 그대로 둔다. 개명 전 `review` 참조를 두 레포에서 grep 전수 갱신. (검토했지만 채택 안 한 안: 개명 없이 CLAUDE.md 표로 역할만 명문화 — mobigo-web `.claude/CLAUDE.md:119-127`. 이름 충돌이 그대로 남는다) | `bun/.claude/commands/review.md`, `next-bun/.claude/commands/review.md`, `~/dotfiles/claude-config/skills/review/SKILL.md:2` |
-| C4-2 | `precompact.sh:13` 주석 "timeout 600s" ↔ 실제 등록 `20` 불일치 — **확정: 등록값 20 유지, 주석에서 숫자 제거**(C1-1 헤더 원칙). 20은 nerd-back 등록값과 같다. 수용 기준: 훅 1회 실동작 → `docs/handoff/`에 파일 생성 + 소요 시간 기록. 20초를 넘기면 그때 값을 올린다 (`docs/handoff/` 현재 0건) | `.claude/hooks/precompact.sh:13`, `.claude/settings.json` PreCompact |
+| C4-1 | `/review` 이름 충돌 — **🔴 현재 프로젝트 `/review`는 실행되지 않는다**: 스킬 이름이 겹치면 personal(글로벌) > project이고 패자는 완전히 가려진다(skills.md "Resolve skills that share a name", 비교 레포 B F40). 실측: 이 세션 스킬 목록의 `review` 설명 = 글로벌 `SKILL.md:3`("변경된 코드에 대해…"), 프로젝트판("NestJS 백엔드 변경 코드에 대해…")은 목록에 없음. 개명이 곧 복구다 — 프로젝트 `.claude/commands/review.md`(양쪽 레포)와 글로벌 스킬 `review`. **확정: 두 레포 모두 `.claude/commands/review.md` → `review-flow.md`로 개명**(호출 `/review-flow`). 글로벌 `/review`는 그대로 둔다. 개명 전 `review` 참조를 두 레포에서 grep 전수 갱신. (검토했지만 채택 안 한 안: 개명 없이 CLAUDE.md 표로 역할만 명문화 — 참고 레포 C `.claude/CLAUDE.md:119-127`. 이름 충돌이 그대로 남는다) | `bun/.claude/commands/review.md`, `next-bun/.claude/commands/review.md`, `~/dotfiles/claude-config/skills/review/SKILL.md:2` |
+| C4-2 | `precompact.sh:13` 주석 "timeout 600s" ↔ 실제 등록 `20` 불일치 — **확정: 등록값 20 유지, 주석에서 숫자 제거**(C1-1 헤더 원칙). 20은 참고 레포 A 등록값과 같다. 수용 기준: 훅 1회 실동작 → `docs/handoff/`에 파일 생성 + 소요 시간 기록. 20초를 넘기면 그때 값을 올린다 (`docs/handoff/` 현재 0건) | `.claude/hooks/precompact.sh:13`, `.claude/settings.json` PreCompact |
 | C4-3 | `settings.local.json` 정리 — **확정**: 1회성 `perl -pi -e` 허용 **12건 삭제**(특정 과거 문자열 전용이라 다시 매칭될 일이 없다), `Bash(git add *)`(`:34`) 삭제 — 스테이징은 파일 단위로 승인받는다. allow 41건 → 28건. sandbox 쓰기 차단 파일이라 사용자가 적용 | `.claude/settings.local.json` |
 | C4-4 | `.claude/settings.json.bak`(PreToolUse 훅 추가 이전 버전) 삭제 — **확정**. 실수로 복원하면 훅이 사라진다. 삭제는 Ask 대상이라 승인 후 실행 | gitignore 대상, 로컬 전용 |
 | C4-5 ✅ | 서브에이전트 중복 정리 — **결정: 유지, 변경 없음**(2026-09-23). 프로젝트 `frontend-researcher`/`backend-researcher`는 FiveSouth 전용 지식(경로 탐색 폴백, Swagger `/api/v1/docs` 등)을 담고 있고 레포에 커밋돼 공유된다(Q1 원칙). 두 파일 모두 `tools: Read, Glob, Grep` 허용 목록이라 **이미 읽기 전용**이다 — 글로벌 사본의 `disallowedTools`·`permissionMode: plan`을 더할 필요가 없다 | `bun/.claude/agents/frontend-researcher.md:1-6`, `next-bun/.claude/agents/backend-researcher.md:1-6` (frontmatter 확인) |
@@ -311,7 +311,7 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 | C6-1 | `skills/review/SKILL.md`에 `disable-model-invocation: true` — README·`docs/claude-code-concepts.md`는 "자동호출 차단"이라 서술하나 frontmatter엔 없음 | `README.md:154` vs `skills/review/SKILL.md:1-4` |
 | C6-2 | `scripts/check.sh` skill 검증에 `disable-model-invocation` 문서-코드 일치 검사 추가. C6-1·C6-2 수용 기준: dotfiles에서 `sh scripts/check.sh` 통과, C6-1 적용 전엔 C6-2 검사가 `review`를 잡아내는지 먼저 확인 | `scripts/check.sh:81-89` |
 | C6-3 | (C2-3 결과에 따라) `db-guard.sh`에 `db:migrate:(up|fake|revert)` 명령 패턴 추가 — `cd … &&`/`--dir` 형태 우회 대비 | F5 |
-| C6-5 | (원칙 기록, 작업 아님) 글로벌 훅(`check-secrets.sh` 등)을 **프로젝트에 복사하지 않는다** — 팀 공유가 목적일 때만 예외. 근거: nerd-back 로컬 사본(47줄)이 글로벌(22줄)보다 구버전으로 드리프트 — `sk_live`·`glpat`·`npm_`·`hf_`·`AGE-SECRET`·`eyJ` 패턴 6종이 로컬엔 0건, 글로벌엔 각 1건(grep 실측). 글로벌과 이중 실행도 된다. `docs/lessons.md`에 1항목으로 남긴다 | — |
+| C6-5 | (원칙 기록, 작업 아님) 글로벌 훅(`check-secrets.sh` 등)을 **프로젝트에 복사하지 않는다** — 팀 공유가 목적일 때만 예외. 근거: 참고 레포 A 로컬 사본(47줄)이 글로벌(22줄)보다 구버전으로 드리프트 — `sk_live`·`glpat`·`npm_`·`hf_`·`AGE-SECRET`·`eyJ` 패턴 6종이 로컬엔 0건, 글로벌엔 각 1건(grep 실측). 글로벌과 이중 실행도 된다. `docs/lessons.md`에 1항목으로 남긴다 | — |
 | C6-6 | 글로벌 `Write(~/dotfiles/**)`·`Write(~/.claude/**)` deny는 무효(F13) — `Edit(...)`가 이미 있으므로 `Write` 줄 삭제(경고 제거). 권한 규칙 끝을 `:*`로 쓰지 않는다는 원칙(F11)을 글로벌 `rules/`에도 1줄 | F11·F13 |
 | ~~C6-4~~ | **불필요 (Q1=A 확정)** — (Q1=B 선택 시) `inject-sibling-claudemd.sh`를 글로벌 훅으로 두고 `additionalDirectories`에서 형제 자동 판별 | Q1 |
 
@@ -323,8 +323,8 @@ SIBLING_ABS = realpath("$CLAUDE_PROJECT_DIR/../$1")
 |---|---|---|
 | "PreToolUse는 additionalContext 미지원, UserPromptSubmit만 가능" | **틀림** | hooks.md Decision control 지원 이벤트 목록에 PreToolUse 포함 |
 | "`Skill(code-review)`는 존재하지 않는 스킬 — 죽은 권한" | **틀림** | Claude Code 내장 스킬 `code-review` 존재 |
-| "mobigo-web 프로젝트 사본 에이전트 4개에서 `disallowedTools`/`permissionMode: plan` 누락" | **틀림** | `mobigo-web/.claude/agents/codebase-investigator.md`·`cross-project-researcher.md` frontmatter에 두 키 모두 존재 (직접 확인) |
-| "mobigo-web은 precompact timeout 주석-실제 일치, bun과 반대" | 부분 사실 | mobigo 등록값 600 (`settings.json` 실측). bun 주석 "600s"는 이 계열에서 복사되고 등록값만 20으로 바뀐 것으로 추정 → C4-2에서 **20 유지로 확정** |
+| "참고 레포 C 프로젝트 사본 에이전트 4개에서 `disallowedTools`/`permissionMode: plan` 누락" | **틀림** | `참고 레포 C/.claude/agents/codebase-investigator.md`·`cross-project-researcher.md` frontmatter에 두 키 모두 존재 (직접 확인) |
+| "참고 레포 C은 precompact timeout 주석-실제 일치, bun과 반대" | 부분 사실 | 참고 레포 C 등록값 600 (`settings.json` 실측). bun 주석 "600s"는 이 계열에서 복사되고 등록값만 20으로 바뀐 것으로 추정 → C4-2에서 **20 유지로 확정** |
 | "프로젝트가 `gh:*`·`curl:*`·`claude:*`를 전체 허용해 글로벌 deny가 해제됐을 수 있음" | **실질 위험 낮음** | 권한 배열은 계층 간 병합, deny 우선 → 글로벌 deny(`gh repo delete`, `--dangerously-skip-permissions` 등)는 프로젝트에서도 유효. allow 범위 축소는 **채택 안 함** — 실익이 없고 워크플로만 막힌다 |
 
 ---
