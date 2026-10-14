@@ -1033,6 +1033,13 @@ export class TeamService {
     if (!secret) {
       throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
+    // 링크를 만들 수 없으면 저장 전에 거부한다 — 저장 후에 실패하면 아무도 받지 못한 초대 행이 남는다
+    const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
+    if (!frontendDomain) {
+      throw new TeamTaskBadRequestErrorResponseDto(
+        'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
+      );
+    }
 
     // jti(nonce)가 없으면 payload가 {teamId, userId, iat, exp}뿐이고 iat/exp는 초 단위이므로,
     // 같은 팀·같은 유저가 1초 안에 두 번 요청하면 완전히 동일한 JWT가 만들어진다.
@@ -1065,13 +1072,8 @@ export class TeamService {
     await this.teamInvitationRepository.save(newInvite);
 
     // 6. 초대 링크 URL 생성 (프론트엔드 페이지로 리다이렉트)
-    const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
-    if (!frontendDomain) {
-      throw new TeamTaskBadRequestErrorResponseDto(
-        'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
-      );
-    }
-    const inviteLink = `${frontendDomain}/teams/invitation?token=${token}`;
+    // 프론트 수락 페이지 라우트(next-bun src/app/teams/invite/accept)와 맞춘다 — 프론트가 이 값을 그대로 보여준다
+    const inviteLink = `${frontendDomain}/teams/invite/accept?token=${encodeURIComponent(token)}`;
 
     return {
       inviteLink,

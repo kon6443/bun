@@ -257,15 +257,17 @@ describe('TeamService — 초대 플로우', () => {
       expect(first).not.toBe(second);
     });
 
-    it('초대 링크는 프론트 도메인 + token 쿼리로 만들어야 함', async () => {
+    // 프론트가 생성 직후 이 값을 그대로 보여주고 복사시킨다 — 프론트 라우트와 어긋나면 받은 사람이 엉뚱한 페이지로 간다
+    it('초대 링크는 프론트 수락 페이지(/teams/invite/accept) + token 쿼리여야 함', async () => {
       const result = await service.createTeamInvite({
         teamId: 1,
         userId: 1,
         createInviteDto: { endAt: hoursFromNow(24), usageMaxCnt: 1 },
       });
 
-      expect(result.inviteLink).toContain('https://example.test');
-      expect(result.inviteLink).toContain(`token=${savedToken()}`);
+      expect(result.inviteLink).toBe(
+        `https://example.test/teams/invite/accept?token=${encodeURIComponent(savedToken())}`,
+      );
     });
 
     it('usageCurCnt는 0, actStatus는 ACTIVE로 저장해야 함', async () => {
@@ -291,6 +293,25 @@ describe('TeamService — 초대 플로우', () => {
         expect.objectContaining({ usageMaxCnt: INVITE_DEFAULT_USAGE_MAX_CNT }),
       );
       expect(result.usageMaxCnt).toBe(INVITE_DEFAULT_USAGE_MAX_CNT);
+    });
+
+    it('NEXT_PUBLIC_DOMAIN이 없으면 저장하기 전에 거부해야 함 (받을 수 없는 초대 행이 남지 않게)', async () => {
+      configService.get.mockImplementation((k: string) => (k === 'NEXT_PUBLIC_DOMAIN' ? undefined : CONFIG[k]));
+
+      const promise = service.createTeamInvite({
+        teamId: 1,
+        userId: 1,
+        createInviteDto: { endAt: hoursFromNow(24) },
+      });
+
+      await expect(promise).rejects.toThrow(TeamTaskBadRequestErrorResponseDto);
+      // teamId 누락 등 같은 코드의 다른 400과 구분한다
+      await expect(promise).rejects.toMatchObject({
+        status: 400,
+        code: 'TEAM_TASK_BAD_REQUEST',
+        message: expect.stringContaining('NEXT_PUBLIC_DOMAIN'),
+      });
+      expect(teamInvitationRepository.save).not.toHaveBeenCalled();
     });
   });
 
