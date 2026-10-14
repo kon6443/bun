@@ -259,8 +259,11 @@ describe('TeamService — 멤버 상태 변경', () => {
       const result = await changeStatus();
 
       expect(result.userName).toBeNull();
-      const { message } = notificationPort.notifyTeam.mock.calls[0][0] as { message: string };
-      expect(message).toContain(`사용자 ${TARGET_ID}님이 비활성화되었습니다.`);
+      expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({ subject: `사용자 ${TARGET_ID}`, lines: ['비활성화되었습니다'] }),
+        }),
+      );
     });
 
     it('조회된 사용자가 없어도 실패하지 않아야 함', async () => {
@@ -287,9 +290,7 @@ describe('TeamService — 멤버 상태 변경', () => {
           telegramChatId: null,
           discordWebhookUrl: null,
         },
-        message: ['[테스트팀]', '🔄 멤버 상태 변경 알림 🔄', `김대상님이 ${label}되었습니다.`].join(
-          '\n',
-        ),
+        content: { title: '👥 멤버 상태 변경', subject: '김대상', lines: [`${label}되었습니다`] },
       });
     });
   });
