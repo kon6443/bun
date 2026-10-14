@@ -21,6 +21,7 @@ import {
 } from './file-share-error.dto';
 import * as path from 'path';
 import * as fs from 'fs';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 @ApiTags('files')
 @Controller('files')
@@ -200,7 +201,7 @@ export class FileShareController {
     fileStream.pipe(res);
 
     fileStream.on('error', error => {
-      this.logger.error('파일 스트리밍 오류:', error);
+      this.logger.error('파일 스트리밍 오류:', toErrorDetail(error));
       if (!res.headersSent) {
         res.status(500).json({
           code: 'INTERNAL_SERVER_ERROR',

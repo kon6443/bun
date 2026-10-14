@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileShare } from '../../entities/FileShare';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 @Injectable()
 export class FileShareService {
@@ -32,7 +33,7 @@ export class FileShareService {
       });
       return !!fileShare;
     } catch (error) {
-      this.logger.error('shareId와 API Key 검증 중 오류:', error);
+      this.logger.error('shareId와 API Key 검증 중 오류:', toErrorDetail(error));
       return false;
     }
   }

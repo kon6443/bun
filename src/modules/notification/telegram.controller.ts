@@ -4,6 +4,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { TelegramService, TelegramUpdate } from './telegram.service';
 import { TelegramWebhookDto, TelegramWebhookResponseDto } from './notification.dto';
 import { ApiCommonInternalServerErrorResponse } from '../../common/decorators/api-error-response.decorator';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 @ApiTags('telegram')
 @SkipThrottle() // 텔레그램 Bot API에서 호출 — 스로틀링 제외
@@ -32,7 +33,7 @@ export class TelegramController {
       const result = await this.telegramService.handleWebhook(update);
       return result;
     } catch (error) {
-      this.logger.error('Webhook 처리 오류:', error);
+      this.logger.error('Webhook 처리 오류:', toErrorDetail(error));
       // 텔레그램은 200 OK를 받아야 재시도하지 않음
       return { success: false, message: '처리 중 오류 발생' };
     }

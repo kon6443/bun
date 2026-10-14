@@ -220,7 +220,11 @@ describe('TelegramService', () => {
 
       // 예외가 올라가면 텔레그램 장애가 태스크 생성 API 실패로 번진다
       await expect(service.sendTeamNotification({ team, message: '알림' })).resolves.toBeUndefined();
-      expect(Logger.prototype.error).toHaveBeenCalled();
+      // Error 객체를 그대로 넘기면 Nest Logger가 내용을 버린다 — 실패 원인(텔레그램 응답)이 문자열로 남아야 한다
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining('bot was kicked'),
+      );
     });
 
     it('네트워크 자체가 끊겨도 예외를 전파하지 않아야 함', async () => {
