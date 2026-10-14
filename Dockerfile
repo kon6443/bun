@@ -1,7 +1,7 @@
 # ============================================
 # 빌드 스테이지
 # ============================================
-FROM node:20-bullseye-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN pnpm run build
 # ============================================
 # 프로덕션 스테이지
 # ============================================
-FROM node:20-bullseye-slim
+FROM node:24-bookworm-slim
 
 # 타임존 설정 (UTC 명시 — 모든 날짜는 UTC로 저장/처리, 표시 단계에서만 KST 변환)
 ENV TZ=UTC
