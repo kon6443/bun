@@ -4,7 +4,10 @@
  * Following NestJS standard DTO pattern
  */
 import { ApiProperty } from '@nestjs/swagger';
-import { INVITE_MAX_EXPIRATION_MS } from '../../common/constants/app.constants';
+import {
+  INVITE_DEFAULT_USAGE_MAX_CNT,
+  INVITE_MAX_EXPIRATION_MS,
+} from '../../common/constants/app.constants';
 import {
   IsString,
   IsNotEmpty,
@@ -158,11 +161,15 @@ export class CreateTeamInviteDto {
   @IsDate()
   endAt: Date;
 
-  @ApiProperty({ description: '최대 사용 횟수', example: 10 })
-  @IsNotEmpty()
+  @ApiProperty({
+    description: `최대 사용 횟수 (미지정 시 ${INVITE_DEFAULT_USAGE_MAX_CNT})`,
+    example: 10,
+    required: false,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(1)
-  usageMaxCnt: number;
+  usageMaxCnt?: number;
 }
 
 export class AcceptTeamInviteDto {

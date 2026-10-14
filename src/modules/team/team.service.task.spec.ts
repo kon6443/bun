@@ -198,6 +198,48 @@ describe('TeamService — 태스크 상태', () => {
     });
   });
 
+  describe('createTask — 기간 검증', () => {
+    const start = new Date('2026-10-19T15:00:00Z');
+    const end = new Date('2026-10-20T14:59:59Z');
+    const createWith = (startAt?: Date, endAt?: Date) =>
+      service.createTask({
+        teamId: 1,
+        createTaskDto: { taskName: '기간', taskDescription: '설명', startAt, endAt },
+        userId: 1,
+      });
+
+    beforeEach(() => {
+      teamTaskRepository.create.mockImplementation((data) => data as TeamTask);
+      teamTaskRepository.save.mockImplementation((entity) =>
+        Promise.resolve(createTeamTask(entity as Partial<TeamTask>)),
+      );
+    });
+
+    it('종료가 시작보다 빠르면 TEAM_TASK_BAD_REQUEST(400)로 거부하고 저장·알림하지 않아야 함', async () => {
+      mockMember();
+
+      const error = await createWith(end, start).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TeamTaskBadRequestErrorResponseDto);
+      expect(error).toMatchObject({ code: 'TEAM_TASK_BAD_REQUEST', status: 400 });
+      expect(teamTaskRepository.save).not.toHaveBeenCalled();
+      expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+    });
+
+    it('시작과 종료가 같은 시각이면 허용해야 함', async () => {
+      mockMember();
+
+      await expect(createWith(start, start)).resolves.toBeDefined();
+    });
+
+    it('한쪽만 있으면 검증하지 않아야 함', async () => {
+      mockMember();
+
+      await expect(createWith(undefined, start)).resolves.toBeDefined();
+      await expect(createWith(end, undefined)).resolves.toBeDefined();
+    });
+  });
+
   describe('updateTask', () => {
     const update = (
       dto: { taskName?: string; taskDescription?: string; startAt?: Date; endAt?: Date },
@@ -226,6 +268,19 @@ describe('TeamService — 태스크 상태', () => {
       await expect(update({ taskName: '변경' }, { teamId: 1 })).rejects.toThrow(
         TeamTaskBadRequestErrorResponseDto,
       );
+      expect(teamTaskRepository.save).not.toHaveBeenCalled();
+      expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+    });
+
+    it('종료만 바꿔도 기존 시작과 역전되면 거부하고 저장하지 않아야 함 (병합 결과로 검증)', async () => {
+      mockMember();
+      const start = new Date('2026-10-19T15:00:00Z');
+      teamTaskRepository.findOne.mockResolvedValue(createTeamTask({ startAt: start, endAt: null }));
+
+      const error = await update({ endAt: new Date('2026-10-18T15:00:00Z') }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TeamTaskBadRequestErrorResponseDto);
+      expect(error).toMatchObject({ code: 'TEAM_TASK_BAD_REQUEST', status: 400 });
       expect(teamTaskRepository.save).not.toHaveBeenCalled();
       expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
     });

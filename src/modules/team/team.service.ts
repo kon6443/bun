@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { INVITE_MAX_EXPIRATION_MS, INVITE_TOKEN_EXPIRY_SECONDS } from '../../common/constants/app.constants';
+import {
+  INVITE_DEFAULT_USAGE_MAX_CNT,
+  INVITE_MAX_EXPIRATION_MS,
+  INVITE_TOKEN_EXPIRY_SECONDS,
+} from '../../common/constants/app.constants';
 import { sign, verify, JwtPayload } from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { TeamMember } from '../../entities/TeamMember';
@@ -113,6 +117,17 @@ export class TeamService {
 
   getTeamTaskUrl({teamId, taskId}:{teamId: number, taskId: number}): string {
     return `${this.configService.get<string>('NEXT_PUBLIC_DOMAIN')}/teams/${teamId}/tasks/${taskId}`;
+  }
+
+  /**
+   * 태스크 기간 검증 — 시작이 종료보다 늦으면 거부한다 (같은 시각은 허용)
+   * 역전된 기간은 저장돼도 캘린더·간트가 시작일 한 칸으로 조용히 잘못 그린다.
+   * 한쪽만 있거나 둘 다 없으면 검증하지 않는다.
+   */
+  private assertValidTaskPeriod(startAt?: Date | null, endAt?: Date | null): void {
+    if (startAt && endAt && startAt.getTime() > endAt.getTime()) {
+      throw new TeamTaskBadRequestErrorResponseDto('종료 시각은 시작 시각보다 빠를 수 없습니다.');
+    }
   }
 
   /**
@@ -349,6 +364,7 @@ export class TeamService {
     // 이 검증이 팀 존재·활성까지 포함하므로(getTeamMembersBy가 활성 팀만 조인) 별도 팀 조회는 없다 —
     // 남겨두면 멤버 검증에 먼저 걸려 도달할 수 없는 404 분기가 된다
     const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
+    this.assertValidTaskPeriod(createTaskDto.startAt, createTaskDto.endAt);
 
     // 태스크 생성
     const taskEntity = this.teamTaskRepository.create({
@@ -418,6 +434,8 @@ export class TeamService {
     if (updateTaskDto.endAt !== undefined) {
       task.endAt = updateTaskDto.endAt || null;
     }
+    // 한쪽만 바꿔도 기존 값과 역전될 수 있으므로 병합 결과로 검증한다
+    this.assertValidTaskPeriod(task.startAt, task.endAt);
 
     // 업데이트된 엔티티 저장
     await this.teamTaskRepository.save(task);
@@ -1039,13 +1057,14 @@ export class TeamService {
       expiresIn: INVITE_TOKEN_EXPIRY_SECONDS,
     });
 
-    // 5. TeamInvitation 엔티티 저장
+    // 5. TeamInvitation 엔티티 저장 — 사용 횟수 미지정이면 기본값 (프론트 입력은 선택사항)
+    const usageMaxCnt = createInviteDto.usageMaxCnt ?? INVITE_DEFAULT_USAGE_MAX_CNT;
     const newInvite = this.teamInvitationRepository.create({
       teamId,
       token,
       userId,
       endAt,
-      usageMaxCnt: createInviteDto.usageMaxCnt,
+      usageMaxCnt,
       usageCurCnt: 0,
       actStatus: ActStatus.ACTIVE,
     });
@@ -1064,7 +1083,7 @@ export class TeamService {
     return {
       inviteLink,
       endAt,
-      usageMaxCnt: createInviteDto.usageMaxCnt,
+      usageMaxCnt,
     };
   }
 

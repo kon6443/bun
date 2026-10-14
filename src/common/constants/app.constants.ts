@@ -4,6 +4,9 @@ export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
 /** 초대 링크 최대 만료 시간 (밀리초) — 7일 */
 export const INVITE_MAX_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** 초대 링크 기본 최대 사용 횟수 — 미지정 시 적용. TeamInvitation.USAGE_MAX_CNT 컬럼 기본값과 같게 둔다 */
+export const INVITE_DEFAULT_USAGE_MAX_CNT = 1;
+
 /** 초대 토큰 JWT 만료 시간 (초) — 8일 */
 export const INVITE_TOKEN_EXPIRY_SECONDS = 8 * 24 * 60 * 60;
 
