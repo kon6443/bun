@@ -59,6 +59,8 @@ export class DiscordService {
       body: JSON.stringify({
         content,
         ...(embeds?.length && { embeds }),
+        // 본문에 사용자 입력(태스크명·댓글)이 실린다 — 미지정 시 본문의 멘션이 해석되므로 parse: []로 전부 끈다
+        allowed_mentions: { parse: [] },
       }),
     });
 

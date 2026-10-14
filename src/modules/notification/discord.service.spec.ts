@@ -137,7 +137,13 @@ describe('DiscordService', () => {
           headers: { 'Content-Type': 'application/json' },
         }),
       );
-      expect(sentBody()).toEqual({ content: '알림 내용' });
+      expect(sentBody()).toEqual({ content: '알림 내용', allowed_mentions: { parse: [] } });
+    });
+
+    it('멘션 해석을 꺼야 함 — 태스크명·댓글의 멘션(<@id>·@everyone)이 핑되지 않게', async () => {
+      await service.sendWebhookMessage(WEBHOOK, '<@123> 확인 부탁');
+
+      expect(sentBody()).toMatchObject({ allowed_mentions: { parse: [] } });
     });
 
     it('embed가 있으면 함께 보내야 함', async () => {
@@ -145,7 +151,7 @@ describe('DiscordService', () => {
 
       await service.sendWebhookMessage(WEBHOOK, '알림 내용', embeds);
 
-      expect(sentBody()).toEqual({ content: '알림 내용', embeds });
+      expect(sentBody()).toEqual({ content: '알림 내용', embeds, allowed_mentions: { parse: [] } });
     });
 
     it.each([

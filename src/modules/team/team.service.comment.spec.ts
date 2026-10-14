@@ -165,9 +165,7 @@ describe('TeamService — 댓글 CRUD', () => {
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith({
         team: member,
-        message: ['[테스트팀] - 배포 준비', '💬 새로운 댓글이 등록되었습니다 💬', '확인했습니다'].join(
-          '\n',
-        ),
+        content: { title: '💬 새 댓글', subject: '배포 준비', quote: '확인했습니다' },
         url: `${DOMAIN}/teams/3/tasks/8`,
       });
     });
@@ -340,11 +338,7 @@ describe('TeamService — 댓글 CRUD', () => {
           telegramChatId: 555,
           discordWebhookUrl: 'https://discord.test/hook',
         },
-        message: [
-          '[알림팀]',
-          '💬 배포 준비 태스크에 댓글이 수정되었습니다 💬',
-          '수정된 내용',
-        ].join('\n'),
+        content: { title: '✏️ 댓글 수정', subject: '배포 준비', quote: '수정된 내용' },
         url: `${DOMAIN}/teams/1/tasks/1`,
       });
     });

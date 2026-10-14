@@ -217,7 +217,7 @@ describe('TeamService — 역할 변경', () => {
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
         expect.objectContaining({
           team: expect.objectContaining({ teamId: 1, teamName: '테스트팀' }),
-          message: expect.stringContaining('멤버 → 매니저'),
+          content: expect.objectContaining({ lines: ['멤버 → 매니저'] }),
         }),
       );
     });
@@ -228,7 +228,7 @@ describe('TeamService — 역할 변경', () => {
       await changeRole('MANAGER');
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining('사용자 2') }),
+        expect.objectContaining({ content: expect.objectContaining({ subject: '사용자 2' }) }),
       );
     });
   });
