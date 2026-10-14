@@ -12,6 +12,7 @@ import { TeamInvitation } from '../../entities/TeamInvitation';
 import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
+import { INVITE_DEFAULT_USAGE_MAX_CNT } from '../../common/constants/app.constants';
 import {
   createTeam,
   createTeamInvitation,
@@ -277,6 +278,19 @@ describe('TeamService — 초대 플로우', () => {
       expect(teamInvitationRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ usageCurCnt: 0, usageMaxCnt: 5, actStatus: ActStatus.ACTIVE }),
       );
+    });
+
+    it('사용 횟수를 지정하지 않으면 기본값으로 저장·응답해야 함 (프론트 입력은 선택사항)', async () => {
+      const result = await service.createTeamInvite({
+        teamId: 1,
+        userId: 1,
+        createInviteDto: { endAt: hoursFromNow(24) },
+      });
+
+      expect(teamInvitationRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ usageMaxCnt: INVITE_DEFAULT_USAGE_MAX_CNT }),
+      );
+      expect(result.usageMaxCnt).toBe(INVITE_DEFAULT_USAGE_MAX_CNT);
     });
   });
 
