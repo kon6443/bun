@@ -16,6 +16,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { ALLOWED_ORIGINS } from './common/constants/cors.constants';
+import { toErrorDetail } from './common/utils/error.utils';
 
 async function bootstrap() {
   // 모든 Prometheus 메트릭에 Swarm 레플리카 식별자 주입.
@@ -150,7 +151,7 @@ async function bootstrap() {
         logger.log('Graceful shutdown 완료');
         process.exit(0);
       } catch (error) {
-        logger.error('Graceful shutdown 실패:', error);
+        logger.error('Graceful shutdown 실패:', toErrorDetail(error));
         process.exit(1);
       }
     };
@@ -158,7 +159,7 @@ async function bootstrap() {
     process.on('SIGTERM', () => void shutdown('SIGTERM'));
     process.on('SIGINT', () => void shutdown('SIGINT'));
   } catch (error) {
-    logger.error('Failed to start application:', error);
+    logger.error('Failed to start application:', toErrorDetail(error));
     process.exit(1);
   }
 }
@@ -166,12 +167,12 @@ async function bootstrap() {
 // 예기치 않은 에러로 서버가 죽는 것 방지
 process.on('uncaughtException', (error) => {
   const logger = new Logger('UncaughtException');
-  logger.error('Uncaught Exception — 서버는 계속 실행됩니다:', error);
+  logger.error('Uncaught Exception — 서버는 계속 실행됩니다:', toErrorDetail(error));
 });
 
 process.on('unhandledRejection', (reason) => {
   const logger = new Logger('UnhandledRejection');
-  logger.error('Unhandled Rejection — 서버는 계속 실행됩니다:', reason);
+  logger.error('Unhandled Rejection — 서버는 계속 실행됩니다:', toErrorDetail(reason));
 });
 
 void bootstrap();

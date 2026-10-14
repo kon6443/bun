@@ -10,6 +10,7 @@ import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TelegramService } from '../src/modules/notification/telegram.service';
 import { DiscordService } from '../src/modules/notification/discord.service';
 import { NOTIFICATION_PORT } from '../src/common/port/notification.port';
+import { INVITE_DEFAULT_USAGE_MAX_CNT } from '../src/common/constants/app.constants';
 import { Team } from '../src/entities/Team';
 import { TeamMember } from '../src/entities/TeamMember';
 import { TeamTask } from '../src/entities/TeamTask';
@@ -141,6 +142,22 @@ describe('E2E 초대·연동 (권한 경계)', () => {
         .send({ endAt: hoursFromNow(24 * 8).toISOString(), usageMaxCnt: 1 });
 
       expect(res.status).toBe(400);
+    });
+
+    it('사용 횟수를 생략해도 ValidationPipe를 통과해 기본값으로 생성해야 함 (프론트 입력은 선택사항)', async () => {
+      mockRole('MASTER');
+      const inviteRepo = e2e.moduleRef.get<MockRepository<TeamInvitation>>(
+        getRepositoryToken(TeamInvitation),
+      );
+      inviteRepo.create.mockImplementation((d) => d as TeamInvitation);
+      inviteRepo.save.mockResolvedValue({} as TeamInvitation);
+
+      const res = await request(app.getHttpServer())
+        .post(e2e.url(`/teams/${TEAM_ID}/invites`))
+        .send({ endAt: hoursFromNow(24).toISOString() });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data).toMatchObject({ usageMaxCnt: INVITE_DEFAULT_USAGE_MAX_CNT });
     });
   });
 

@@ -5,6 +5,7 @@ import { Team } from '../../entities/Team';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { NotificationTeamInfo } from '../../common/port/notification.port';
 import { TeamNotFoundErrorResponseDto } from '../../common/dto/api-error.dto';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 /**
  * 디스코드 Embed 필드 타입
@@ -98,7 +99,7 @@ export class DiscordService {
       const messageWithLink = url ? `${content}\n\n[바로가기](${url})` : content;
       await this.sendWebhookMessage(discordWebhookUrl, messageWithLink, embeds);
     } catch (error) {
-      this.logger.error(`sendTeamNotification() 오류:`, error);
+      this.logger.error(`sendTeamNotification() 오류:`, toErrorDetail(error));
     }
   }
 

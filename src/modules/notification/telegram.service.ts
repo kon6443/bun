@@ -12,6 +12,7 @@ import {
   NotificationTelegramUnlinkErrorResponseDto,
 } from './notification-error.dto';
 import { randomBytes } from 'crypto';
+import { toErrorDetail } from '../../common/utils/error.utils';
 
 /**
  * 텔레그램 인라인 키보드 버튼 타입
@@ -169,7 +170,7 @@ export class TelegramService {
 
       await this.sendMessageAsync(telegramChatId, message, buttons);
     } catch (error) {
-      this.logger.error(`sendTeamNotification() 오류:`, error);
+      this.logger.error(`sendTeamNotification() 오류:`, toErrorDetail(error));
     }
   }
 

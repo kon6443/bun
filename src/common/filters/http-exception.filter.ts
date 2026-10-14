@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ApiErrorResponseDto } from '../dto/api-error.dto';
+import { toErrorDetail } from '../utils/error.utils';
 
 interface HttpExceptionBody {
   message?: string;
@@ -84,8 +85,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (exception instanceof Error) {
         this.logger.error(logMessage, exception.stack);
       } else {
-        // 알 수 없는 예외: 원본 객체 전체 로깅
-        this.logger.error(`${logMessage} | 원본 예외:`, exception);
+        // 알 수 없는 예외: 원본 객체 전체 로깅 — 객체를 그대로 넘기면 Nest Logger가 버리므로 직렬화한다
+        this.logger.error(`${logMessage} | 원본 예외:`, toErrorDetail(exception));
       }
     } else {
       this.logger.warn(logMessage);

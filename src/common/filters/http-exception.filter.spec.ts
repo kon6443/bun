@@ -175,5 +175,14 @@ describe('HttpExceptionFilter', () => {
 
       expect(Logger.prototype.error).toHaveBeenCalledWith(expect.any(String), error.stack);
     });
+
+    it('Error가 아닌 예외는 직렬화해 기록해야 함 — 객체를 그대로 넘기면 Nest Logger가 버린다', () => {
+      filter.catch({ reason: 'pool exhausted' }, host);
+
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining('pool exhausted'),
+      );
+    });
   });
 });
