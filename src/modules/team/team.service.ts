@@ -61,7 +61,7 @@ import {
   INotificationPort,
   NOTIFICATION_PORT,
 } from '../../common/port/notification.port';
-import { formatDateTime } from '../../common/utils/date.utils';
+import { formatDateRange } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 
 // export type TeamMemberType = {
@@ -128,6 +128,12 @@ export class TeamService {
     if (startAt && endAt && startAt.getTime() > endAt.getTime()) {
       throw new TeamTaskBadRequestErrorResponseDto('종료 시각은 시작 시각보다 빠를 수 없습니다.');
     }
+  }
+
+  /** 알림용 기간 줄 — 기간이 없으면 줄 자체를 생략한다 */
+  private taskPeriodLines(task: Pick<TeamTask, 'startAt' | 'endAt'>): string[] {
+    const period = formatDateRange(task.startAt, task.endAt);
+    return period ? [`📅 ${period}`] : [];
   }
 
   /**
@@ -381,14 +387,11 @@ export class TeamService {
     const task = await this.teamTaskRepository.save(taskEntity);
 
     const url = this.getTeamTaskUrl({ teamId, taskId: task.taskId });
-    const message = [
-      `[${teamMember.teamName}] - ${task.taskName}`,
-      `✅ 태스크 생성 ✅`,
-      task.startAt || task.endAt
-        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
-        : null,
-    ].filter(Boolean).join('\n');
-    this.notificationPort.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({
+      team: teamMember,
+      content: { title: '🆕 새 태스크', subject: task.taskName, lines: this.taskPeriodLines(task) },
+      url,
+    });
 
     return task;
   }
@@ -441,14 +444,11 @@ export class TeamService {
     await this.teamTaskRepository.save(task);
 
     const url = this.getTeamTaskUrl({ teamId, taskId });
-    const message = [
-      `[${teamMember.teamName}]`,
-      `🔄 태스크 수정 🔄`,
-      task.startAt || task.endAt
-        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
-        : null,
-    ].filter(Boolean).join('\n');
-    this.notificationPort.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({
+      team: teamMember,
+      content: { title: '✏️ 태스크 수정', subject: task.taskName, lines: this.taskPeriodLines(task) },
+      url,
+    });
 
     return task;
   }
@@ -501,15 +501,15 @@ export class TeamService {
     // 업데이트된 엔티티 저장
     await this.teamTaskRepository.save(task);
     const url = this.getTeamTaskUrl({ teamId, taskId });
-    const message = [
-      `[${teamMember.teamName}] - ${task.taskName}`,
-      `🔄 태스크 작업 상태 변경 🔄`,
-      `[${TaskStatusMsg[oldTaskStatus]}] → [${TaskStatusMsg[task.taskStatus]}]`,
-      task.startAt || task.endAt
-        ? `📅 기간: ${formatDateTime(task.startAt)} ~ ${formatDateTime(task.endAt)}`
-        : null,
-    ].filter(Boolean).join('\n');
-    this.notificationPort.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({
+      team: teamMember,
+      content: {
+        title: '🔄 상태 변경',
+        subject: task.taskName,
+        lines: [`${TaskStatusMsg[oldTaskStatus]} → ${TaskStatusMsg[task.taskStatus]}`, ...this.taskPeriodLines(task)],
+      },
+      url,
+    });
 
     return task;
   }
@@ -591,13 +591,11 @@ export class TeamService {
 
     const comment = await this.taskCommentRepository.save(newComment);
     const url = this.getTeamTaskUrl({ teamId, taskId });
-    const message = [
-      `[${teamMember.teamName}] - ${task.taskName}`,
-      `💬 새로운 댓글이 등록되었습니다 💬`,
-      // `${comment.user.userName}: ${comment.commentContent}`,
-      comment.commentContent,
-    ].filter(Boolean).join('\n');
-    this.notificationPort.notifyTeam({ team: teamMember, message, url });
+    this.notificationPort.notifyTeam({
+      team: teamMember,
+      content: { title: '💬 새 댓글', subject: task.taskName, quote: comment.commentContent },
+      url,
+    });
     return comment;
   }
 
@@ -663,14 +661,9 @@ export class TeamService {
     // 업데이트된 엔티티 저장
     const updatedComment = await this.taskCommentRepository.save(comment);
     const url = this.getTeamTaskUrl({ teamId, taskId });
-    const message = [
-      `[${teamTask.teamName}]`,
-      `💬 ${teamTask.taskName} 태스크에 댓글이 수정되었습니다 💬`,
-      updatedComment.commentContent,
-    ].filter(Boolean).join('\n');
     this.notificationPort.notifyTeam({
       team: { teamId: teamTask.teamId, teamName: teamTask.teamName, telegramChatId: teamTask.telegramChatId, discordWebhookUrl: teamTask.discordWebhookUrl },
-      message,
+      content: { title: '✏️ 댓글 수정', subject: teamTask.taskName, quote: updatedComment.commentContent },
       url,
     });
     return updatedComment;
@@ -1040,6 +1033,13 @@ export class TeamService {
     if (!secret) {
       throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
     }
+    // 링크를 만들 수 없으면 저장 전에 거부한다 — 저장 후에 실패하면 아무도 받지 못한 초대 행이 남는다
+    const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
+    if (!frontendDomain) {
+      throw new TeamTaskBadRequestErrorResponseDto(
+        'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
+      );
+    }
 
     // jti(nonce)가 없으면 payload가 {teamId, userId, iat, exp}뿐이고 iat/exp는 초 단위이므로,
     // 같은 팀·같은 유저가 1초 안에 두 번 요청하면 완전히 동일한 JWT가 만들어진다.
@@ -1072,13 +1072,8 @@ export class TeamService {
     await this.teamInvitationRepository.save(newInvite);
 
     // 6. 초대 링크 URL 생성 (프론트엔드 페이지로 리다이렉트)
-    const frontendDomain = this.configService.get<string>('NEXT_PUBLIC_DOMAIN');
-    if (!frontendDomain) {
-      throw new TeamTaskBadRequestErrorResponseDto(
-        'NEXT_PUBLIC_DOMAIN 환경변수가 설정되지 않았습니다. 초대 링크를 생성할 수 없습니다.',
-      );
-    }
-    const inviteLink = `${frontendDomain}/teams/invitation?token=${token}`;
+    // 프론트 수락 페이지 라우트(next-bun src/app/teams/invite/accept)와 맞춘다 — 프론트가 이 값을 그대로 보여준다
+    const inviteLink = `${frontendDomain}/teams/invite/accept?token=${encodeURIComponent(token)}`;
 
     return {
       inviteLink,
@@ -1383,16 +1378,13 @@ export class TeamService {
     const userName = targetUser?.userName || null;
 
     // 10. 알림 전송
-    const message = [
-      `[${actorMember.teamName}]`,
-      `🔄 역할 변경 알림 🔄`,
-      `${userName || `사용자 ${targetUserId}`}님의 역할이 변경되었습니다.`,
-      `${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`,
-    ].join('\n');
-
     this.notificationPort.notifyTeam({
       team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
-      message,
+      content: {
+        title: '👥 역할 변경',
+        subject: userName || `사용자 ${targetUserId}`,
+        lines: [`${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`],
+      },
     });
 
     return {
@@ -1505,15 +1497,13 @@ export class TeamService {
 
     // 10. 알림 전송
     const statusLabel = newStatus === ActStatus.ACTIVE ? '활성화' : '비활성화';
-    const message = [
-      `[${actorMember.teamName}]`,
-      `🔄 멤버 상태 변경 알림 🔄`,
-      `${userName || `사용자 ${targetUserId}`}님이 ${statusLabel}되었습니다.`,
-    ].join('\n');
-
     this.notificationPort.notifyTeam({
       team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
-      message,
+      content: {
+        title: '👥 멤버 상태 변경',
+        subject: userName || `사용자 ${targetUserId}`,
+        lines: [`${statusLabel}되었습니다`],
+      },
     });
 
     return {

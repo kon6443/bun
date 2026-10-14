@@ -9,7 +9,7 @@ import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
 import { User } from '../../entities/User';
-import { NOTIFICATION_PORT } from '../../common/port/notification.port';
+import { NOTIFICATION_PORT, TeamNotificationParams } from '../../common/port/notification.port';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import {
   createTeamTask,
@@ -42,6 +42,10 @@ describe('TeamService — 태스크 상태', () => {
   let teamRepository: MockRepository<Team>;
   let teamTaskRepository: MockRepository<TeamTask>;
   let notificationPort: { notifyTeam: jest.Mock };
+
+  /** 첫 알림의 부가 정보 줄 */
+  const notifiedLines = (): string[] =>
+    (notificationPort.notifyTeam.mock.calls[0][0] as TeamNotificationParams).content.lines ?? [];
 
   beforeEach(async () => {
     teamRepository = createMockRepository<Team>();
@@ -192,7 +196,7 @@ describe('TeamService — 태스크 상태', () => {
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith({
         team: member,
-        message: ['[테스트팀] - 배포 준비', '✅ 태스크 생성 ✅'].join('\n'),
+        content: { title: '🆕 새 태스크', subject: '배포 준비', lines: [] },
         url: `${DOMAIN}/teams/3/tasks/1`,
       });
     });
@@ -345,8 +349,8 @@ describe('TeamService — 태스크 상태', () => {
       expect(result).toBe(task);
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith({
         team: member,
-        // 상태 변경 알림과 달리 제목에 태스크명이 붙지 않는다
-        message: ['[테스트팀]', '🔄 태스크 수정 🔄'].join('\n'),
+        // 무엇이 수정됐는지 알 수 있게 태스크명을 대상으로 싣는다
+        content: { title: '✏️ 태스크 수정', subject: '변경', lines: [] },
         url: `${DOMAIN}/teams/3/tasks/8`,
       });
     });
@@ -357,8 +361,7 @@ describe('TeamService — 태스크 상태', () => {
 
       await update({ taskName: '변경' });
 
-      const { message } = notificationPort.notifyTeam.mock.calls[0][0] as { message: string };
-      expect(message).toContain('📅 기간');
+      expect(notifiedLines()).toEqual([expect.stringMatching(/^📅 /)]);
     });
   });
 
@@ -454,9 +457,7 @@ describe('TeamService — 태스크 상태', () => {
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith({
         team: member,
-        message: ['[테스트팀] - 배포 준비', '🔄 태스크 작업 상태 변경 🔄', '[생성됨] → [진행중]'].join(
-          '\n',
-        ),
+        content: { title: '🔄 상태 변경', subject: '배포 준비', lines: ['생성됨 → 진행중'] },
         url: `${DOMAIN}/teams/3/tasks/8`,
       });
     });
@@ -469,8 +470,7 @@ describe('TeamService — 태스크 상태', () => {
 
       await updateStatus();
 
-      const { message } = notificationPort.notifyTeam.mock.calls[0][0] as { message: string };
-      expect(message).not.toContain('📅 기간');
+      expect(notifiedLines().some((line) => line.startsWith('📅'))).toBe(false);
     });
 
     it('기간이 있는 태스크는 기간 줄을 포함해야 함', async () => {
@@ -479,8 +479,7 @@ describe('TeamService — 태스크 상태', () => {
 
       await updateStatus();
 
-      const { message } = notificationPort.notifyTeam.mock.calls[0][0] as { message: string };
-      expect(message).toContain('📅 기간');
+      expect(notifiedLines()).toContainEqual(expect.stringMatching(/^📅 /));
     });
   });
 
