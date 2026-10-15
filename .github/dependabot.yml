@@ -1,0 +1,17 @@
+# GitHub Actions 버전 갱신 — 월 1회, PR 1개로 묶음, 메이저 업데이트는 제외(필요 시 사람이 직접 올린다)
+# 짝 레포(next-bun)와 같은 설정이다
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: develop
+    groups:
+      github-actions:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(ci)"

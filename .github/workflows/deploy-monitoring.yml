@@ -51,7 +51,6 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
-          script_stop: true   # 중간 명령 실패 시 즉시 job 실패 (silent failure 방지)
           script: |
             set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
@@ -110,7 +109,6 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
-          script_stop: true
           script: |
             set -euxo pipefail
             cd /home/ubuntu/desktop/deploy
