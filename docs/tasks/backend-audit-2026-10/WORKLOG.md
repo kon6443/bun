@@ -138,3 +138,14 @@ B1 · B2 · B3 · C1 · C2 — 근거는 D-001
 - 화면(390·768·1280 + 375×667): 콘솔·HTTP 에러 0, 4개 뷰 가로 넘침 0px, 모바일 토글 44px, `?view=`·`?tab=archive`·뒤로가기·새로고침 유지, 빠른 탭 전환·첫 로딩 중 탭 전환 후 스켈레톤 0, 상세 왕복 후 뷰·스크롤 복원, 연동 상태는 관리 탭 진입 시 1회만 조회.
 - 프론트 결함 2건 발견 → 프론트 세션 수정 2회 → 재측정 전부 PASS: 캘린더 팝오버가 고정 하단 내비·FAB와 겹침(48·56px), 위로 띄울 때 달력 헤더(다음 달 버튼) 덮음. "+N개" 줄바꿈도 수정.
 - 사고 1건: 측정 중 프론트 세션의 `bun run build`가 공유 `.next`를 덮어써 dev 서버 500 → 재기동. 이후 dev 서버 가동 중 build 금지로 합의.
+
+## 2026-10-15 — 커밋·머지·운영 배포
+- 커밋 9개(f644803 … 8df6ce2). 단계를 섞은 파일은 단계 시점 버전을 `update-index --cacheinfo`로 나눠 넣었고, 중간 커밋 3개(f644803·3ec5f20·87121be)는 `git archive` 사본에서 build·unit·e2e를 각각 통과시켰다. 다른 세션 WIP 3파일은 미커밋.
+- PR #253(feat-onam-audit → develop): `verify` 40s(lint 경고 7, unit 753, build, e2e 9/97) · `docker-build` 1m36s 통과 → merge. 새 CI의 첫 실제 실행.
+- PR #254(develop → main): `origin/main..origin/develop`에 이번 커밋 9개 + 머지 1개만 있음을 확인. 체크 통과 → merge(08:15:55Z).
+- 운영 배포 3건 모두 success:
+  - Deploy NestJS: `ci / verify` 1m → deploy 5m26s. 판정 출력 `prod_nest_app: completed`, `3/3 prod_nest:f0b78eb`. 롤링 08:20:41 → converged 08:22:11(약 90초, 3레플리카·monitor 60s).
+  - Deploy Infra: `infra_caddy: completed`, `infra_redis: completed`(부유 태그라 새 이미지로 교체 — 사용자 승인 하에 진행), `infra_registry: 이번 배포에서 업데이트 없음`. 판정 템플릿 `{{.UpdateStatus.StartedAt.Unix}}`가 실제 swarm에서 정상 동작함을 확인(S7a 미검증 항목 해소).
+  - Deploy Monitoring: success 1m14s(이미지 고정, 구성 변경 없음).
+- 프론트(next-bun) 배포: run 38704433056 success, `Update completed`, 4/4, 수렴 약 87초.
+- 후속: caddy·redis 이미지 버전 고정(CM5 — 부유 태그로 의도치 않은 교체가 실제로 일어났다), 프론트 Dependabot 방침(사용자 결정 대기).
