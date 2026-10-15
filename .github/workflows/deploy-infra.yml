@@ -34,9 +34,58 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SWARM_MANAGER_SSH_KEY }}
+          # 실패 전파는 스크립트의 set -euo pipefail과 마지막 exit "$FAILED"로 통일한다.
+          # command_timeout 기본값은 10m이라 아래 15분 상한(timeout 900)보다 짧다 — 판정·진단 출력이 잘리지 않게 늘린다.
+          command_timeout: 20m
           script: |
-            docker stack deploy \
+            set -euo pipefail
+            STACK=infra
+            DEPLOY_STARTED=$(date -u +%s)
+
+            # 수렴(헬스체크 통과)까지 기다린다. 전체 상한 15분 — 넘기면 실패로 본다
+            DEPLOY_FAILED=0
+            timeout 900 docker stack deploy --detach=false \
               -c /home/ubuntu/desktop/deploy/infra/docker-stack.yml \
               --with-registry-auth \
-              infra
-            docker stack services infra
+              "$STACK" || DEPLOY_FAILED=1
+
+            # Swarm 판정 — --detach=false는 수렴을 기다리지만, 롤백으로 끝났을 때의 종료코드를 Docker 버전과
+            # 무관하게 보장하지 않는다. 그래서 이번 배포 이후 시작된 업데이트의 최종 상태를 서비스별로 확인한다.
+            # completed=성공 / 이번 배포에서 업데이트가 없었던 서비스는 건너뜀 / 그 외(rollback_*·paused)=실패
+            # CLI가 반환한 직후에는 swarm이 아직 updating으로 보일 수 있어, 진행 중 상태는 상한 안에서 다시 본다.
+            # StartedAt이 비어 있으면 0으로 읽어 "업데이트 없음"으로 본다 (nil 역참조로 템플릿이 실패해 오판하지 않게)
+            FAILED=$DEPLOY_FAILED
+            DEADLINE=$((DEPLOY_STARTED + 900))
+            for SVC in $(docker stack services "$STACK" --format '{{.Name}}'); do
+              while :; do
+                INFO=$(docker service inspect "$SVC" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}} {{if .UpdateStatus.StartedAt}}{{.UpdateStatus.StartedAt.Unix}}{{else}}0{{end}}{{end}}') \
+                  || { echo "$SVC: inspect 실패"; FAILED=1; break; }
+                STATE=${INFO%% *}
+                STARTED=${INFO##* }
+                if [ -z "$INFO" ] || [ "$STARTED" -lt "$DEPLOY_STARTED" ]; then
+                  echo "$SVC: 이번 배포에서 업데이트 없음"
+                  break
+                fi
+                case "$STATE" in
+                  completed)
+                    echo "$SVC: completed"
+                    break ;;
+                  updating|rollback_started)
+                    if [ "$(date -u +%s)" -ge "$DEADLINE" ]; then
+                      echo "배포 실패: $SVC 대기 상한 초과 (상태 $STATE)"
+                      docker service ps "$SVC" --no-trunc | head -20 || true
+                      FAILED=1
+                      break
+                    fi
+                    sleep 5 ;;
+                  *)
+                    echo "배포 실패: $SVC 업데이트 상태 $STATE"
+                    docker service ps "$SVC" --no-trunc | head -20 || true
+                    FAILED=1
+                    break ;;
+                esac
+              done
+            done
+
+            docker stack services "$STACK"
+            exit "$FAILED"

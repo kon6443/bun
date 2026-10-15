@@ -18,7 +18,7 @@ import {
   createTeamMemberView,
   FIXED_DATE,
 } from '../../entities/__spec__/entity.factory';
-import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
+import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import {
   TeamForbiddenErrorResponseDto,
   TeamTaskNotFoundErrorResponseDto,
@@ -423,6 +423,31 @@ describe('TeamService — 댓글 CRUD', () => {
 
       // 생성·수정과의 의도적 차이 — 알림이 추가되면 이 테스트가 먼저 깨진다
       expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCommentsByTaskId — 삭제 댓글 본문 비노출', () => {
+    /** 목록 쿼리 결과를 고정한다 */
+    const mockComments = (comments: TaskComment[]) =>
+      taskCommentRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getMany: comments }) as never);
+
+    it('삭제된 댓글은 본문을 빈 문자열로 내보내고 자리(status=0)는 남겨야 함', async () => {
+      mockComments([createTaskComment({ commentId: 1, commentContent: '지운 원문', status: ActStatus.INACTIVE })]);
+
+      const [comment] = await service.getCommentsByTaskId(1);
+
+      // 화면은 "삭제된 댓글입니다"로 가리지만 응답에 원문이 있으면 개발자도구로 읽힌다
+      expect(comment.commentContent).toBe('');
+      expect(comment.status).toBe(ActStatus.INACTIVE);
+      expect(comment.commentId).toBe(1);
+    });
+
+    it('정상 댓글은 본문을 그대로 내보내야 함', async () => {
+      mockComments([createTaskComment({ commentContent: '살아있는 댓글', status: ActStatus.ACTIVE })]);
+
+      const [comment] = await service.getCommentsByTaskId(1);
+
+      expect(comment.commentContent).toBe('살아있는 댓글');
     });
   });
 });

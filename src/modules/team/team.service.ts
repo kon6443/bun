@@ -64,6 +64,7 @@ import {
 } from '../../common/port/notification.port';
 import { formatDateRange } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
+import { toPublicTask } from './team.mapper';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -786,7 +787,8 @@ export class TeamService {
       actStatus: actStatusFilter ?? [ActStatus.ACTIVE],
     });
 
-    return { team, tasks };
+    // 조회 결과에는 팀의 알림 채널 정보가 섞여 있다 — 응답용으로 공개 필드만 남긴다
+    return { team, tasks: tasks.map(toPublicTask) };
   }
 
   /**
@@ -831,7 +833,8 @@ export class TeamService {
       taskId: comment.taskId,
       userId: comment.userId,
       userName: comment.user?.userName || null,
-      commentContent: comment.commentContent,
+      // 삭제(소프트 삭제)된 댓글은 자리만 남기고 본문은 내보내지 않는다 — 화면에서 가려도 응답에 원문이 실려 있었다
+      commentContent: comment.status === ActStatus.INACTIVE ? '' : comment.commentContent,
       status: comment.status,
       mdfdAt: comment.mdfdAt,
       crtdAt: comment.crtdAt,
@@ -898,7 +901,7 @@ export class TeamService {
     const comments = await this.getCommentsByTaskId(taskId);
 
     return {
-      task,
+      task: toPublicTask(task),
       comments,
     };
   }

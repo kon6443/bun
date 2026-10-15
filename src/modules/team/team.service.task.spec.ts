@@ -12,7 +12,9 @@ import { User } from '../../entities/User';
 import { NOTIFICATION_PORT, TeamNotificationParams } from '../../common/port/notification.port';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import {
+  createTeam,
   createTeamTask,
+  createTeamTaskView,
   createTeamMemberView,
   FIXED_DATE,
 } from '../../entities/__spec__/entity.factory';
@@ -130,6 +132,37 @@ describe('TeamService — 태스크 상태', () => {
       mockMember(member);
 
       await expect(service.verifyTeamMemberAccess(7, 42)).resolves.toEqual(member);
+    });
+  });
+
+  describe('조회 응답 — 팀 알림 채널 정보를 싣지 않는다', () => {
+    /** 조회 헬퍼는 알림 경로도 쓰므로 웹훅 URL·chatId를 담고 있다 — 응답으로 새면 일반 멤버가 채널에 임의 게시할 수 있다 */
+    const leakyTask = () =>
+      createTeamTaskView({ telegramChatId: 123456, discordWebhookUrl: 'https://discord.test/api/webhooks/1/secret' });
+
+    it('getTasksByTeamId의 tasks에 discordWebhookUrl·telegramChatId가 없어야 함', async () => {
+      mockMember();
+      teamRepository.findOne.mockResolvedValue(createTeam({ teamId: 1 }));
+      jest.spyOn(service, 'getTeamTasksBy').mockResolvedValue([leakyTask()]);
+
+      const { tasks } = await service.getTasksByTeamId(1, 1);
+
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).not.toHaveProperty('discordWebhookUrl');
+      expect(tasks[0]).not.toHaveProperty('telegramChatId');
+      expect(tasks[0]).toMatchObject({ taskId: 1, teamId: 1, taskName: '테스트 태스크', userName: '홍길동' });
+    });
+
+    it('getTaskWithComments의 task에 discordWebhookUrl·telegramChatId가 없어야 함', async () => {
+      mockMember();
+      jest.spyOn(service, 'getTeamTasksBy').mockResolvedValue([leakyTask()]);
+      jest.spyOn(service, 'getCommentsByTaskId').mockResolvedValue([]);
+
+      const { task } = await service.getTaskWithComments(1, 1, 1);
+
+      expect(task).not.toHaveProperty('discordWebhookUrl');
+      expect(task).not.toHaveProperty('telegramChatId');
+      expect(task).toMatchObject({ taskId: 1, teamId: 1 });
     });
   });
 

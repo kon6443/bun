@@ -510,10 +510,19 @@ export class TelegramStatusDataDto {
   @ApiProperty({ description: '연동 여부', example: true })
   isLinked: boolean;
 
-  @ApiProperty({ description: '연동된 텔레그램 채팅 ID', example: -1001234567890, nullable: true })
-  chatId: number | null;
+  @ApiProperty({
+    description: '연동된 텔레그램 채팅 ID — MASTER·MANAGER에게만 포함',
+    example: -1001234567890,
+    nullable: true,
+    required: false,
+  })
+  chatId?: number | null;
 
-  @ApiProperty({ description: '대기 중인 연동 정보', type: TelegramLinkDataDto, required: false })
+  @ApiProperty({
+    description: '대기 중인 연동 정보 — MASTER·MANAGER에게만 포함',
+    type: TelegramLinkDataDto,
+    required: false,
+  })
   pendingLink?: TelegramLinkDataDto;
 }
 
@@ -537,8 +546,13 @@ export class DiscordStatusDataDto {
   @ApiProperty({ description: '연동 여부', example: true })
   isLinked: boolean;
 
-  @ApiProperty({ description: '등록된 Webhook URL', example: 'https://discord.com/api/webhooks/...', nullable: true })
-  webhookUrl: string | null;
+  @ApiProperty({
+    description: '등록된 Webhook URL — MASTER·MANAGER에게만 포함',
+    example: 'https://discord.com/api/webhooks/...',
+    nullable: true,
+    required: false,
+  })
+  webhookUrl?: string | null;
 }
 
 export class DiscordStatusResponseDto extends ApiSuccessResponseDto {
