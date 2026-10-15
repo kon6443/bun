@@ -15,8 +15,16 @@ on:
       - 'infra/docker-stack.app.yml'
       - '.github/workflows/deploy-to-oci.yml'
 
+permissions:
+  contents: read
+
 jobs:
+  # 배포 전 검증 게이트 — 같은 SHA를 검증한 뒤에만 배포한다 (docs/tasks/backend-audit-2026-10 D-010)
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: ci
     runs-on: ubuntu-latest
     environment: prod
 
