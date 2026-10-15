@@ -1,6 +1,6 @@
 # 백엔드 전수조사 후속 — 보안 '상' 등급 · CI/CD 개선
 
-- **상태**: 🟢 커밋 지시 대기 — 구현·리뷰 루프(A·B 상·중 0)·로컬 API/Playwright 실측 완료(미커밋). S3·S8 보류 (2026-10-15)
+- **상태**: 🟢 완료 — main 머지(#253·#254)·운영 배포 성공(앱 3/3 completed, infra·monitoring success). S3·S8 보류 (2026-10-15)
 - **최종수정**: 2026-10-15
 - **관련 문서**: DECISIONS.md(결정·근거) · WORKLOG.md(전수조사 원표·리뷰 기록) · 짝 프론트 `../next-bun/docs/tasks/front-audit-fixes/STATUS.md` · 기등재 `../tasks-nestjs-improvements.md` D36(이 폴더의 S5가 처리)
 
@@ -48,8 +48,8 @@
 - [x] S1 · [x] S2 · [x] S4 · [x] S5 · [x] S6 · [x] S7a · [x] S7b (미커밋)
 - [x] 최종 `pnpm ci:core` · sandbox 밖에서 `pnpm test:e2e` (9 suites / 97 tests)
 - [x] 리뷰 루프(A·B 2라운드) · 로컬 API·Playwright 실측 (WORKLOG 2026-10-15 절)
-- [ ] 사용자 지시 후 커밋 — 단계별 분리(같은 파일을 여러 단계가 고친 곳은 hunk 단위), WORKLOG 커밋 초안 8개
-- [ ] 배포 후 확인: 첫 PR의 `CI`·`CI Docker build`, S7 이후 첫 배포 로그(판정 출력·수렴 시간)
+- [x] 커밋 9개 · PR #253(→develop) · #254(→main)
+- [x] 배포 후 확인: 첫 PR CI 통과, 판정 출력 `completed`, 수렴 약 90초 (WORKLOG 커밋·머지·운영 배포 절)
 
 ## 미해결 질문 · 차단
 | # | 질문 | 누구에게 | 상태 |
