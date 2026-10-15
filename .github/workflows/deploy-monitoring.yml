@@ -117,9 +117,13 @@ jobs:
 
             # .env 로드 — docker-stack.monitoring.yml 의 ${GRAFANA_ADMIN_USER}, ${GRAFANA_ADMIN_PASSWORD} 치환용
             # (set -a: 이후 source 한 변수를 자동 export 해서 docker stack deploy 가 읽을 수 있게 함)
+            # set +x: xtrace가 켜진 채 source하면 .env의 대입문이 `+ KEY=값`으로 Actions 로그에 찍힌다.
+            # 서버 .env 값은 GitHub 시크릿이 아니라 마스킹되지 않는다 — 이 구간만 추적을 끈다.
+            set +x
             set -a
             source /home/ubuntu/desktop/deploy/sys/config/env/.env
             set +a
+            set -x
 
             echo "=== [prod 1/5] Files check ==="
             ls -la infra/prometheus/prometheus.yml

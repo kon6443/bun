@@ -1,0 +1,44 @@
+name: CI
+
+# 검증 게이트 — lint → test → build + E2E.
+# - pull_request: PR 단계에서 검증한다 (브랜치 보호 필수 체크 대상).
+# - workflow_call: deploy-to-oci.yml 이 배포 전에 호출한다. main push 검증은 이 경로로 한다
+#   (push 트리거를 따로 두면 배포 실행과 중복으로 돈다).
+# E2E는 createE2eApp() 기반이라 DB에 접속하지 않는다 (test/setup/forbid-db.ts가 드라이버 레벨에서 차단).
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 호출될 때 github.workflow는 호출한 워크플로 이름이 되므로 배포 실행과 그룹이 겹치지 않는다
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm (package.json packageManager 버전)
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js (운영 이미지와 같은 24)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint · Test · Build
+        run: pnpm ci:core
+
+      - name: E2E
+        run: pnpm test:e2e
