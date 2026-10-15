@@ -11,6 +11,8 @@ export const TeamSocketEvents = {
   LEAVE_TEAM: 'leaveTeam',
   /** 채팅 메시지 전송 */
   CHAT_MESSAGE: 'chatMessage',
+  /** 채팅 읽음 위치 갱신 */
+  CHAT_READ: 'chatRead',
 
   // ===== Server → Client 이벤트 =====
   /** 태스크 생성 알림 */
@@ -45,10 +47,14 @@ export const TeamSocketEvents = {
   MEMBER_ROLE_CHANGED: 'memberRoleChanged',
   /** 멤버 상태 변경 알림 */
   MEMBER_STATUS_CHANGED: 'memberStatusChanged',
+  /** 초대 수락으로 멤버 가입·재가입 알림 */
+  MEMBER_JOINED: 'memberJoined',
 
   // ===== 채팅 이벤트 =====
   /** 채팅 메시지 수신 */
   CHAT_RECEIVED: 'chatReceived',
+  /** 멤버 읽음 위치 갱신 알림 */
+  CHAT_READ_UPDATED: 'chatReadUpdated',
 
   // ===== 공통 이벤트 =====
   /** room 참가 성공 응답 */
@@ -261,16 +267,50 @@ export interface ChatMessagePayload {
 }
 
 /**
- * 채팅 메시지 수신 페이로드 (Server → Client)
+ * 채팅 메시지 수신 페이로드 (Server → Client) — 이력 조회 REST의 메시지 항목과 같은 형태
  *
- * messageId는 현재 clientMsgId를 그대로 에코한다.
- * 추후 DB 저장 도입 시 서버가 발급한 영속 ID로 교체될 수 있다.
+ * messageId는 DB가 발급한 ID(팀 안에서 단조 증가)다. 읽음 커서와 비교하는 기준값이다.
+ * clientMsgId는 보낸 클라이언트가 낙관적으로 띄운 메시지를 찾아 교체하는 키다.
+ * 보낸 사람은 이 메시지까지 읽은 것으로 처리된다 — 프론트는 userId의 커서를 messageId로 올린다.
  */
 export interface ChatReceivedPayload {
-  messageId: string;
+  messageId: number;
+  clientMsgId: string;
   teamId: number;
   userId: number;
   userName: string;
   message: string;
   timestamp: string;
+}
+
+/**
+ * 채팅 읽음 위치 갱신 페이로드 (Client → Server)
+ *
+ * 이 ID 이하의 메시지를 모두 읽었다는 뜻이다. 서버는 현재 커서보다 클 때만 반영한다.
+ */
+export interface ChatReadPayload {
+  lastReadMessageId: number;
+}
+
+/**
+ * 멤버 읽음 위치 갱신 알림 페이로드 (Server → Client)
+ *
+ * 커서가 실제로 전진했을 때만 보낸다. 프론트는 해당 멤버의 커서를 Math.max로 반영한다.
+ */
+export interface ChatReadUpdatedPayload {
+  teamId: number;
+  userId: number;
+  lastReadMessageId: number;
+}
+
+/**
+ * 멤버 가입 알림 페이로드 (Server → Client) — 초대 수락(신규·재가입)
+ *
+ * 가입 시점의 커서(팀 최신 메시지 ID)를 함께 보내 다른 화면이 안 읽은 인원 수를 바로 맞추게 한다.
+ */
+export interface MemberJoinedPayload {
+  teamId: number;
+  userId: number;
+  userName: string;
+  lastReadMessageId: number;
 }

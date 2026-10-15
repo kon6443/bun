@@ -5,6 +5,8 @@ import { Socket } from 'socket.io';
 interface WsErrorObject {
   code?: string;
   message?: string;
+  /** 채팅 거부 시 어떤 낙관적 메시지가 실패했는지 프론트가 찾는 키 */
+  clientMsgId?: string;
 }
 
 /**
@@ -14,6 +16,7 @@ interface WsErrorResponse {
   code: string;
   message: string;
   timestamp: string;
+  clientMsgId?: string;
 }
 
 /**
@@ -59,10 +62,13 @@ export class WsExceptionFilter extends BaseWsExceptionFilter {
         };
       }
       if (typeof error === 'object' && error !== null) {
+        const { code, message, clientMsgId } = error as WsErrorObject;
         return {
-          code: (error as WsErrorObject).code || 'WS_ERROR',
-          message: (error as WsErrorObject).message || '알 수 없는 WebSocket 오류',
+          code: code || 'WS_ERROR',
+          message: message || '알 수 없는 WebSocket 오류',
           timestamp,
+          // 있을 때만 붙인다 — 기존 에러 응답 형태는 그대로 유지
+          ...(clientMsgId ? { clientMsgId } : {}),
         };
       }
     }

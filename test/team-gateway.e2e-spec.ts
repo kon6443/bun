@@ -6,9 +6,10 @@ import { Socket } from 'socket.io-client';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamService } from '../src/modules/team/team.service';
 import { OnlineUserService } from '../src/modules/team/online-user.service';
+import { TeamChatService } from '../src/modules/team/team-chat.service';
 import { TeamSocketEvents } from '../src/modules/team/team.events';
 import { User } from '../src/entities/User';
-import { createUser, createTeamMemberView } from '../src/entities/__spec__/entity.factory';
+import { createUser, createTeamMemberView, createTeamChatMessage } from '../src/entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import {
   createWsApp,
@@ -44,6 +45,7 @@ describe('E2E WS 팀 게이트웨이', () => {
   let ws: WsE2eApp;
   let teamService: { verifyTeamMemberAccess: jest.Mock; getTeamMembersBy: jest.Mock };
   let onlineUserService: Record<string, jest.Mock>;
+  let teamChatService: Record<string, jest.Mock>;
   let userRepository: MockRepository<User>;
 
   beforeEach(async () => {
@@ -72,6 +74,16 @@ describe('E2E WS 팀 게이트웨이', () => {
       trackActiveTeam: jest.fn(),
     };
 
+    // 저장은 DB 없이 흉내 낸다 — 받은 값 그대로 DB ID만 붙여 돌려준다
+    let nextMessageId = 100;
+    teamChatService = {
+      consumeRateLimit: jest.fn().mockResolvedValue(true),
+      sendMessage: jest.fn(async ({ teamId, userId, content, clientMsgId }) =>
+        createTeamChatMessage({ messageId: ++nextMessageId, teamId, userId, content, clientMsgId }),
+      ),
+      markRead: jest.fn().mockResolvedValue(true),
+    };
+
     const metric = { inc: jest.fn(), dec: jest.fn(), startTimer: jest.fn(() => jest.fn()) };
 
     ws = await createWsApp({
@@ -79,6 +91,7 @@ describe('E2E WS 팀 게이트웨이', () => {
       providers: [
         { provide: TeamService, useValue: teamService },
         { provide: OnlineUserService, useValue: onlineUserService },
+        { provide: TeamChatService, useValue: teamChatService },
         { provide: getRepositoryToken(User), useValue: userRepository },
         {
           provide: ConfigService,
@@ -162,9 +175,11 @@ describe('E2E WS 팀 게이트웨이', () => {
       const socket = await ws.connect({ token: tokenFor(USER_A) });
 
       socket.emit(TeamSocketEvents.CHAT_MESSAGE, { message: '안녕', clientMsgId: 'm1' });
-      const err = await waitFor<{ code: string }>(socket, TeamSocketEvents.ERROR);
+      const err = await waitFor<{ code: string; clientMsgId?: string }>(socket, TeamSocketEvents.ERROR);
 
       expect(err.code).toBe('CHAT_NOT_JOINED');
+      // 실제 전송 경로에서도 필터가 clientMsgId를 살려 보내야 프론트가 실패 메시지를 찾는다
+      expect(err.clientMsgId).toBe('m1');
     });
 
     it('참가 후에는 본인에게도 메시지가 도착해야 함', async () => {
@@ -178,9 +193,12 @@ describe('E2E WS 팀 게이트웨이', () => {
       socket.emit(TeamSocketEvents.CHAT_MESSAGE, { message: '안녕', clientMsgId: 'm1' });
 
       // 채팅만 server.to(본인 포함)를 쓴다 — 자기 말풍선이 자기 화면에 떠야 하기 때문
+      // messageId는 DB가 발급한 number, clientMsgId는 낙관적 메시지 교체 키 (D-016)
       await expect(received).resolves.toMatchObject({
         message: '안녕',
         userId: USER_A.userId,
+        messageId: 101,
+        clientMsgId: 'm1',
       });
     });
   });

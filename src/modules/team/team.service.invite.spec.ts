@@ -13,6 +13,11 @@ import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { INVITE_DEFAULT_USAGE_MAX_CNT } from '../../common/constants/app.constants';
+import { initReadCursorAtLatest } from './chat-read-cursor';
+
+// 커서 SQL 자체는 chat-read-cursor.spec.ts가 검증한다 — 여기서는 "활성화 경로가 호출하는가"만 본다 (D-012·D-021)
+jest.mock('./chat-read-cursor', () => ({ initReadCursorAtLatest: jest.fn() }));
+const initReadCursorAtLatestMock = initReadCursorAtLatest as jest.MockedFunction<typeof initReadCursorAtLatest>;
 import {
   createTeam,
   createTeamInvitation,
@@ -60,6 +65,7 @@ describe('TeamService — 초대 플로우', () => {
   let dataSource: { transaction: jest.Mock };
 
   beforeEach(async () => {
+    initReadCursorAtLatestMock.mockReset();
     teamRepository = createMockRepository<Team>();
     teamMemberRepository = createMockRepository<TeamMember>();
     teamInvitationRepository = createMockRepository<TeamInvitation>();
@@ -478,6 +484,19 @@ describe('TeamService — 초대 플로우', () => {
       expect(manager.save).toHaveBeenCalledWith(TeamInvitation, invite);
     });
 
+    it('신규 멤버의 채팅 읽음 커서를 같은 트랜잭션에서 팀 최신 메시지로 맞춰야 함', async () => {
+      mockVerified();
+      teamMemberRepository.findOne.mockResolvedValue(null);
+      manager.createQueryBuilder.mockReturnValue(
+        createMockQueryBuilder({ getOne: createTeamInvitation() }),
+      );
+
+      await service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 });
+
+      // 빠지면 가입 즉시 과거 메시지 전체가 안읽음 배지로 뜬다
+      expect(initReadCursorAtLatestMock).toHaveBeenCalledWith(manager, 1, 20);
+    });
+
     it('동시성 제어를 위해 pessimistic_write 락을 걸어야 함', async () => {
       mockVerified();
       teamMemberRepository.findOne.mockResolvedValue(null);
@@ -504,6 +523,7 @@ describe('TeamService — 초대 플로우', () => {
         service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 }),
       ).rejects.toThrow(TeamMemberAlreadyExistsErrorResponseDto);
       expect(manager.create).not.toHaveBeenCalled();
+      expect(initReadCursorAtLatestMock).not.toHaveBeenCalled();
     });
 
     it('비활성 멤버는 MEMBER 역할로 초기화하며 재활성화해야 함', async () => {
@@ -525,6 +545,19 @@ describe('TeamService — 초대 플로우', () => {
         expect.objectContaining({ actStatus: ActStatus.ACTIVE, role: 'MEMBER' }),
       );
       expect(manager.create).not.toHaveBeenCalled();
+    });
+
+    it('재활성화 멤버의 채팅 읽음 커서도 팀 최신 메시지로 맞춰야 함', async () => {
+      mockVerified();
+      teamMemberRepository.findOne.mockResolvedValue(createTeamMember({ actStatus: ActStatus.INACTIVE }));
+      manager.createQueryBuilder.mockReturnValue(
+        createMockQueryBuilder({ getOne: createTeamInvitation() }),
+      );
+
+      await service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 });
+
+      // 비활성 기간에 쌓인 메시지를 안읽음으로 세지 않는다
+      expect(initReadCursorAtLatestMock).toHaveBeenCalledWith(manager, 1, 20);
     });
 
     it('락을 건 상태에서 초대를 못 찾으면 차단해야 함', async () => {

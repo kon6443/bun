@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { TeamService } from './team.service';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
@@ -13,6 +13,11 @@ import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { createUser, createTeamMemberView } from '../../entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
+import { initReadCursorAtLatest } from './chat-read-cursor';
+
+// 커서 SQL 자체는 chat-read-cursor.spec.ts가 검증한다 — 여기서는 "활성화 경로가 호출하는가"만 본다 (D-012·D-021)
+jest.mock('./chat-read-cursor', () => ({ initReadCursorAtLatest: jest.fn() }));
+const initReadCursorAtLatestMock = initReadCursorAtLatest as jest.MockedFunction<typeof initReadCursorAtLatest>;
 import {
   TeamForbiddenErrorResponseDto,
   TeamSelfStatusChangeErrorResponseDto,
@@ -38,8 +43,11 @@ describe('TeamService — 멤버 상태 변경', () => {
   let teamMemberRepository: MockRepository<TeamMember>;
   let userRepository: MockRepository<User>;
   let notificationPort: { notifyTeam: jest.Mock };
+  let manager: { update: jest.Mock };
 
   beforeEach(async () => {
+    initReadCursorAtLatestMock.mockReset();
+    manager = { update: jest.fn() };
     teamMemberRepository = createMockRepository<TeamMember>();
     userRepository = createMockRepository<User>();
     notificationPort = { notifyTeam: jest.fn() };
@@ -49,7 +57,10 @@ describe('TeamService — 멤버 상태 변경', () => {
         TeamService,
         {
           provide: getDataSourceToken(),
-          useValue: { transaction: jest.fn() } as unknown as DataSource,
+          // 실제 트랜잭션 대신 콜백을 즉시 실행 — 상태 UPDATE와 커서 초기화가 같은 manager로 묶이는지 본다
+          useValue: {
+            transaction: jest.fn((cb: (m: EntityManager) => Promise<void>) => cb(manager as unknown as EntityManager)),
+          } as unknown as DataSource,
         },
         { provide: getRepositoryToken(Team), useValue: createMockRepository<Team>() },
         { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepository },
@@ -117,7 +128,7 @@ describe('TeamService — 멤버 상태 변경', () => {
       mockMembers(null, { role: 'MEMBER' });
 
       await expect(changeStatus()).rejects.toThrow(TeamForbiddenErrorResponseDto);
-      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
 
     it('요청자가 MEMBER면 관리 권한 없음으로 차단해야 함', async () => {
@@ -126,7 +137,7 @@ describe('TeamService — 멤버 상태 변경', () => {
       await expect(changeStatus()).rejects.toThrow(
         TeamMemberStatusChangeForbiddenErrorResponseDto,
       );
-      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
 
     it('대상이 팀 멤버가 아니면 NOT_FOUND를 던져야 함', async () => {
@@ -140,7 +151,7 @@ describe('TeamService — 멤버 상태 변경', () => {
 
       // 팀당 1명뿐이라 비활성화되면 관리 주체가 사라진다
       await expect(changeStatus()).rejects.toThrow(TeamMasterStatusChangeErrorResponseDto);
-      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
   });
 
@@ -160,7 +171,7 @@ describe('TeamService — 멤버 상태 변경', () => {
         await expect(promise).resolves.toMatchObject({ newStatus: ActStatus.INACTIVE });
       } else {
         await expect(promise).rejects.toThrow(TeamMemberStatusChangeForbiddenErrorResponseDto);
-        expect(teamMemberRepository.update).not.toHaveBeenCalled();
+        expect(manager.update).not.toHaveBeenCalled();
       }
     });
 
@@ -209,7 +220,7 @@ describe('TeamService — 멤버 상태 변경', () => {
       mockMembers({ role: 'MASTER' }, { role: 'MEMBER', userActStatus: current });
 
       await expect(changeStatus(requested)).rejects.toThrow(TeamInvalidRoleErrorResponseDto);
-      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -220,10 +231,28 @@ describe('TeamService — 멤버 상태 변경', () => {
 
       await changeStatus(requested);
 
-      expect(teamMemberRepository.update).toHaveBeenCalledWith(
+      expect(manager.update).toHaveBeenCalledWith(
+        TeamMember,
         { teamId: 1, userId: TARGET_ID },
         { actStatus: requested },
       );
+    });
+
+    it('재활성화하면 같은 트랜잭션에서 채팅 읽음 커서를 팀 최신 메시지로 맞춰야 함', async () => {
+      mockMembers({ role: 'MASTER' }, { role: 'MEMBER', userActStatus: ActStatus.INACTIVE });
+
+      await changeStatus(ActStatus.ACTIVE);
+
+      // 빠지면 비활성 기간 메시지가 전부 안읽음 배지로 뜬다 (D-012·D-021)
+      expect(initReadCursorAtLatestMock).toHaveBeenCalledWith(manager, 1, TARGET_ID);
+    });
+
+    it('비활성화할 때는 커서를 건드리지 않아야 함', async () => {
+      mockMembers({ role: 'MASTER' }, { role: 'MEMBER', userActStatus: ActStatus.ACTIVE });
+
+      await changeStatus(ActStatus.INACTIVE);
+
+      expect(initReadCursorAtLatestMock).not.toHaveBeenCalled();
     });
 
     it('이전 상태와 이후 상태를 함께 반환해야 함', async () => {
