@@ -144,6 +144,22 @@ describe('E2E 팀 채팅 REST', () => {
       ]);
     });
 
+    it('팀 알림 채널 정보(웹훅 URL·chatId)는 응답에 싣지 않아야 함', async () => {
+      const WEBHOOK = 'https://discord.test/api/webhooks/1/secret';
+      teamService.getTeamMembersBy.mockResolvedValue([
+        createTeamMemberView({ teamId: 7, discordWebhookUrl: WEBHOOK, telegramChatId: 123456 }),
+      ]);
+      jest.spyOn(chatService, 'getUnreadCounts').mockResolvedValue(new Map());
+
+      const res = await request(app.getHttpServer()).get(e2e.url('/teams'));
+
+      // 조회 헬퍼 결과를 펼쳐 응답하면 일반 멤버가 채널에 임의 게시할 수 있는 웹훅 URL을 받는다
+      expect(res.status).toBe(200);
+      expect(res.body.data[0]).not.toHaveProperty('discordWebhookUrl');
+      expect(res.body.data[0]).not.toHaveProperty('telegramChatId');
+      expect(JSON.stringify(res.body)).not.toContain(WEBHOOK);
+    });
+
     it('배지 집계가 실패해도 팀 목록은 내려줘야 함 (배지는 보조 정보)', async () => {
       jest.spyOn(chatService, 'getUnreadCounts').mockRejectedValue(new Error('ORA-03113'));
 

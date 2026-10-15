@@ -84,6 +84,7 @@ import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants
 import { TelegramService } from '../notification/telegram.service';
 import { DiscordService } from '../notification/discord.service';
 import { getDisplayName } from '../../common/utils/user.utils';
+import { toMyTeamItem } from './team.mapper';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -130,7 +131,8 @@ export class TeamController {
       user.userId,
       teamMembers.map((tm) => tm.teamId),
     );
-    const data = teamMembers.map((tm) => ({ ...tm, unreadChatCount: unreadCounts.get(tm.teamId) ?? 0 }));
+    // 알림 채널 정보(웹훅 URL·chatId)가 섞여 있으므로 펼치지 않고 공개 필드만 매핑한다
+    const data = teamMembers.map((tm) => toMyTeamItem(tm, unreadCounts.get(tm.teamId) ?? 0));
     return { code: 'SUCCESS', data, message: '' };
   }
 

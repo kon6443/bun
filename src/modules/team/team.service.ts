@@ -64,6 +64,7 @@ import {
 } from '../../common/port/notification.port';
 import { formatDateRange } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
+import { toPublicTask } from './team.mapper';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -786,7 +787,8 @@ export class TeamService {
       actStatus: actStatusFilter ?? [ActStatus.ACTIVE],
     });
 
-    return { team, tasks };
+    // 조회 결과에는 팀의 알림 채널 정보가 섞여 있다 — 응답용으로 공개 필드만 남긴다
+    return { team, tasks: tasks.map(toPublicTask) };
   }
 
   /**
@@ -898,7 +900,7 @@ export class TeamService {
     const comments = await this.getCommentsByTaskId(taskId);
 
     return {
-      task,
+      task: toPublicTask(task),
       comments,
     };
   }
