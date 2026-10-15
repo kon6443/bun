@@ -10,11 +10,13 @@ import {
   Param,
   Query,
   ParseIntPipe,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TeamGateway } from './team.gateway';
+import { TeamChatService } from './team-chat.service';
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -81,12 +83,16 @@ import { ActStatus } from '../../common/enums/task-status.enum';
 import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants';
 import { TelegramService } from '../notification/telegram.service';
 import { DiscordService } from '../notification/discord.service';
+import { getDisplayName } from '../../common/utils/user.utils';
 
 @ApiTags('teams')
 @Controller('teams')
 export class TeamController {
+  private readonly logger = new Logger(TeamController.name);
+
   constructor(
     private readonly teamService: TeamService,
+    private readonly teamChatService: TeamChatService,
     private readonly telegramService: TelegramService,
     private readonly discordService: DiscordService,
     private readonly teamGateway: TeamGateway, // WebSocket Gateway DI
@@ -120,7 +126,30 @@ export class TeamController {
       actStatus: [ActStatus.ACTIVE],
       userActStatus: [ActStatus.ACTIVE],
     });
-    return { code: 'SUCCESS', data: teamMembers, message: '' };
+    const unreadCounts = await this.getUnreadCountsOrEmpty(
+      user.userId,
+      teamMembers.map((tm) => tm.teamId),
+    );
+    const data = teamMembers.map((tm) => ({ ...tm, unreadChatCount: unreadCounts.get(tm.teamId) ?? 0 }));
+    return { code: 'SUCCESS', data, message: '' };
+  }
+
+  /**
+   * 팀 목록 안읽음 배지 (D-008) — 내 팀 전부를 한 번의 GROUP BY로 센다.
+   *
+   * 배지는 보조 정보다. 집계가 실패해도 팀 목록 자체는 내려준다(배지 0 + 경고 로그).
+   * 다음 진입이나 팀 화면의 read-state 조회에서 맞춰진다.
+   */
+  private async getUnreadCountsOrEmpty(userId: number, teamIds: number[]): Promise<Map<number, number>> {
+    try {
+      return await this.teamChatService.getUnreadCounts(userId, teamIds);
+    } catch (error) {
+      this.logger.warn(
+        `팀 목록 안읽음 수 집계 실패 — 배지 없이 응답: userId=${userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return new Map();
+    }
   }
 
   @UseGuards(JwtAuthGuard)
@@ -591,6 +620,9 @@ export class TeamController {
       token: acceptInviteDto.token,
       userId,
     });
+    if (user) {
+      await this.notifyMemberJoined(result.teamId, user);
+    }
     return {
       code: 'SUCCESS',
       data: result,
@@ -855,5 +887,27 @@ export class TeamController {
       },
       message: '',
     };
+  }
+
+  /**
+   * 초대 수락 후 팀 room에 memberJoined (D-018) — 다른 화면이 안 읽은 인원 수에 새 멤버를 넣게 한다.
+   *
+   * 가입은 이미 COMMIT됐으므로 알림 실패로 API를 실패시키지 않는다. 다른 화면은 다음 read-state 조회 때 맞춰진다.
+   */
+  private async notifyMemberJoined(teamId: number, user: User): Promise<void> {
+    try {
+      const lastReadMessageId = await this.teamChatService.getReadCursor(teamId, user.userId);
+      this.teamGateway.emitMemberJoined(teamId, {
+        teamId,
+        userId: user.userId,
+        userName: getDisplayName(user.userName, user.userId),
+        lastReadMessageId,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `memberJoined 알림 실패: teamId=${teamId}, userId=${user.userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 }

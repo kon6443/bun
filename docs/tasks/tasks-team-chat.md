@@ -243,4 +243,4 @@ interface ChatReceivedPayload {
 - **멀티 룸 잔류**: 1소켓이 여러 팀 join 시 이전 room leave 안 함 — 프론트가 1소켓=1팀이라 현재 미발생.
 
 ### 저장(persistence) 후속 태스크
-- `tasks-team-chat-persistence.md` (신설 예정) — `messageId = clientMsgId` 에코 구조라 서버 DB PK 발급 후 교체 흐름으로 자연 연결
+- [`team-chat-persistence/`](team-chat-persistence/STATUS.md) — 저장·읽음 표시·안읽음 배지. `messageId = clientMsgId` 에코 구조를 서버 DB PK로 교체한다

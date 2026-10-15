@@ -20,7 +20,10 @@ import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamService } from './team.service';
 import { OnlineUserService } from './online-user.service';
-import { JoinTeamDto, LeaveTeamDto, ChatMessageDto } from './team.gateway.dto';
+import { TeamChatMessage } from '../../entities/TeamChatMessage';
+import { TeamChatService, toChatMessageView } from './team-chat.service';
+import { TeamForbiddenErrorResponseDto } from './team-error.dto';
+import { JoinTeamDto, LeaveTeamDto, ChatMessageDto, ChatReadDto } from './team.gateway.dto';
 import {
   TeamSocketEvents,
   TaskCreatedPayload,
@@ -39,6 +42,8 @@ import {
   MemberRoleChangedPayload,
   MemberStatusChangedPayload,
   ChatReceivedPayload,
+  ChatReadUpdatedPayload,
+  MemberJoinedPayload,
 } from './team.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
@@ -74,6 +79,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly teamService: TeamService,
     private readonly configService: ConfigService,
     private readonly onlineUserService: OnlineUserService,
+    private readonly teamChatService: TeamChatService,
     @InjectMetric('ws_connections_active')
     private readonly wsConnectionsActive: Gauge<string>,
     @InjectMetric('ws_events_total')
@@ -259,11 +265,12 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   // ===== 채팅 (Client → Server) =====
 
   /**
-   * 채팅 메시지 수신 → 같은 팀 room에 브로드캐스트 (저장 없음)
+   * 채팅 메시지 수신 → DB 저장 → 같은 팀 room에 브로드캐스트 (docs/tasks/team-chat-persistence)
    *
    * - teamId는 joinTeam 시 소켓에 캐싱된 값을 사용 (room 미참여자 차단)
-   * - 본인 포함 브로드캐스트(server.to) → 프론트에서 self-filtering
-   * - timestamp는 서버에서 생성 (클라이언트 시계 불신)
+   * - 저장(COMMIT)이 끝난 뒤 뿌린다 — 받은 메시지는 항상 DB에 있다 (D-020)
+   * - 본인 포함 브로드캐스트(server.to) → 프론트는 clientMsgId로 낙관적 메시지를 교체
+   * - 거부·실패는 clientMsgId를 실어 error 이벤트로 보낸다 → 프론트가 해당 메시지를 '전송 실패'로 표시 (D-016)
    */
   @UseGuards(WsJwtGuard)
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -277,31 +284,119 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     try {
       const teamId = client.data.teamId;
       const user = client.data.user;
+      const { clientMsgId } = dto;
 
       // 팀 room에 참가하지 않았거나 인증 정보가 없으면 에러 응답 (침묵 실패 방지)
-      // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
+      // WsExceptionFilter가 {code, message, timestamp, clientMsgId} 포맷으로 'error' emit
       if (!teamId || !user) {
         this.logger.warn(`채팅 거부: 팀 미참여 소켓 socketId=${client.id}`);
         throw new WsException({
           code: 'CHAT_NOT_JOINED',
           message: '채팅을 보내려면 먼저 팀에 참가해야 합니다.',
+          clientMsgId,
         });
       }
 
       const userId = user.userId;
-      const userName = getDisplayName(user.userName, userId);
 
-      const payload: ChatReceivedPayload = {
-        messageId: dto.clientMsgId,
+      if (!(await this.teamChatService.consumeRateLimit('send', teamId, userId))) {
+        this.logger.warn(`채팅 거부: 레이트 리밋 초과 teamId=${teamId}, userId=${userId}`);
+        throw new WsException({
+          code: 'CHAT_RATE_LIMITED',
+          message: '메시지를 너무 빠르게 보내고 있습니다. 잠시 후 다시 보내주세요.',
+          clientMsgId,
+        });
+      }
+
+      let saved: TeamChatMessage;
+      try {
+        saved = await this.teamChatService.sendMessage({ teamId, userId, content: dto.message, clientMsgId });
+      } catch (error) {
+        if (error instanceof TeamForbiddenErrorResponseDto) {
+          // join 이후 추방·비활성화된 멤버 — 소켓은 살아 있어도 보낼 수 없다 (D-006)
+          this.logger.warn(`채팅 거부: 활성 멤버 아님 teamId=${teamId}, userId=${userId}`);
+          throw new WsException({
+            code: 'CHAT_FORBIDDEN',
+            message: '팀 멤버만 채팅을 보낼 수 있습니다.',
+            clientMsgId,
+          });
+        }
+        this.logger.error(
+          `채팅 저장 실패: teamId=${teamId}, userId=${userId}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        throw new WsException({
+          code: 'CHAT_SEND_FAILED',
+          message: '메시지를 보내지 못했습니다. 다시 시도해주세요.',
+          clientMsgId,
+        });
+      }
+
+      const payload: ChatReceivedPayload = toChatMessageView(saved, user.userName);
+      this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.CHAT_RECEIVED, payload);
+      this.logger.debug(`채팅 브로드캐스트: teamId=${teamId}, userId=${userId}, messageId=${payload.messageId}`);
+    } finally {
+      endTimer();
+    }
+  }
+
+  /**
+   * 읽음 위치 갱신 → 커서가 실제로 전진했을 때만 room에 chatReadUpdated
+   *
+   * 프론트는 1초 debounce로 최댓값만 보낸다. 레이트 리밋을 넘으면 에러 없이 무시한다 —
+   * 커서는 증가만 하므로 다음 chatRead가 최댓값을 다시 실어 온다(사용자에게 띄울 실패가 아니다).
+   */
+  @UseGuards(WsJwtGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage(TeamSocketEvents.CHAT_READ)
+  async handleChatRead(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() dto: ChatReadDto,
+  ): Promise<void> {
+    this.wsEventsTotal.inc({ event: 'chatRead' });
+    const endTimer = this.wsEventDuration.startTimer({ event: 'chatRead' });
+    try {
+      const teamId = client.data.teamId;
+      const user = client.data.user;
+
+      if (!teamId || !user) {
+        this.logger.warn(`읽음 거부: 팀 미참여 소켓 socketId=${client.id}`);
+        throw new WsException({
+          code: 'CHAT_NOT_JOINED',
+          message: '먼저 팀에 참가해야 합니다.',
+        });
+      }
+
+      const userId = user.userId;
+
+      if (!(await this.teamChatService.consumeRateLimit('read', teamId, userId))) {
+        this.logger.warn(`읽음 무시: 레이트 리밋 초과 teamId=${teamId}, userId=${userId}`);
+        return;
+      }
+
+      let advanced: boolean;
+      try {
+        advanced = await this.teamChatService.markRead(teamId, userId, dto.lastReadMessageId);
+      } catch (error) {
+        if (error instanceof TeamForbiddenErrorResponseDto) {
+          this.logger.warn(`읽음 거부: 활성 멤버 아님 teamId=${teamId}, userId=${userId}`);
+          throw new WsException({
+            code: 'CHAT_FORBIDDEN',
+            message: '팀 멤버만 읽음 처리할 수 있습니다.',
+          });
+        }
+        throw error;
+      }
+
+      if (!advanced) return;
+
+      const payload: ChatReadUpdatedPayload = {
         teamId,
         userId,
-        userName,
-        message: dto.message,
-        timestamp: new Date().toISOString(),
+        lastReadMessageId: dto.lastReadMessageId,
       };
-
-      this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.CHAT_RECEIVED, payload);
-      this.logger.debug(`채팅 브로드캐스트: teamId=${teamId}, userId=${userId}`);
+      // 본인 포함 — 같은 유저의 다른 탭도 배지를 맞춘다
+      this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.CHAT_READ_UPDATED, payload);
     } finally {
       endTimer();
     }
@@ -419,6 +514,14 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       `멤버 상태 변경 브로드캐스트: teamId=${teamId}, userId=${payload.userId}, ` +
         `${payload.previousStatus} → ${payload.newStatus}`,
     );
+  }
+
+  /**
+   * 멤버 가입 브로드캐스트 (초대 수락 — 신규·재가입, D-018)
+   */
+  emitMemberJoined(teamId: number, payload: MemberJoinedPayload): void {
+    this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.MEMBER_JOINED, payload);
+    this.logger.debug(`멤버 가입 브로드캐스트: teamId=${teamId}, userId=${payload.userId}`);
   }
 
   // ===== 유틸리티 =====

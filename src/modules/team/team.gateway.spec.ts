@@ -6,9 +6,16 @@ import { getToken } from '@willsoto/nestjs-prometheus';
 import { TeamGateway } from './team.gateway';
 import { TeamService } from './team.service';
 import { OnlineUserService } from './online-user.service';
+import { TeamChatService } from './team-chat.service';
+import { TeamForbiddenErrorResponseDto } from './team-error.dto';
 import { TeamSocketEvents } from './team.events';
 import { AuthenticatedSocket, WsJwtGuard } from '../../common/guards/ws-jwt-auth.guard';
-import { createUser, createTeamMemberView } from '../../entities/__spec__/entity.factory';
+import {
+  createUser,
+  createTeamMemberView,
+  createTeamChatMessage,
+  FIXED_DATE,
+} from '../../entities/__spec__/entity.factory';
 import { Server } from 'socket.io';
 
 const TEAM_ID = 7;
@@ -40,6 +47,7 @@ describe('TeamGateway', () => {
     isSocketRegistered: jest.Mock;
     trackActiveTeam: jest.Mock;
   };
+  let teamChatService: { consumeRateLimit: jest.Mock; sendMessage: jest.Mock; markRead: jest.Mock };
   let metrics: { inc: jest.Mock; dec: jest.Mock; startTimer: jest.Mock };
   let endTimer: jest.Mock;
 
@@ -81,6 +89,13 @@ describe('TeamGateway', () => {
       isSocketRegistered: jest.fn().mockResolvedValue(false),
       trackActiveTeam: jest.fn(),
     };
+    teamChatService = {
+      consumeRateLimit: jest.fn().mockResolvedValue(true),
+      sendMessage: jest.fn().mockResolvedValue(
+        createTeamChatMessage({ messageId: 101, teamId: TEAM_ID, userId: USER_ID, content: '안녕하세요', clientMsgId: 'msg-1' }),
+      ),
+      markRead: jest.fn().mockResolvedValue(true),
+    };
     endTimer = jest.fn();
     metrics = { inc: jest.fn(), dec: jest.fn(), startTimer: jest.fn(() => endTimer) };
     clientRoomEmit = jest.fn();
@@ -92,6 +107,7 @@ describe('TeamGateway', () => {
         { provide: TeamService, useValue: teamService },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: OnlineUserService, useValue: onlineUserService },
+        { provide: TeamChatService, useValue: teamChatService },
         { provide: getToken('ws_connections_active'), useValue: metrics },
         { provide: getToken('ws_events_total'), useValue: metrics },
         { provide: getToken('ws_event_duration_seconds'), useValue: metrics },
@@ -380,44 +396,75 @@ describe('TeamGateway', () => {
     it.each([
       ['팀에 참가하지 않은 소켓', { teamId: undefined, userId: USER_ID }],
       ['인증 정보가 없는 소켓', { teamId: TEAM_ID, userId: null }],
-    ])('%s은 CHAT_NOT_JOINED로 거부해야 함', async (_desc, opts) => {
+    ])('%s은 CHAT_NOT_JOINED로 거부하고 clientMsgId를 실어야 함', async (_desc, opts) => {
       const client = createClient(opts as { teamId?: number; userId: number | null });
 
       await expect(gateway.handleChatMessage(client, dto)).rejects.toMatchObject({
-        error: { code: 'CHAT_NOT_JOINED' },
+        error: { code: 'CHAT_NOT_JOINED', clientMsgId: 'msg-1' },
+      });
+      expect(teamChatService.sendMessage).not.toHaveBeenCalled();
+      expect(serverRoomEmit).not.toHaveBeenCalled();
+    });
+
+    it('레이트 리밋을 넘으면 저장하지 않고 CHAT_RATE_LIMITED로 거부해야 함', async () => {
+      teamChatService.consumeRateLimit.mockResolvedValue(false);
+
+      await expect(gateway.handleChatMessage(createClient({ teamId: TEAM_ID }), dto)).rejects.toMatchObject({
+        error: { code: 'CHAT_RATE_LIMITED', clientMsgId: 'msg-1' },
+      });
+      expect(teamChatService.consumeRateLimit).toHaveBeenCalledWith('send', TEAM_ID, USER_ID);
+      expect(teamChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('활성 멤버가 아니면(추방 후 살아 있는 소켓) CHAT_FORBIDDEN으로 거부해야 함', async () => {
+      teamChatService.sendMessage.mockRejectedValue(new TeamForbiddenErrorResponseDto());
+
+      await expect(gateway.handleChatMessage(createClient({ teamId: TEAM_ID }), dto)).rejects.toMatchObject({
+        error: { code: 'CHAT_FORBIDDEN', clientMsgId: 'msg-1' },
       });
       expect(serverRoomEmit).not.toHaveBeenCalled();
     });
 
-    it('캐싱된 teamId의 room으로만 브로드캐스트해야 함', async () => {
-      const client = createClient({ teamId: TEAM_ID });
+    it('저장이 실패하면 CHAT_SEND_FAILED로 알리고 브로드캐스트하지 않아야 함', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      teamChatService.sendMessage.mockRejectedValue(new Error('ORA-03113'));
 
-      await gateway.handleChatMessage(client, dto);
+      await expect(gateway.handleChatMessage(createClient({ teamId: TEAM_ID }), dto)).rejects.toMatchObject({
+        error: { code: 'CHAT_SEND_FAILED', clientMsgId: 'msg-1' },
+      });
+      // 저장 안 된 메시지를 뿌리면 새로고침 때 사라지는 유령 메시지가 된다
+      expect(serverRoomEmit).not.toHaveBeenCalled();
+    });
 
-      // DTO에 teamId가 없는 것이 설계다 — 클라이언트가 room을 지정할 수 없어야 한다
+    it('캐싱된 teamId·소켓 userId로 저장해야 함', async () => {
+      await gateway.handleChatMessage(createClient({ teamId: TEAM_ID }), dto);
+
+      // DTO에 teamId가 없는 것이 설계다 — 클라이언트가 room·작성자를 지정할 수 없어야 한다
+      expect(teamChatService.sendMessage).toHaveBeenCalledWith({
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        content: '안녕하세요',
+        clientMsgId: 'msg-1',
+      });
       expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
     });
 
-    it('본인을 포함해 브로드캐스트하고 서버 시각을 찍어야 함', async () => {
-      const client = createClient({ teamId: TEAM_ID });
-      const before = Date.now();
+    it('저장된 메시지의 DB ID·clientMsgId·저장 시각으로 본인 포함 브로드캐스트해야 함', async () => {
+      await gateway.handleChatMessage(createClient({ teamId: TEAM_ID }), dto);
 
-      await gateway.handleChatMessage(client, dto);
-
-      const [event, payload] = serverRoomEmit.mock.calls[0] as [
-        string,
-        { messageId: string; timestamp: string; userName: string; message: string; userId: number },
-      ];
+      const [event, payload] = serverRoomEmit.mock.calls[0] as [string, Record<string, unknown>];
       expect(event).toBe(TeamSocketEvents.CHAT_RECEIVED);
-      expect(payload).toMatchObject({
-        messageId: 'msg-1',
+      expect(payload).toEqual({
+        messageId: 101,
+        clientMsgId: 'msg-1',
         teamId: TEAM_ID,
         userId: USER_ID,
         userName: '홍길동',
         message: '안녕하세요',
+        timestamp: FIXED_DATE.toISOString(),
       });
-      // 클라이언트 시계를 믿지 않는다 — 실행 시간 오차를 감안해 ±5초 이내인지 확인
-      expect(Math.abs(new Date(payload.timestamp).getTime() - before)).toBeLessThan(5_000);
+      // 프론트 계약: ID는 JSON number (D-016)
+      expect(typeof payload.messageId).toBe('number');
     });
 
     it('이름이 없는 사용자는 기본 표시명으로 보내야 함', async () => {
@@ -428,6 +475,66 @@ describe('TeamGateway', () => {
 
       const [, payload] = serverRoomEmit.mock.calls[0] as [string, { userName: string }];
       expect(payload.userName).toBe(`사용자${USER_ID}`);
+    });
+
+  });
+
+  describe('handleChatRead', () => {
+    const dto = { lastReadMessageId: 104 };
+
+    it('팀에 참가하지 않은 소켓은 CHAT_NOT_JOINED로 거부해야 함', async () => {
+      await expect(gateway.handleChatRead(createClient(), dto)).rejects.toMatchObject({
+        error: { code: 'CHAT_NOT_JOINED' },
+      });
+      expect(teamChatService.markRead).not.toHaveBeenCalled();
+    });
+
+    it('커서가 전진하면 본인 포함 room 전체에 chatReadUpdated를 보내야 함', async () => {
+      await gateway.handleChatRead(createClient({ teamId: TEAM_ID }), dto);
+
+      expect(teamChatService.markRead).toHaveBeenCalledWith(TEAM_ID, USER_ID, 104);
+      expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
+      expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.CHAT_READ_UPDATED, {
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        lastReadMessageId: 104,
+      });
+    });
+
+    it('커서가 그대로면(이미 읽음·과거 값) 브로드캐스트하지 않아야 함', async () => {
+      teamChatService.markRead.mockResolvedValue(false);
+
+      await gateway.handleChatRead(createClient({ teamId: TEAM_ID }), dto);
+
+      expect(serverRoomEmit).not.toHaveBeenCalled();
+    });
+
+    it('레이트 리밋을 넘으면 에러 없이 무시해야 함', async () => {
+      teamChatService.consumeRateLimit.mockResolvedValue(false);
+
+      await expect(gateway.handleChatRead(createClient({ teamId: TEAM_ID }), dto)).resolves.toBeUndefined();
+      expect(teamChatService.consumeRateLimit).toHaveBeenCalledWith('read', TEAM_ID, USER_ID);
+      expect(teamChatService.markRead).not.toHaveBeenCalled();
+    });
+
+    it('활성 멤버가 아니면 CHAT_FORBIDDEN으로 거부해야 함', async () => {
+      teamChatService.markRead.mockRejectedValue(new TeamForbiddenErrorResponseDto());
+
+      await expect(gateway.handleChatRead(createClient({ teamId: TEAM_ID }), dto)).rejects.toMatchObject({
+        error: { code: 'CHAT_FORBIDDEN' },
+      });
+      expect(serverRoomEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('emitMemberJoined', () => {
+    it('팀 room에 memberJoined를 보내야 함', () => {
+      const payload = { teamId: TEAM_ID, userId: 9, userName: '신규', lastReadMessageId: 104 };
+
+      gateway.emitMemberJoined(TEAM_ID, payload);
+
+      expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
+      expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.MEMBER_JOINED, payload);
     });
   });
 
@@ -543,6 +650,7 @@ describe('TeamGateway', () => {
             clientMsgId: 'm1',
           }),
       ],
+      ['handleChatRead', () => gateway.handleChatRead(createClient({ teamId: TEAM_ID }), { lastReadMessageId: 1 })],
     ])('%s는 이벤트 수와 처리 시간을 기록해야 함', async (_name, run) => {
       await run();
 

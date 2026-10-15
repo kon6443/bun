@@ -7,6 +7,7 @@ import { sign } from 'jsonwebtoken';
 import { TeamController } from '../src/modules/team/team.controller';
 import { TeamService, TeamMemberType } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
+import { TeamChatService } from '../src/modules/team/team-chat.service';
 import { TelegramService } from '../src/modules/notification/telegram.service';
 import { DiscordService } from '../src/modules/notification/discord.service';
 import { NOTIFICATION_PORT } from '../src/common/port/notification.port';
@@ -44,11 +45,13 @@ describe('E2E 초대·연동 (권한 경계)', () => {
   let app: INestApplication;
   let teamService: TeamService;
   let telegramService: { generateLinkToken: jest.Mock };
+  let teamGateway: { emitMemberJoined: jest.Mock };
   let userRepository: MockRepository<User>;
 
   const buildApp = async (authUser?: User) => {
     userRepository = createMockRepository<User>();
     telegramService = { generateLinkToken: jest.fn() };
+    teamGateway = { emitMemberJoined: jest.fn() };
 
     e2e = await createE2eApp({
       controllers: [TeamController],
@@ -73,7 +76,8 @@ describe('E2E 초대·연동 (권한 경계)', () => {
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
         { provide: TelegramService, useValue: telegramService },
         { provide: DiscordService, useValue: {} },
-        { provide: TeamGateway, useValue: {} },
+        { provide: TeamGateway, useValue: teamGateway },
+        { provide: TeamChatService, useValue: { getReadCursor: jest.fn().mockResolvedValue(104) } },
       ],
     });
     app = e2e.app;
@@ -210,6 +214,11 @@ describe('E2E 초대·연동 (권한 경계)', () => {
         token: TOKEN,
         userId: ACTOR.userId,
       });
+      // 다른 화면이 안 읽은 인원 수에 새 멤버를 넣도록 가입 시점 커서와 함께 알린다 (D-018)
+      expect(teamGateway.emitMemberJoined).toHaveBeenCalledWith(
+        TEAM_ID,
+        expect.objectContaining({ teamId: TEAM_ID, userId: ACTOR.userId, lastReadMessageId: 104 }),
+      );
     });
 
     it('토큰 필드가 비면 검증 단계에서 거부해야 함', async () => {

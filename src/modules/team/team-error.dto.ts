@@ -21,6 +21,13 @@ export const TeamForbiddenErrorResponseDto = defineDomainError({
   message: '팀에 접근할 권한이 없습니다.',
 });
 
+/** 채팅 이력 조회 조건이 올바르지 않음 (400) — beforeId·afterId 동시 지정 */
+export const TeamChatBadRequestErrorResponseDto = defineDomainError({
+  code: 'TEAM_CHAT_BAD_REQUEST',
+  status: 400,
+  message: '채팅 조회 조건이 올바르지 않습니다.',
+});
+
 /** 태스크를 찾을 수 없음 (404) */
 export const TeamTaskNotFoundErrorResponseDto = defineDomainError({
   code: 'TEAM_TASK_NOT_FOUND',
