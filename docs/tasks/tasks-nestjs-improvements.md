@@ -64,7 +64,7 @@
 | 40 | **D32 Redis 캐시 userName invalidation** | 쉬움 | 🟢 | 보통 | 없음 |
 | ~~41~~ | ~~D33 DB 마이그레이션 환경 구축 (TypeORM migrations)~~ | — | — | — | **✅ 완료** |
 | ~~42~~ | ~~D34 Entity↔DB 정합화 (DDL 대조 후속)~~ | — | — | — | **✅ 완료** |
-| 43 | **D35 초대 링크 경로 불일치 (inviteLink 죽은 값)** | 쉬움 | 🟢 | 보통 | 프론트 협의 |
+| 43 | ~~**D35 초대 링크 경로 불일치 (inviteLink 죽은 값)**~~ ✅ A안 적용 | 쉬움 | 🟢 | 보통 | 프론트 협의 |
 | — | ~~B3 Redis Custom Provider~~ | 보통 | 🔴 | 보통 | **보류** |
 
 ### 의존 관계
@@ -102,7 +102,7 @@ D31 (환경 검증) ──→ D24 (CORS_ORIGINS 등 D24 신규 변수 검증 포
 D32 (Redis userName invalidation) ──→ 독립
 ✅ D33 (DB 마이그레이션 환경) ──→ 완료 (이후 모든 DB DDL 작업은 마이그레이션으로 수행)
 D34 (Entity↔DB 정합화) ──→ D33 (DDL 대조 결과 기반) — D23/D27과 연계
-D35 (초대 링크 경로) ──→ 독립 (프론트 next-bun 협의 필요)
+D35 (초대 링크 경로) ──→ 독립 ✅ A안 적용 (2026-10-14)
 ```
 
 ---
@@ -1963,7 +1963,7 @@ Phase 5 — 작업 목록 (완료 15 + 미완료 19 + 보류 2)
   [ ] D32 Redis 캐시 userName invalidation (PUT /users/me 후 Redis Hash 갱신)
   [✓] D33 DB 마이그레이션 환경 구축 — CLI DataSource + db:migrate:* 5종 + init 베이스라인 fake 등록 완료 (2026-07-23)
   [✓] D34 Entity↔DB 정합화 — TOKEN 500 확장, kakaoId varchar2 정정, nullable/length 표기 (2026-07-28, 커밋 f9d2a35·669e338)
-  [ ] D35 초대 링크 경로 불일치 — 백엔드 inviteLink가 존재하지 않는 라우트를 가리킴 (프론트 협의)
+  [✓] D35 초대 링크 경로 불일치 — A안(백엔드 경로 수정) 적용, 2026-10-14
   [⏸] B3  Redis Custom Provider (보류)
 ```
 
@@ -2696,6 +2696,12 @@ export default new DataSource({
 
 ## D35. 초대 링크 경로 불일치 (`inviteLink` 죽은 값)
 
+> **✅ 결정·적용 (2026-10-14)**: **A안(백엔드 경로 수정)**.
+> 프론트 초대 통합(생성 직후 모달에 링크·복사 표시)이 `response.data.inviteLink`를 그대로 쓰게 되면서
+> 아래 "왜 지금까지 문제가 없었나"의 우회 전제가 깨졌다 — 그대로 배포하면 복사한 링크가 `[teamId]` 동적 라우트(`teamId=invitation`)로 매칭될 것으로 봄(코드 추적, 렌더 미실측).
+> 통합 리뷰(백엔드·프론트 계약 대조)에서 발견. `inviteLink` = `${NEXT_PUBLIC_DOMAIN}/teams/invite/accept?token=<encodeURIComponent>`.
+> API 계약 변경(값 의미) — 배포 순서는 백엔드 → 프론트.
+
 - **난이도**: 쉬움 | **효과**: 보통 | **위험도**: 🟢 낮음 | **범위**: 백엔드 1줄 또는 응답 DTO
 - **발견 경로**: 2026-07-31 D23 리뷰 중 `jti` 추가의 프론트 파급을 확인하다가 발견
 - **선행**: 없음 (단, 수정 방향 결정에 프론트 협의 필요)
@@ -2781,5 +2787,5 @@ export default new DataSource({
 | D31 환경 검증 | 🟢 낮음 | 검증 추가만, 기존 .env 통과 필요 |
 | D33 DB 마이그레이션 환경 | 🟡 중간 | LOCAL/PROD 동일 DB — --fake 등록만 실 DB 접촉 (이력 테이블 + 1행). up/revert는 담당자 수동 실행 |
 | D34 Entity↔DB 정합화 | 🟡 중간 | kakaoId 타입 정정은 호출부 전수 확인 필요. TOKEN 확장은 DDL 1건 (멱등 가드) |
-| D35 초대 링크 경로 | 🟢 낮음 | 현재 프론트가 자체 URL을 조립해 우회 중이라 사용자 영향 없음. 수정 방향만 결정 필요 |
+| D35 초대 링크 경로 | ✅ 해결 | A안 적용 (2026-10-14). 프론트 초대 통합이 `inviteLink`를 직접 표시하게 되며 우회 전제가 깨져 배포 전 수정 |
 | B3 Redis Provider | 🔴 높음 | 초기화 타이밍 불확실 → **보류** |

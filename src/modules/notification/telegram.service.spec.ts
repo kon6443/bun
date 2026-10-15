@@ -468,6 +468,16 @@ describe('TelegramService', () => {
       expect(sentBody().text).toContain('테스트팀');
     });
 
+    it('팀 이름의 HTML 특수문자를 이스케이프해야 함 (미처리 시 연동 안내가 400으로 유실)', async () => {
+      jest
+        .spyOn(service, 'verifyAndLinkTeam')
+        .mockResolvedValue({ success: true, message: 'ok', teamName: 'R&D <팀>' });
+
+      await service.handleWebhook(startCommand('/start tok123'));
+
+      expect(sentBody().text).toContain('<b>R&amp;D &lt;팀&gt;</b>');
+    });
+
     it('/start 토큰이 무효하면 실패 사유를 알려야 함', async () => {
       jest
         .spyOn(service, 'verifyAndLinkTeam')
@@ -477,6 +487,16 @@ describe('TelegramService', () => {
 
       // 침묵하면 사용자가 왜 연동이 안 되는지 알 수 없다
       expect(sentBody().text).toContain('만료된 토큰입니다.');
+    });
+
+    it('실패 사유의 HTML 특수문자도 이스케이프해야 함', async () => {
+      jest
+        .spyOn(service, 'verifyAndLinkTeam')
+        .mockResolvedValue({ success: false, message: '<토큰> & 오류' });
+
+      await service.handleWebhook(startCommand('/start tok123'));
+
+      expect(sentBody().text).toContain('사유: &lt;토큰&gt; &amp; 오류');
     });
 
     it('토큰 없는 /start면 안내만 하고 연동을 시도하지 않아야 함', async () => {

@@ -14,5 +14,5 @@ paths:
 - 컨테이너는 `TZ=UTC`(`Dockerfile`)다. UTC로 저장·처리하고 **표시 단계에서만** 로컬로 변환한다.
 - 🚫 **`ORA_SDTZ` 설정 금지** — oracledb가 로컬 TZ 기준으로 Date를 저장하므로 세션 TZ는 자동으로 맞아야 한다.
 - 🚫 Oracle `FROM_TZ()`에 리전 이름(`'UTC'`) 금지 → 오프셋(`'+00:00'`)을 쓴다 (ORA-01805).
-- 텔레그램 등 알림 문자열은 `src/common/utils/date.utils.ts`의 `formatDateTime()`으로 만든다.
+- 텔레그램 등 알림의 기간 표기는 `src/common/utils/date.utils.ts`의 `formatDateRange()`로 만든다 (KST·`hourCycle: 'h23'`).
 - "투과 방식(변환 없음) / timezone-naive" 정책은 폐기됐다 — 그 시절 문서·코드를 근거로 삼지 않는다 (경위: `docs/playbooks/recurring-issues-playbook.md` 클러스터 3).

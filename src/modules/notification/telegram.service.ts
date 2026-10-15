@@ -13,6 +13,7 @@ import {
 } from './notification-error.dto';
 import { randomBytes } from 'crypto';
 import { toErrorDetail } from '../../common/utils/error.utils';
+import { escapeTelegramHtml } from './notification.format';
 
 /**
  * 텔레그램 인라인 키보드 버튼 타입
@@ -269,10 +270,10 @@ export class TelegramService {
           if (result.success) {
             await this.sendMessageAsync(
               chat.id,
-              `✅ 연동이 완료되었습니다!\n\n팀: <b>${result.teamName}</b>\n\n이제 이 그룹으로 팀 알림을 받을 수 있습니다.`,
+              `✅ 연동이 완료되었습니다!\n\n팀: <b>${escapeTelegramHtml(result.teamName ?? '')}</b>\n\n이제 이 그룹으로 팀 알림을 받을 수 있습니다.`,
             );
           } else {
-            await this.sendMessageAsync(chat.id, `❌ 연동에 실패했습니다.\n\n사유: ${result.message}`);
+            await this.sendMessageAsync(chat.id, `❌ 연동에 실패했습니다.\n\n사유: ${escapeTelegramHtml(result.message)}`);
           }
 
           return result;
