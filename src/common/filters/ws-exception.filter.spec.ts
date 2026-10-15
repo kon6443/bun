@@ -49,6 +49,19 @@ describe('WsExceptionFilter', () => {
       });
     });
 
+    it('clientMsgId가 있으면 함께 전달해야 함 (프론트가 실패한 낙관적 메시지를 찾는 키)', () => {
+      filter.catch(
+        new WsException({ code: 'CHAT_RATE_LIMITED', message: '잠시 후 다시 보내주세요.', clientMsgId: 'msg-1' }),
+        host,
+      );
+
+      expect(emittedBody()).toEqual({
+        code: 'CHAT_RATE_LIMITED',
+        message: '잠시 후 다시 보내주세요.',
+        clientMsgId: 'msg-1',
+      });
+    });
+
     it('문자열 payload는 WS_ERROR로 감싸야 함', () => {
       filter.catch(new WsException('문자열 에러'), host);
 

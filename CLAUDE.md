@@ -38,7 +38,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (해당 태스크 절) |
 | 에러 응답 · 도메인 에러 DTO · Swagger 에러 명세 | `docs/tasks/tasks-error-dto-refactor.md` |
 | 카카오 로그인 지연 · 인증 성능 · next-auth 관련 조사 | `docs/tasks/tasks-kakao-login-latency.md` — 재조사 전에 현재 결론부터 읽는다 |
-| 실시간 채팅 · WS 이벤트 추가 | `docs/tasks/tasks-team-chat.md` |
+| 실시간 채팅 · WS 이벤트 추가 | `docs/tasks/tasks-team-chat.md` · 채팅 저장·읽음 표시는 `docs/tasks/team-chat-persistence/STATUS.md` |
 | 메트릭 · Prometheus · Grafana | `docs/tasks/tasks-monitoring.md` |
 | 로그 수집 · Loki · Promtail | `docs/tasks/tasks-logging.md` |
 | Redis Pub/Sub · 멀티 레플리카 브로드캐스트 | `docs/prd-redis-pubsub.md` + `docs/tasks/tasks-redis-pubsub.md` |

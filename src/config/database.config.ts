@@ -8,6 +8,8 @@ import { TeamTask } from '../entities/TeamTask';
 import { TaskComment } from '../entities/TaskComment';
 import { TeamInvitation } from '../entities/TeamInvitation';
 import { TelegramLink } from '../entities/TelegramLink';
+import { TeamChatMessage } from '../entities/TeamChatMessage';
+import { TeamChatReadCursor } from '../entities/TeamChatReadCursor';
 export default registerAs('database', (): TypeOrmModuleOptions => {
   const config: TypeOrmModuleOptions = {
     type: 'oracle',
@@ -16,7 +18,7 @@ export default registerAs('database', (): TypeOrmModuleOptions => {
     connectString: process.env.ORACLE_DB_CONNECT_STR,
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
-    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink],
+    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink, TeamChatMessage, TeamChatReadCursor],
     extra: {
       poolMin: 1,
       poolMax: 3,

@@ -6,6 +6,7 @@ import { TaskComment } from '../TaskComment';
 import { TeamInvitation } from '../TeamInvitation';
 import { TelegramLink } from '../TelegramLink';
 import { FileShare } from '../FileShare';
+import { TeamChatMessage } from '../TeamChatMessage';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import type { RoleKey } from '../../common/constants/role.constants';
 import type { TeamMemberType, TeamService } from '../../modules/team/team.service';
@@ -109,6 +110,19 @@ export const createTaskComment = (overrides: Partial<TaskComment> = {}): TaskCom
   crtdAt: FIXED_DATE,
   team: UNSET,
   task: UNSET,
+  user: UNSET,
+  ...overrides,
+});
+
+export const createTeamChatMessage = (overrides: Partial<TeamChatMessage> = {}): TeamChatMessage => ({
+  messageId: 101,
+  teamId: 1,
+  userId: 1,
+  content: '테스트 메시지',
+  clientMsgId: 'client-msg-1',
+  status: ActStatus.ACTIVE,
+  crtdAt: FIXED_DATE,
+  team: UNSET,
   user: UNSET,
   ...overrides,
 });

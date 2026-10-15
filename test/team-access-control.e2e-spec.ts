@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { TeamController } from '../src/modules/team/team.controller';
 import { TeamService } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
+import { TeamChatService } from '../src/modules/team/team-chat.service';
 import { TelegramService } from '../src/modules/notification/telegram.service';
 import { DiscordService } from '../src/modules/notification/discord.service';
 import { NOTIFICATION_PORT } from '../src/common/port/notification.port';
@@ -62,6 +63,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
         // 컨트롤러가 DI로 받는 나머지 — 이번 검증 대상이 아니라 동작만 막아둔다
         { provide: TelegramService, useValue: {} },
+        { provide: TeamChatService, useValue: {} },
         { provide: DiscordService, useValue: {} },
         { provide: TeamGateway, useValue: { emitTaskCreated: jest.fn(), emitCommentUpdated: jest.fn(), emitCommentDeleted: jest.fn() } },
       ],

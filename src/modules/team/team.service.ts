@@ -56,6 +56,7 @@ import {
   MANAGEMENT_ROLES,
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
+import { initReadCursorAtLatest } from './chat-read-cursor';
 import { Inject } from '@nestjs/common';
 import {
   INotificationPort,
@@ -1237,6 +1238,10 @@ export class TeamService {
         await manager.save(TeamMember, newTeamMember);
       }
 
+      // 채팅 읽음 커서를 팀 최신 메시지로 — 이전 대화는 보이되 안읽음으로 세지 않는다
+      // (신규·재활성화 공통. 활성화 경로 3곳 중 2곳 — docs/tasks/team-chat-persistence D-012·D-021)
+      await initReadCursorAtLatest(manager, inviteInfo.teamId, userId);
+
       // 사용 횟수 증가
       invite.usageCurCnt += 1;
       await manager.save(TeamInvitation, invite);
@@ -1481,11 +1486,14 @@ export class TeamService {
       );
     }
 
-    // 8. 상태 변경
-    await this.teamMemberRepository.update(
-      { teamId, userId: targetUserId },
-      { actStatus: newStatus },
-    );
+    // 8. 상태 변경 — 재활성화(0→1)면 채팅 읽음 커서도 팀 최신 메시지로 맞춘다
+    // (비활성 기간 메시지를 안읽음으로 세지 않는다. 활성화 경로 3곳 중 1곳 — docs/tasks/team-chat-persistence D-012·D-021)
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      await manager.update(TeamMember, { teamId, userId: targetUserId }, { actStatus: newStatus });
+      if (newStatus === ActStatus.ACTIVE) {
+        await initReadCursorAtLatest(manager, teamId, targetUserId);
+      }
+    });
 
     // 9. 대상 사용자 이름 조회
     const targetUser = await this.userRepository.findOne({

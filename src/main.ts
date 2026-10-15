@@ -9,6 +9,7 @@ import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
+import { TeamChatService } from './modules/team/team-chat.service';
 import { ConfigService } from '@nestjs/config';
 import { GRACEFUL_SHUTDOWN_TIMEOUT_MS } from './common/constants/app.constants';
 import { Request, Response, NextFunction } from 'express';
@@ -78,6 +79,10 @@ async function bootstrap() {
     // Redis 클라이언트를 FishingOnlineService에 주입
     const fishingOnlineService = app.get(FishingOnlineService);
     fishingOnlineService.setRedisClient(redisAdapter.getPubClient());
+
+    // Redis 클라이언트를 TeamChatService에 주입 (채팅 레이트 리밋 카운터)
+    const teamChatService = app.get(TeamChatService);
+    teamChatService.setRedisClient(redisAdapter.getPubClient());
 
     logger.log('WebSocket RedisIoAdapter 설정 완료');
 

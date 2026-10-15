@@ -242,6 +242,9 @@ export class TeamMemberDto {
 
   @ApiProperty({ description: '리더 ID', example: 1 })
   leaderId: number;
+
+  @ApiProperty({ description: '팀 채팅 안읽음 수 (남이 보낸 메시지만)', example: 3 })
+  unreadChatCount: number;
 }
 
 export class TeamMemberListResponseDto extends ApiSuccessResponseDto {
