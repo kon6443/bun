@@ -833,7 +833,8 @@ export class TeamService {
       taskId: comment.taskId,
       userId: comment.userId,
       userName: comment.user?.userName || null,
-      commentContent: comment.commentContent,
+      // 삭제(소프트 삭제)된 댓글은 자리만 남기고 본문은 내보내지 않는다 — 화면에서 가려도 응답에 원문이 실려 있었다
+      commentContent: comment.status === ActStatus.INACTIVE ? '' : comment.commentContent,
       status: comment.status,
       mdfdAt: comment.mdfdAt,
       crtdAt: comment.crtdAt,
