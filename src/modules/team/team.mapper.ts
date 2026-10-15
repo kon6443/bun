@@ -1,4 +1,5 @@
 import type { TeamMemberType } from './team.service';
+import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants';
 
 /**
  * 조회 API 응답용 매핑 — 내부 조회 결과에서 **공개 필드만** 골라낸다.
@@ -63,3 +64,20 @@ export function toMyTeamItem(tm: TeamMemberType, unreadChatCount: number): MyTea
   };
 }
 
+/**
+ * 알림 연동 상태를 역할에 맞게 줄인다.
+ *
+ * 연동 정보를 바꾸는 API(연동 토큰 발급·웹훅 저장·해제)는 MASTER·MANAGER 전용인데,
+ * 상태 조회는 팀 멤버 전체에 열려 있다. 그래서 일반 멤버에게는 연동 여부만 준다 —
+ * 미사용 연동 토큰이나 웹훅 URL을 받으면 알림을 가로채거나 채널에 임의 게시할 수 있다.
+ * 403이 아니라 축소 응답인 이유: 프론트가 팀 화면 진입 시 역할과 무관하게 조회한다.
+ */
+export function toLinkStatusForRole<T extends { isLinked: boolean }>(
+  status: T,
+  role: string,
+): T | { isLinked: boolean } {
+  if (MANAGEMENT_ROLES.includes(role as RoleKey)) {
+    return status;
+  }
+  return { isLinked: status.isLinked };
+}

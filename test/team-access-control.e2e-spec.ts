@@ -77,7 +77,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
   });
 
   /** 팀 멤버 조회 결과를 고정한다. 빈 배열 = 비멤버이거나 탈퇴한 상태 */
-  const mockMembership = (isMember: boolean) =>
+  const mockMembership = (isMember: boolean, role: string = 'MEMBER') =>
     jest
       .spyOn(teamService, 'getTeamMembersBy')
       .mockResolvedValue(
@@ -94,7 +94,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
                 discordWebhookUrl: null,
                 userId: AUTHOR.userId,
                 joinedAt: new Date(),
-                role: 'MEMBER',
+                role,
                 userActStatus: 1,
               },
             ]
@@ -198,6 +198,69 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ code: 'SUCCESS' });
+    });
+  });
+
+  describe('알림 연동 상태 조회 — 역할별 축소 (2026-10-15)', () => {
+    const WEBHOOK = 'https://discord.test/api/webhooks/1/secret';
+    const TOKEN = 'pending-link-token';
+
+    /** 컨트롤러에 주입된 알림 서비스 mock에 연동 상태를 심는다 */
+    const mockLinkStatus = () => {
+      const telegram = e2e.moduleRef.get(TelegramService) as unknown as { getLinkStatus: jest.Mock };
+      const discord = e2e.moduleRef.get(DiscordService) as unknown as { getLinkStatus: jest.Mock };
+      telegram.getLinkStatus = jest.fn().mockResolvedValue({
+        isLinked: false,
+        chatId: null,
+        pendingLink: { token: TOKEN, deepLink: `https://t.me/bot?startgroup=${TOKEN}`, endAt: new Date() },
+      });
+      discord.getLinkStatus = jest.fn().mockResolvedValue({ isLinked: true, webhookUrl: WEBHOOK });
+    };
+
+    it('MEMBER에게는 텔레그램 연동 토큰 없이 연동 여부만 줘야 함', async () => {
+      mockMembership(true, 'MEMBER');
+      mockLinkStatus();
+
+      const res = await request(app.getHttpServer()).get(e2e.url(`/teams/${TEAM_ID}/telegram/status`));
+
+      // 토큰을 받으면 일반 멤버가 자기 그룹을 팀에 연결해 알림을 가로챌 수 있다
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ isLinked: false });
+      expect(JSON.stringify(res.body)).not.toContain(TOKEN);
+    });
+
+    it('MEMBER에게는 디스코드 웹훅 URL 없이 연동 여부만 줘야 함', async () => {
+      mockMembership(true, 'MEMBER');
+      mockLinkStatus();
+
+      const res = await request(app.getHttpServer()).get(e2e.url(`/teams/${TEAM_ID}/discord/status`));
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ isLinked: true });
+      expect(JSON.stringify(res.body)).not.toContain(WEBHOOK);
+    });
+
+    it.each(['MASTER', 'MANAGER'])('%s에게는 지금처럼 전체 연동 정보를 줘야 함', async (role) => {
+      mockMembership(true, role);
+      mockLinkStatus();
+
+      const telegramRes = await request(app.getHttpServer()).get(e2e.url(`/teams/${TEAM_ID}/telegram/status`));
+      const discordRes = await request(app.getHttpServer()).get(e2e.url(`/teams/${TEAM_ID}/discord/status`));
+
+      expect(telegramRes.status).toBe(200);
+      expect(telegramRes.body.data.pendingLink.token).toBe(TOKEN);
+      expect(discordRes.status).toBe(200);
+      expect(discordRes.body.data.webhookUrl).toBe(WEBHOOK);
+    });
+
+    it('비멤버는 지금처럼 403이어야 함', async () => {
+      mockMembership(false);
+      mockLinkStatus();
+
+      const res = await request(app.getHttpServer()).get(e2e.url(`/teams/${TEAM_ID}/telegram/status`));
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'TEAM_FORBIDDEN' });
     });
   });
 

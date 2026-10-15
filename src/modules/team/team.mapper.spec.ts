@@ -1,4 +1,4 @@
-import { toMyTeamItem, toPublicTask } from './team.mapper';
+import { toLinkStatusForRole, toMyTeamItem, toPublicTask } from './team.mapper';
 import { createTeamMemberView, createTeamTaskView } from '../../entities/__spec__/entity.factory';
 
 /**
@@ -60,4 +60,23 @@ describe('team.mapper', () => {
     });
   });
 
+  describe('toLinkStatusForRole', () => {
+    const full = {
+      isLinked: false,
+      chatId: null,
+      pendingLink: { token: 'secret-token', deepLink: 'https://t.me/bot', endAt: new Date(0) },
+    };
+
+    it('MEMBER에게는 isLinked만 남겨야 함', () => {
+      expect(toLinkStatusForRole(full, 'MEMBER')).toEqual({ isLinked: false });
+    });
+
+    it.each(['MASTER', 'MANAGER'])('%s에게는 원본을 그대로 줘야 함', (role) => {
+      expect(toLinkStatusForRole(full, role)).toBe(full);
+    });
+
+    it('알 수 없는 역할은 MEMBER처럼 축소해야 함 (기본값이 노출이면 안 된다)', () => {
+      expect(toLinkStatusForRole({ isLinked: true, webhookUrl: 'x' }, 'UNKNOWN')).toEqual({ isLinked: true });
+    });
+  });
 });

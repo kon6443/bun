@@ -84,7 +84,7 @@ import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants
 import { TelegramService } from '../notification/telegram.service';
 import { DiscordService } from '../notification/discord.service';
 import { getDisplayName } from '../../common/utils/user.utils';
-import { toMyTeamItem } from './team.mapper';
+import { toLinkStatusForRole, toMyTeamItem } from './team.mapper';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -688,13 +688,13 @@ export class TeamController {
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    // 팀 멤버 확인
-    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+    // 팀 멤버 확인 — 연동 토큰·chatId는 관리자에게만 준다
+    const member = await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
 
     const status = await this.telegramService.getLinkStatus(teamId);
     return {
       code: 'SUCCESS',
-      data: status,
+      data: toLinkStatusForRole(status, member.role),
       message: '',
     };
   }
@@ -762,12 +762,13 @@ export class TeamController {
     @CurrentUser() user: User,
     @Param('teamId', ParseIntPipe) teamId: number,
   ) {
-    await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
+    // 웹훅 URL은 관리자에게만 준다 (URL만 있으면 채널에 임의 게시 가능)
+    const member = await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
 
     const status = await this.discordService.getLinkStatus(teamId);
     return {
       code: 'SUCCESS',
-      data: status,
+      data: toLinkStatusForRole(status, member.role),
       message: '',
     };
   }
