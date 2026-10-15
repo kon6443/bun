@@ -46,7 +46,7 @@ jobs:
           rm /tmp/ssh_key
 
       - name: Deploy shared stack via SSH (sha256 config + converge 동기 대기)
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -104,7 +104,7 @@ jobs:
           rm /tmp/ssh_key
 
       - name: Deploy prod stack via SSH (sha256 config + converge 동기 대기)
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
