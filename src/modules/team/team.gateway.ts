@@ -31,6 +31,10 @@ import {
   TaskStatusChangedPayload,
   TaskActiveStatusChangedPayload,
   TaskDeletedPayload,
+  TagCreatedPayload,
+  TagUpdatedPayload,
+  TagDeletedPayload,
+  TagsReorderedPayload,
   CommentCreatedPayload,
   CommentUpdatedPayload,
   CommentDeletedPayload,
@@ -453,6 +457,44 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const roomName = this.getRoomName(teamId);
     this.server.to(roomName).emit(TeamSocketEvents.TASK_DELETED, payload);
     this.logger.debug(`태스크 삭제 브로드캐스트: teamId=${teamId}, taskId=${payload.taskId}`);
+  }
+
+  // ===== 태그 이벤트 브로드캐스트 =====
+
+  /**
+   * 태그 생성 이벤트 브로드캐스트
+   */
+  emitTagCreated(teamId: number, payload: TagCreatedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.TAG_CREATED, payload);
+    this.logger.debug(`태그 생성 브로드캐스트: teamId=${teamId}, tagId=${payload.tagId}`);
+  }
+
+  /**
+   * 태그 수정 이벤트 브로드캐스트
+   */
+  emitTagUpdated(teamId: number, payload: TagUpdatedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.TAG_UPDATED, payload);
+    this.logger.debug(`태그 수정 브로드캐스트: teamId=${teamId}, tagId=${payload.tagId}`);
+  }
+
+  /**
+   * 태그 삭제 이벤트 브로드캐스트
+   */
+  emitTagDeleted(teamId: number, payload: TagDeletedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.TAG_DELETED, payload);
+    this.logger.debug(`태그 삭제 브로드캐스트: teamId=${teamId}, tagId=${payload.tagId}`);
+  }
+
+  /**
+   * 태그 순서 변경 이벤트 브로드캐스트
+   */
+  emitTagsReordered(teamId: number, payload: TagsReorderedPayload): void {
+    const roomName = this.getRoomName(teamId);
+    this.server.to(roomName).emit(TeamSocketEvents.TAGS_REORDERED, payload);
+    this.logger.debug(`태그 순서 변경 브로드캐스트: teamId=${teamId}, count=${payload.tagIds.length}`);
   }
 
   // ===== 댓글 이벤트 브로드캐스트 =====

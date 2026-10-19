@@ -3,7 +3,7 @@
  * All DTOs for team module consolidated into a single file
  * Following NestJS standard DTO pattern
  */
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, OmitType } from '@nestjs/swagger';
 import {
   INVITE_DEFAULT_USAGE_MAX_CNT,
   INVITE_MAX_EXPIRATION_MS,
@@ -18,9 +18,15 @@ import {
   Max,
   IsDate,
   IsEnum,
+  IsArray,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsInt,
 } from 'class-validator';
 import { TaskStatus, ActStatus } from '../../common/enums/task-status.enum';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
+import { TASK_TAG_MAX_PER_TASK } from '../../common/constants/app.constants';
+import { TaskTagDto } from './team-tag.dto';
 
 // ==================== Types ====================
 
@@ -85,6 +91,20 @@ export class CreateTeamTaskDto {
   @IsDate()
   @IsOptional()
   endAt?: Date;
+
+  @ApiProperty({
+    description: `붙일 태그 ID 목록 (같은 팀 태그만, 최대 ${TASK_TAG_MAX_PER_TASK}개, 중복 불가)`,
+    example: [1, 2],
+    type: [Number],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(TASK_TAG_MAX_PER_TASK)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  tagIds?: number[];
 }
 
 export class UpdateTeamTaskDto {
@@ -107,6 +127,20 @@ export class UpdateTeamTaskDto {
   @IsDate()
   @IsOptional()
   endAt?: Date;
+
+  @ApiProperty({
+    description: `태그 ID 목록 — 생략하면 변경 없음, 배열이면 **전체 교체**(\`[]\`는 모두 제거). 같은 팀 태그만, 최대 ${TASK_TAG_MAX_PER_TASK}개`,
+    example: [1, 2],
+    type: [Number],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(TASK_TAG_MAX_PER_TASK)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  tagIds?: number[];
 }
 
 export class UpdateTaskStatusDto {
@@ -320,6 +354,9 @@ export class TeamTaskDto {
 
   @ApiProperty({ description: '생성자 ID', example: 1 })
   crtdBy: number;
+
+  @ApiProperty({ description: '붙은 태그 (팀 태그 정렬 순서)', type: [TaskTagDto] })
+  tags: TaskTagDto[];
 }
 
 export class CreateTeamTaskResponseDto extends ApiSuccessResponseDto {
@@ -330,6 +367,14 @@ export class CreateTeamTaskResponseDto extends ApiSuccessResponseDto {
 export class UpdateTeamTaskResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ description: '수정된 태스크 정보', type: TeamTaskDto })
   data: TeamTaskDto;
+}
+
+/** 태스크 상태·활성 상태 변경 응답 — 태그를 싣지 않는다 (태그는 수정·조회 응답에만) */
+export class TeamTaskWithoutTagsDto extends OmitType(TeamTaskDto, ['tags'] as const) {}
+
+export class UpdateTaskStatusResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ description: '변경된 태스크 정보 (tags 없음)', type: TeamTaskWithoutTagsDto })
+  data: TeamTaskWithoutTagsDto;
 }
 
 export class TeamTaskListDataDto {
@@ -447,6 +492,9 @@ export class TaskDetailDto {
 
   @ApiProperty({ description: '생성자 ID', example: 1 })
   crtdBy: number;
+
+  @ApiProperty({ description: '붙은 태그 (팀 태그 정렬 순서)', type: [TaskTagDto] })
+  tags: TaskTagDto[];
 
   @ApiProperty({ description: '댓글 목록', type: [TaskCommentWithUserDto] })
   comments: TaskCommentWithUserDto[];

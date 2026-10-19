@@ -35,6 +35,7 @@ import {
   UpdateTeamResponseDto,
   CreateTeamTaskResponseDto,
   UpdateTeamTaskResponseDto,
+  UpdateTaskStatusResponseDto,
   TeamTaskListResponseDto,
   GetTaskDetailResponseDto,
   CreateTaskCommentResponseDto,
@@ -299,7 +300,7 @@ export class TeamController {
   @ApiBody({ type: CreateTeamTaskDto })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTeamTaskResponseDto })
   @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 400, description: '종료 시각이 시작 시각보다 빠릅니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiResponse({ status: 400, description: '종료 시각이 시작 시각보다 빠르거나, tagIds에 이 팀 태그가 아닌 ID가 있습니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiResponse({ status: 403, description: '팀 멤버만 태스크를 생성할 수 있습니다. (팀이 없거나 비활성인 경우도 동일)', type: TeamForbiddenErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
   @ApiCommonValidationResponse()
@@ -324,6 +325,7 @@ export class TeamController {
       actStatus: task.actStatus,
       startAt: task.startAt?.toISOString() ?? null,
       endAt: task.endAt?.toISOString() ?? null,
+      tags: task.tags,
       createdBy: user.userId,
     });
 
@@ -337,7 +339,7 @@ export class TeamController {
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTeamTaskDto })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
-  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않거나, 종료 시각이 시작 시각보다 빠릅니다.', type: TeamTaskBadRequestErrorResponseDto })
+  @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않거나, 종료 시각이 시작 시각보다 빠르거나, tagIds에 이 팀 태그가 아닌 ID가 있습니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiCommonUnauthorizedResponse()
   @ApiResponse({ status: 403, description: '팀 멤버만 태스크를 수정할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
   @ApiResponse({ status: 404, description: '팀 또는 태스크를 찾을 수 없습니다.', type: TeamTaskNotFoundErrorResponseDto })
@@ -365,6 +367,7 @@ export class TeamController {
       taskStatus: task.taskStatus,
       startAt: task.startAt?.toISOString() ?? null,
       endAt: task.endAt?.toISOString() ?? null,
+      tags: task.tags,
       updatedBy: user.userId,
     });
 
@@ -377,7 +380,7 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTaskStatusDto })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTaskStatusResponseDto })
   @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiCommonUnauthorizedResponse()
   @ApiResponse({ status: 403, description: '팀 멤버만 태스크 상태를 변경할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
@@ -419,7 +422,7 @@ export class TeamController {
   @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
   @ApiParam({ name: 'taskId', description: '태스크 ID', type: Number })
   @ApiBody({ type: UpdateTaskActiveStatusDto })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTeamTaskResponseDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: UpdateTaskStatusResponseDto })
   @ApiResponse({ status: 400, description: '태스크가 해당 팀에 속하지 않습니다.', type: TeamTaskBadRequestErrorResponseDto })
   @ApiCommonUnauthorizedResponse()
   @ApiResponse({ status: 403, description: '팀 멤버만 태스크 활성 상태를 변경할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
