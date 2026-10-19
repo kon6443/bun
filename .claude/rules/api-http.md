@@ -65,7 +65,9 @@ exceptionFactory: → ApiValidationErrorResponseDto
 
 - 한도는 `src/common/constants/throttle.constants.ts`가 SSOT다 — 전역 `THROTTLE_SHORT`·`THROTTLE_LONG`, 로그인 라우트는 더 엄격한 `THROTTLE_AUTH_*`를 `@Throttle`로 덮어쓴다.
 - 제외는 `@SkipThrottle()` (헬스체크·외부 봇 호출 컨트롤러 등).
-- 식별자는 로그인 시 `user-{userId}`, 비로그인 시 `X-Forwarded-For` 첫 IP → `req.ip` (`CustomThrottlerGuard.getTracker`).
+- 식별자(`CustomThrottlerGuard.getTracker`): 유효한 액세스 토큰이면 `user-{userId}` — 전역 가드는 `JwtAuthGuard`보다 먼저 돌아 `request.user`가 없으므로 가드가 토큰 **서명만** 직접 검증한다(DB 조회 없음, 추출 규칙은 `common/utils/access-token.utils.ts`). 그 외는 `req.ip`(`trust proxy 1` = 바로 앞 프록시가 붙인 값).
+- 🚫 `X-Forwarded-For` **첫 값**을 키로 쓰지 않는다 — 요청자가 위조해 한도를 우회할 수 있다.
+- 카운터 저장소는 Redis 공유(`common/throttler/redis-throttler.storage.ts`, 전용 연결). Redis 미연결·오류 시 레플리카 인메모리 폴백(fail-open) + 5초 차단기.
 
 ## 응답·Swagger — 전역 인터셉터 없음
 

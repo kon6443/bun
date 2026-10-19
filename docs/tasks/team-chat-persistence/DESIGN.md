@@ -96,7 +96,7 @@ TEAM_CHAT_MESSAGES                         TEAM_CHAT_READ_CURSORS
 
 ```
  A가 전송
-   │ ① Redis INCR chat:rl:send:{teamId}:{userId}   ← 10초짜리 카운터. 첫 INCR 때 EXPIRE 10초
+   │ ① Redis INCR chat:rl:send:{userId}   ← 10초짜리 카운터. 첫 INCR 때 EXPIRE 10초
    │ ② DB SELECT 멤버십
    │ ③ DB 트랜잭션: INSERT 메시지 + A의 커서 UPDATE → COMMIT   ← 이 시점에 원본 저장 끝
    │ ④ Redis PUBLISH (Socket.IO 어댑터)                       ← 다른 레플리카에 "방에 뿌려라" 전달. 저장 안 됨

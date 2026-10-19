@@ -16,6 +16,7 @@ import {
 import { THROTTLE_SHORT, THROTTLE_LONG } from './common/constants/throttle.constants';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { createGlobalValidationPipe } from './common/pipes/global-validation-pipe';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
@@ -91,10 +92,14 @@ const logger = new Logger('AppModule');
       },
       inject: [ConfigService],
     }),
-    ThrottlerModule.forRoot([
-      { name: 'short', ...THROTTLE_SHORT },     // 초당 5회 (순간 폭발 방지)
-      { name: 'long', ...THROTTLE_LONG },       // 분당 60회 (지속 남용 방지)
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'short', ...THROTTLE_SHORT },     // 초당 5회 (순간 폭발 방지)
+        { name: 'long', ...THROTTLE_LONG },       // 분당 60회 (지속 남용 방지)
+      ],
+      // 카운터를 레플리카 간 Redis로 공유 — Redis 클라이언트는 main.ts에서 주입, 미연결 시 인메모리 폴백
+      storage: new RedisThrottlerStorage(),
+    }),
     ScheduleModule.forRoot(),
     PrometheusModule.register({
       // globalPrefix가 api/v1 이므로 실제 노출 경로는 /api/v1/metrics

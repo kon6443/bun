@@ -15,7 +15,7 @@ export const CHAT_MESSAGE_MAX_BYTES = 16000;
 export const CHAT_HISTORY_DEFAULT_LIMIT = 50;
 export const CHAT_HISTORY_MAX_LIMIT = 100;
 
-/** 소켓 이벤트 레이트 리밋 — 유저·팀 단위 고정 윈도 */
+/** 소켓 이벤트 레이트 리밋 — 유저 단위 고정 윈도 (모든 팀 합산) */
 export const CHAT_RATE_LIMITS = {
   send: { limit: 20, windowSec: 10 },
   read: { limit: 60, windowSec: 10 },

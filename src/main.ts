@@ -7,6 +7,8 @@ import { Gauge, register } from 'prom-client';
 import { getToken } from '@willsoto/nestjs-prometheus';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
+import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
+import { getStorageToken } from '@nestjs/throttler';
 import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { TeamChatService } from './modules/team/team-chat.service';
@@ -83,6 +85,12 @@ async function bootstrap() {
     // Redis 클라이언트를 TeamChatService에 주입 (채팅 레이트 리밋 카운터)
     const teamChatService = app.get(TeamChatService);
     teamChatService.setRedisClient(redisAdapter.getPubClient());
+
+    // HTTP 스로틀 저장소 전용 Redis 연결 (레플리카 간 카운터 공유 — 어댑터 클라이언트와 분리, 이유는 저장소 주석)
+    app.get<RedisThrottlerStorage>(getStorageToken()).connect({
+      host: configService.get<string>('REDIS_HOST') || 'localhost',
+      port: configService.get<number>('REDIS_PORT') || 6379,
+    });
 
     logger.log('WebSocket RedisIoAdapter 설정 완료');
 
