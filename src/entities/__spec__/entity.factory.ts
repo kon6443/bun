@@ -7,6 +7,8 @@ import { TeamInvitation } from '../TeamInvitation';
 import { TelegramLink } from '../TelegramLink';
 import { FileShare } from '../FileShare';
 import { TeamChatMessage } from '../TeamChatMessage';
+import { TeamTag } from '../TeamTag';
+import { TeamTaskTag } from '../TeamTaskTag';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import type { RoleKey } from '../../common/constants/role.constants';
 import type { TeamMemberType, TeamService } from '../../modules/team/team.service';
@@ -124,6 +126,28 @@ export const createTeamChatMessage = (overrides: Partial<TeamChatMessage> = {}):
   crtdAt: FIXED_DATE,
   team: UNSET,
   user: UNSET,
+  ...overrides,
+});
+
+export const createTeamTag = (overrides: Partial<TeamTag> = {}): TeamTag => ({
+  tagId: 1,
+  teamId: 1,
+  tagName: '긴급',
+  tagColor: '#F87171',
+  sortOrder: 1,
+  crtdAt: FIXED_DATE,
+  crtdBy: 1,
+  mdfdAt: null,
+  team: UNSET,
+  ...overrides,
+});
+
+export const createTeamTaskTag = (overrides: Partial<TeamTaskTag> = {}): TeamTaskTag => ({
+  taskId: 1,
+  tagId: 1,
+  crtdAt: FIXED_DATE,
+  task: UNSET,
+  tag: UNSET,
   ...overrides,
 });
 

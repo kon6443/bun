@@ -6,6 +6,7 @@
  * 기존 수동 클래스와 동일 (예: TEAM_FORBIDDEN → TeamForbiddenErrorResponseDto)
  */
 import { defineDomainError } from '../../common/dto/define-domain-error';
+import { TEAM_TAG_MAX_PER_TEAM } from '../../common/constants/app.constants';
 
 /**
  * 팀을 찾을 수 없음 (404)
@@ -138,4 +139,32 @@ export const TeamDiscordWebhookInvalidErrorResponseDto = defineDomainError({
   code: 'TEAM_DISCORD_WEBHOOK_INVALID',
   status: 400,
   message: '유효하지 않은 디스코드 Webhook URL입니다.',
+});
+
+/** 태그를 찾을 수 없음 (404) — 다른 팀의 태그도 존재를 드러내지 않도록 같은 에러 */
+export const TeamTagNotFoundErrorResponseDto = defineDomainError({
+  code: 'TEAM_TAG_NOT_FOUND',
+  status: 404,
+  message: '태그를 찾을 수 없습니다.',
+});
+
+/** 같은 팀에 같은 이름의 태그가 있음 (409) — 대소문자 무시 */
+export const TeamTagDuplicateErrorResponseDto = defineDomainError({
+  code: 'TEAM_TAG_DUPLICATE',
+  status: 409,
+  message: '이미 같은 이름의 태그가 있습니다.',
+});
+
+/** 팀당 태그 개수 한도 초과 (400) */
+export const TeamTagLimitExceededErrorResponseDto = defineDomainError({
+  code: 'TEAM_TAG_LIMIT_EXCEEDED',
+  status: 400,
+  message: `팀 태그는 최대 ${TEAM_TAG_MAX_PER_TEAM}개까지 만들 수 있습니다.`,
+});
+
+/** 재정렬 요청의 태그 목록이 현재 팀 태그와 다름 (409) — 그사이 누군가 추가·삭제함 */
+export const TeamTagOrderConflictErrorResponseDto = defineDomainError({
+  code: 'TEAM_TAG_ORDER_CONFLICT',
+  status: 409,
+  message: '태그 목록이 변경되었습니다. 새로고침 후 다시 시도해 주세요.',
 });

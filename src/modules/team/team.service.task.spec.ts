@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { TeamService, TeamMemberType } from './team.service';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
@@ -16,9 +16,11 @@ import {
   createTeamTask,
   createTeamTaskView,
   createTeamMemberView,
+  createTeamTag,
+  createTeamTaskTag,
   FIXED_DATE,
 } from '../../entities/__spec__/entity.factory';
-import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
+import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import {
   TeamForbiddenErrorResponseDto,
   TeamTaskNotFoundErrorResponseDto,
@@ -44,6 +46,17 @@ describe('TeamService — 태스크 상태', () => {
   let teamRepository: MockRepository<Team>;
   let teamTaskRepository: MockRepository<TeamTask>;
   let notificationPort: { notifyTeam: jest.Mock };
+  /** 트랜잭션·태그 조회(task-tags.ts)가 쓰는 EntityManager */
+  let manager: {
+    find: jest.Mock;
+    count: jest.Mock;
+    save: jest.Mock;
+    delete: jest.Mock;
+    insert: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
+  /** 태스크 행 잠금(SELECT … FOR UPDATE) 쿼리 빌더 */
+  let lockQueryBuilder: ReturnType<typeof createMockQueryBuilder>;
 
   /** 첫 알림의 부가 정보 줄 */
   const notifiedLines = (): string[] =>
@@ -53,13 +66,25 @@ describe('TeamService — 태스크 상태', () => {
     teamRepository = createMockRepository<Team>();
     teamTaskRepository = createMockRepository<TeamTask>();
     notificationPort = { notifyTeam: jest.fn() };
+    lockQueryBuilder = createMockQueryBuilder({ getMany: [] });
+    manager = {
+      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn(),
+      save: jest.fn((entity: TeamTask) => Promise.resolve(createTeamTask(entity))),
+      delete: jest.fn(),
+      insert: jest.fn(),
+      createQueryBuilder: jest.fn(() => lockQueryBuilder),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
         {
           provide: getDataSourceToken(),
-          useValue: { transaction: jest.fn() } as unknown as DataSource,
+          useValue: {
+            transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)),
+            manager,
+          } as unknown as DataSource,
         },
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: createMockRepository<TeamMember>() },
@@ -577,6 +602,224 @@ describe('TeamService — 태스크 상태', () => {
 
       // updateTaskStatus와의 의도적 차이 — 알림이 추가되면 이 테스트가 먼저 깨진다
       expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 태스크 태그 연결 (docs/tasks/team-task-tags D-005).
+   * 다른 팀 태그가 붙는 것을 막는 방어는 assertTeamTagIds 하나뿐이다(DB 팀 일치 제약 없음, D-018).
+   */
+  describe('태그 — tagIds 연결과 응답 tags', () => {
+    /** findTagsByTaskIds가 읽는 연결 행 */
+    const linkRow = (taskId: number, tagId: number, tagName: string) =>
+      createTeamTaskTag({ taskId, tagId, tag: createTeamTag({ tagId, tagName }) });
+
+    beforeEach(() => {
+      teamTaskRepository.create.mockImplementation((data) => data as TeamTask);
+      teamTaskRepository.save.mockImplementation((entity) =>
+        Promise.resolve(createTeamTask(entity as Partial<TeamTask>)),
+      );
+    });
+
+    describe('createTask', () => {
+      const createWithTags = (tagIds?: number[]) =>
+        service.createTask({ teamId: 1, createTaskDto: { taskName: '태그', taskDescription: '설명', tagIds }, userId: 1 });
+
+      it('다른 팀·없는 태그가 섞이면 TEAM_TASK_BAD_REQUEST(400)로 거부하고 태스크를 남기지 않아야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(1); // 2개 요청 중 이 팀 태그는 1개
+
+        const error = await createWithTags([1, 2]).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({ code: 'TEAM_TASK_BAD_REQUEST', status: 400 });
+        expect(manager.save).not.toHaveBeenCalled();
+        expect(teamTaskRepository.save).not.toHaveBeenCalled();
+        expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+      });
+
+      it('태스크 저장과 연결을 같은 트랜잭션에서 하고 붙은 태그를 반환해야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(2);
+        manager.find.mockResolvedValue([linkRow(1, 2, '디자인'), linkRow(1, 1, '긴급')]);
+
+        const task = await createWithTags([1, 2]);
+
+        expect(manager.save).toHaveBeenCalledTimes(1);
+        expect(teamTaskRepository.save).not.toHaveBeenCalled();
+        expect(manager.insert.mock.calls.map(([, row]) => row as unknown)).toEqual([
+          { taskId: 1, tagId: 1 },
+          { taskId: 1, tagId: 2 },
+        ]);
+        // 순서는 조회 결과(팀 태그 sortOrder) 그대로
+        expect(task.tags).toEqual([
+          { tagId: 2, tagName: '디자인', tagColor: '#F87171' },
+          { tagId: 1, tagName: '긴급', tagColor: '#F87171' },
+        ]);
+      });
+
+      it('tagIds가 없으면 트랜잭션 없이 저장하고 tags는 빈 배열이어야 함', async () => {
+        mockMember();
+
+        const task = await createWithTags(undefined);
+
+        expect(teamTaskRepository.save).toHaveBeenCalledTimes(1);
+        expect(manager.insert).not.toHaveBeenCalled();
+        expect(task.tags).toEqual([]);
+      });
+    });
+
+    describe('updateTask', () => {
+      const updateWithTags = (tagIds?: number[]) =>
+        service.updateTask({ teamId: 1, taskId: 1, updateTaskDto: { taskName: '변경', tagIds }, userId: 1 });
+
+      beforeEach(() => {
+        teamTaskRepository.findOne.mockResolvedValue(createTeamTask());
+      });
+
+      it('tagIds를 생략하면 연결을 건드리지 않고 현재 태그를 반환해야 함', async () => {
+        mockMember();
+        manager.find.mockResolvedValue([linkRow(1, 5, '기존')]);
+
+        const task = await updateWithTags(undefined);
+
+        expect(manager.delete).not.toHaveBeenCalled();
+        expect(manager.insert).not.toHaveBeenCalled();
+        expect(teamTaskRepository.save).toHaveBeenCalledTimes(1);
+        expect(task.tags).toEqual([{ tagId: 5, tagName: '기존', tagColor: '#F87171' }]);
+      });
+
+      it('빈 배열이면 모든 태그를 제거해야 함', async () => {
+        mockMember();
+
+        const task = await updateWithTags([]);
+
+        expect(manager.delete).toHaveBeenCalledTimes(1);
+        expect(manager.insert).not.toHaveBeenCalled();
+        expect(task.tags).toEqual([]);
+      });
+
+      it('배열이면 기존 연결을 지우고 그 목록으로 전체 교체해야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(2);
+
+        await updateWithTags([3, 4]);
+
+        expect(manager.delete.mock.invocationCallOrder[0]).toBeLessThan(manager.insert.mock.invocationCallOrder[0]);
+        expect(manager.insert.mock.calls.map(([, row]) => row as unknown)).toEqual([
+          { taskId: 1, tagId: 3 },
+          { taskId: 1, tagId: 4 },
+        ]);
+        expect(teamTaskRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('연결을 지우기 전에 태스크 행을 잠가야 함 (동시 교체 직렬화, row-limit 없는 FOR UPDATE)', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(1);
+
+        await updateWithTags([3]);
+
+        expect(manager.createQueryBuilder).toHaveBeenCalledWith(TeamTask, 'task');
+        expect(lockQueryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
+        // findOne(take 1)을 쓰면 Oracle이 FETCH NEXT와 FOR UPDATE 조합을 거부한다(ORA-02014)
+        expect(lockQueryBuilder.take).not.toHaveBeenCalled();
+        expect(lockQueryBuilder.getMany.mock.invocationCallOrder[0]).toBeLessThan(
+          manager.delete.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('검증 직후 태그가 삭제돼 FK 위반(ORA-02291)이 나면 500 대신 TEAM_TASK_BAD_REQUEST(400)여야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(1);
+        manager.insert.mockRejectedValue(new QueryFailedError('INSERT', [], Object.assign(new Error('ORA-02291'), { errorNum: 2291 })));
+
+        const error = await updateWithTags([3]).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({ code: 'TEAM_TASK_BAD_REQUEST', status: 400 });
+        expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+      });
+
+      it('다른 팀 태그가 섞이면 400으로 거부하고 태스크도 저장하지 않아야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(0);
+
+        const error = await updateWithTags([9]).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({ code: 'TEAM_TASK_BAD_REQUEST', status: 400 });
+        expect(manager.save).not.toHaveBeenCalled();
+        expect(manager.delete).not.toHaveBeenCalled();
+        expect(notificationPort.notifyTeam).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('알림 — 태그 줄 (D-022)', () => {
+      /** 기간 줄(📅)을 뺀 태그 관련 줄만 */
+      const tagLines = () => notifiedLines().filter((line) => !line.startsWith('📅'));
+      const updateWithTags = (tagIds?: number[]) =>
+        service.updateTask({ teamId: 1, taskId: 1, updateTaskDto: { taskName: '변경', tagIds }, userId: 1 });
+
+      beforeEach(() => {
+        teamTaskRepository.findOne.mockResolvedValue(createTeamTask());
+      });
+
+      it('생성 알림에 붙인 태그를 팀 정렬 순서로 실어야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(2);
+        manager.find.mockResolvedValue([linkRow(1, 2, '디자인'), linkRow(1, 1, '긴급')]);
+
+        await service.createTask({ teamId: 1, createTaskDto: { taskName: '태그', taskDescription: '', tagIds: [1, 2] }, userId: 1 });
+
+        expect(tagLines()).toEqual(['🏷️ 디자인 · 긴급']);
+      });
+
+      it('태그를 바꾼 수정 알림에 현재 태그와 추가·제거 줄을 실어야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(2);
+        manager.find
+          .mockResolvedValueOnce([linkRow(1, 1, '긴급'), linkRow(1, 9, '버그')]) // 교체 전
+          .mockResolvedValueOnce([linkRow(1, 1, '긴급'), linkRow(1, 2, '디자인')]); // 교체 후
+
+        await updateWithTags([1, 2]);
+
+        expect(tagLines()).toEqual(['🏷️ 긴급 · 디자인', '➕ 추가: 디자인', '➖ 제거: 버그']);
+      });
+
+      it('태그를 모두 빼면 "태그 없음"과 제거 줄을 실어야 함', async () => {
+        mockMember();
+        manager.find.mockResolvedValueOnce([linkRow(1, 9, '버그')]).mockResolvedValueOnce([]);
+
+        await updateWithTags([]);
+
+        expect(tagLines()).toEqual(['🏷️ 태그 없음', '➖ 제거: 버그']);
+      });
+
+      it('태그가 그대로이거나 tagIds를 생략하면 현재 태그 줄만 실어야 함', async () => {
+        mockMember();
+        manager.count.mockResolvedValue(1);
+        manager.find.mockResolvedValue([linkRow(1, 1, '긴급')]);
+
+        await updateWithTags([1]);
+        await updateWithTags(undefined);
+
+        const lines = notificationPort.notifyTeam.mock.calls.map(
+          ([params]) => (params as TeamNotificationParams).content.lines?.filter((line) => !line.startsWith('📅')),
+        );
+        expect(lines).toEqual([['🏷️ 긴급'], ['🏷️ 긴급']]);
+      });
+    });
+
+    it('getTasksByTeamId는 태스크별 태그를 붙이고 태그가 없으면 빈 배열이어야 함', async () => {
+      mockMember();
+      teamRepository.findOne.mockResolvedValue(createTeam({ teamId: 1 }));
+      jest
+        .spyOn(service, 'getTeamTasksBy')
+        .mockResolvedValue([createTeamTaskView({ taskId: 1 }), createTeamTaskView({ taskId: 2 })]);
+      manager.find.mockResolvedValue([linkRow(1, 7, '긴급')]);
+
+      const { tasks } = await service.getTasksByTeamId(1, 1);
+
+      expect(tasks.map((task) => task.tags)).toEqual([[{ tagId: 7, tagName: '긴급', tagColor: '#F87171' }], []]);
+      // 태스크 수와 무관하게 조회 1회 (N+1 아님)
+      expect(manager.find).toHaveBeenCalledTimes(1);
     });
   });
 });
