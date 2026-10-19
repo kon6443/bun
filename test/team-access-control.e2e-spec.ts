@@ -16,8 +16,8 @@ import { TeamTask } from '../src/entities/TeamTask';
 import { TaskComment } from '../src/entities/TaskComment';
 import { TeamInvitation } from '../src/entities/TeamInvitation';
 import { User } from '../src/entities/User';
-import { createUser, createTaskComment } from '../src/entities/__spec__/entity.factory';
-import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
+import {  createUser,  createTaskComment,  createTeamTag,  createTeamTask,  createTeamTaskTag,} from '../src/entities/__spec__/entity.factory';
+import { createMockQueryBuilder, createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
 
 const TEAM_ID = 7;
@@ -42,8 +42,28 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
   let taskCommentRepository: MockRepository<TaskComment>;
   let teamService: TeamService;
 
+  /** 태스크 태그 연결(task-tags.ts)이 트랜잭션 안팎에서 쓰는 EntityManager */
+  let manager: Record<'find' | 'count' | 'save' | 'delete' | 'insert' | 'createQueryBuilder', jest.Mock>;
+  let dataSource: { transaction: jest.Mock; manager: typeof manager };
+  let gateway: Record<'emitTaskCreated' | 'emitTaskUpdated' | 'emitCommentUpdated' | 'emitCommentDeleted', jest.Mock>;
+
   beforeEach(async () => {
     taskCommentRepository = createMockRepository<TaskComment>();
+    manager = {
+      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn(),
+      save: jest.fn((entity: TeamTask) => Promise.resolve(createTeamTask({ ...entity, taskId: TASK_ID, teamId: TEAM_ID }))),
+      delete: jest.fn(),
+      insert: jest.fn(),
+      createQueryBuilder: jest.fn(() => createMockQueryBuilder({ getMany: [] })),
+    };
+    dataSource = { transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)), manager };
+    gateway = {
+      emitTaskCreated: jest.fn(),
+      emitTaskUpdated: jest.fn(),
+      emitCommentUpdated: jest.fn(),
+      emitCommentDeleted: jest.fn(),
+    };
 
     e2e = await createE2eApp({
       controllers: [TeamController],
@@ -52,7 +72,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
         // 서비스는 진짜를 쓴다 — 검증하려는 것이 서비스의 접근 제어 로직이기 때문이다.
         // Repository만 끊어 DB 없이 돌린다.
         TeamService,
-        { provide: getDataSourceToken(), useValue: { transaction: jest.fn() } as unknown as DataSource },
+        { provide: getDataSourceToken(), useValue: dataSource as unknown as DataSource },
         { provide: getRepositoryToken(Team), useValue: createMockRepository<Team>() },
         { provide: getRepositoryToken(TeamMember), useValue: createMockRepository<TeamMember>() },
         { provide: getRepositoryToken(TeamTask), useValue: createMockRepository<TeamTask>() },
@@ -65,7 +85,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
         { provide: TelegramService, useValue: {} },
         { provide: TeamChatService, useValue: {} },
         { provide: DiscordService, useValue: {} },
-        { provide: TeamGateway, useValue: { emitTaskCreated: jest.fn(), emitCommentUpdated: jest.fn(), emitCommentDeleted: jest.fn() } },
+        { provide: TeamGateway, useValue: gateway },
       ],
     });
     app = e2e.app;
@@ -289,6 +309,81 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
       // whitelist만 켜져 있으면 조용히 무시된다 — forbidNonWhitelisted가 살아 있어야 거부된다
       expect(res.status).toBe(422);
       expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    it.each([
+      ['태스크당 한도(10개) 초과', Array.from({ length: 11 }, (_, i) => i + 1)],
+      ['중복 ID', [1, 1]],
+      ['정수가 아닌 ID', ['a']],
+    ])('tagIds가 잘못되면(%s) 서비스에 닿기 전에 VALIDATION_ERROR(422)여야 함', async (_case, tagIds) => {
+      mockMembership(true);
+
+      const res = await request(app.getHttpServer())
+        .post(e2e.url(`/teams/${TEAM_ID}/tasks`))
+        .send({ taskName: '태스크', taskDescription: '설명', tagIds });
+
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+  });
+
+  describe('태스크 태그 — HTTP 경로 (docs/tasks/team-task-tags)', () => {
+    /** findTagsByTaskIds가 읽는 연결 행 */
+    const linkRow = (tagId: number, tagName: string) =>
+      createTeamTaskTag({ taskId: TASK_ID, tagId, tag: createTeamTag({ tagId, tagName, tagColor: '#38BDF8' }) });
+    const expectedTag = (tagId: number, tagName: string) => ({ tagId, tagName, tagColor: '#38BDF8' });
+
+    it('POST tagIds 성공 시 응답 data.tags와 taskCreated 페이로드에 태그가 실려야 함', async () => {
+      mockMembership(true);
+      const taskRepo = e2e.moduleRef.get<MockRepository<TeamTask>>(getRepositoryToken(TeamTask));
+      taskRepo.create.mockImplementation((d) => d as TeamTask);
+      manager.count.mockResolvedValue(1);
+      manager.find.mockResolvedValue([linkRow(5, '긴급')]);
+
+      const res = await request(app.getHttpServer())
+        .post(e2e.url(`/teams/${TEAM_ID}/tasks`))
+        .send({ taskName: '태그 태스크', taskDescription: '설명', tagIds: [5] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.tags).toEqual([expectedTag(5, '긴급')]);
+      expect(gateway.emitTaskCreated).toHaveBeenCalledWith(
+        TEAM_ID,
+        expect.objectContaining({ taskId: TASK_ID, tags: [expectedTag(5, '긴급')] }),
+      );
+    });
+
+    it('PATCH tagIds 성공 시 응답 data.tags와 taskUpdated 페이로드에 현재 태그 전체가 실려야 함', async () => {
+      mockMembership(true);
+      const taskRepo = e2e.moduleRef.get<MockRepository<TeamTask>>(getRepositoryToken(TeamTask));
+      taskRepo.findOne.mockResolvedValue(createTeamTask({ taskId: TASK_ID, teamId: TEAM_ID }));
+      manager.count.mockResolvedValue(2);
+      manager.find
+        .mockResolvedValueOnce([]) // 교체 전
+        .mockResolvedValue([linkRow(5, '긴급'), linkRow(6, '디자인')]); // 교체 후
+
+      const res = await request(app.getHttpServer())
+        .patch(e2e.url(`/teams/${TEAM_ID}/tasks/${TASK_ID}`))
+        .send({ tagIds: [5, 6] });
+
+      const tags = [expectedTag(5, '긴급'), expectedTag(6, '디자인')];
+      expect(res.status).toBe(200);
+      expect(res.body.data.tags).toEqual(tags);
+      expect(gateway.emitTaskUpdated).toHaveBeenCalledWith(TEAM_ID, expect.objectContaining({ taskId: TASK_ID, tags }));
+    });
+
+    it.each([
+      ['태스크당 한도(10개) 초과', Array.from({ length: 11 }, (_, i) => i + 1)],
+      ['중복 ID', [1, 1]],
+    ])('PATCH tagIds가 잘못되면(%s) 서비스에 닿기 전에 VALIDATION_ERROR(422)여야 함', async (_case, tagIds) => {
+      mockMembership(true);
+
+      const res = await request(app.getHttpServer())
+        .patch(e2e.url(`/teams/${TEAM_ID}/tasks/${TASK_ID}`))
+        .send({ tagIds });
+
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(manager.delete).not.toHaveBeenCalled();
     });
   });
 });

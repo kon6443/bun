@@ -608,8 +608,12 @@ describe('TeamGateway', () => {
       ['emitCommentDeleted', TeamSocketEvents.COMMENT_DELETED],
       ['emitMemberRoleChanged', TeamSocketEvents.MEMBER_ROLE_CHANGED],
       ['emitMemberStatusChanged', TeamSocketEvents.MEMBER_STATUS_CHANGED],
+      ['emitTagCreated', TeamSocketEvents.TAG_CREATED],
+      ['emitTagUpdated', TeamSocketEvents.TAG_UPDATED],
+      ['emitTagDeleted', TeamSocketEvents.TAG_DELETED],
+      ['emitTagsReordered', TeamSocketEvents.TAGS_REORDERED],
     ])('%s는 팀 room에 %s 이벤트를 보내야 함', (method, event) => {
-      const payload = { taskId: 1, teamId: TEAM_ID, userId: USER_ID, commentId: 1 };
+      const payload = { taskId: 1, teamId: TEAM_ID, userId: USER_ID, commentId: 1, tagId: 1, tagIds: [1] };
 
       (gateway as unknown as Record<string, (t: number, p: unknown) => void>)[method](
         TEAM_ID,

@@ -26,6 +26,16 @@ export const TeamSocketEvents = {
   /** 태스크 삭제 알림 */
   TASK_DELETED: 'taskDeleted',
 
+  // ===== 태그 이벤트 =====
+  /** 팀 태그 생성 알림 */
+  TAG_CREATED: 'tagCreated',
+  /** 팀 태그 이름·색 수정 알림 */
+  TAG_UPDATED: 'tagUpdated',
+  /** 팀 태그 삭제 알림 (붙어 있던 태스크에서도 제거됨) */
+  TAG_DELETED: 'tagDeleted',
+  /** 팀 태그 순서 변경 알림 */
+  TAGS_REORDERED: 'tagsReordered',
+
   // ===== 댓글 이벤트 =====
   /** 댓글 생성 알림 */
   COMMENT_CREATED: 'commentCreated',
@@ -73,6 +83,15 @@ export type TeamSocketEvent = (typeof TeamSocketEvents)[keyof typeof TeamSocketE
 // ===== 이벤트 페이로드 타입 정의 =====
 
 /**
+ * 태스크에 붙은 태그 (팀 태그 정렬 순서)
+ */
+export interface TaskTagPayload {
+  tagId: number;
+  tagName: string;
+  tagColor: string;
+}
+
+/**
  * 태스크 생성 이벤트 페이로드
  */
 export interface TaskCreatedPayload {
@@ -84,6 +103,7 @@ export interface TaskCreatedPayload {
   actStatus: number;
   startAt: string | null;
   endAt: string | null;
+  tags: TaskTagPayload[];
   createdBy: number;
 }
 
@@ -98,6 +118,8 @@ export interface TaskUpdatedPayload {
   taskStatus?: number;
   startAt?: string | null;
   endAt?: string | null;
+  /** 태스크의 현재 태그 전체 (변경 여부와 무관하게 항상 실음) */
+  tags?: TaskTagPayload[];
   updatedBy: number;
 }
 
@@ -131,6 +153,48 @@ export interface TaskDeletedPayload {
   taskId: number;
   teamId: number;
   deletedBy: number;
+}
+
+/**
+ * 태그 생성 이벤트 페이로드
+ */
+export interface TagCreatedPayload {
+  teamId: number;
+  tagId: number;
+  tagName: string;
+  tagColor: string;
+  sortOrder: number;
+  createdBy: number;
+}
+
+/**
+ * 태그 수정 이벤트 페이로드 (수정 후 태그 전체)
+ */
+export interface TagUpdatedPayload {
+  teamId: number;
+  tagId: number;
+  tagName: string;
+  tagColor: string;
+  sortOrder: number;
+  updatedBy: number;
+}
+
+/**
+ * 태그 삭제 이벤트 페이로드 — 수신 측은 모든 태스크·필터에서 이 태그를 제거한다
+ */
+export interface TagDeletedPayload {
+  teamId: number;
+  tagId: number;
+  deletedBy: number;
+}
+
+/**
+ * 태그 순서 변경 이벤트 페이로드 — tagIds는 팀 전체 태그의 새 순서
+ */
+export interface TagsReorderedPayload {
+  teamId: number;
+  tagIds: number[];
+  updatedBy: number;
 }
 
 /**

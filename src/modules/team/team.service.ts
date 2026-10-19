@@ -65,6 +65,7 @@ import {
 import { formatDateRange } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 import { toPublicTask } from './team.mapper';
+import { TaskTagView, assertTeamTagIds, findTagsByTaskIds, replaceTaskTags } from './task-tags';
 
 // export type TeamMemberType = {
 //   teamId: number;
@@ -136,6 +137,32 @@ export class TeamService {
   private taskPeriodLines(task: Pick<TeamTask, 'startAt' | 'endAt'>): string[] {
     const period = formatDateRange(task.startAt, task.endAt);
     return period ? [`📅 ${period}`] : [];
+  }
+
+  /**
+   * 알림용 태그 줄 (docs/tasks/team-task-tags D-022)
+   * - previous 없음(생성·태그 미변경 수정): 현재 태그가 있을 때만 `🏷️` 줄
+   * - previous 있음(tagIds를 보낸 수정): 현재 태그 줄 + 바뀐 경우 추가·제거 줄
+   */
+  private taskTagLines(tags: TaskTagView[], previous?: TaskTagView[]): string[] {
+    const names = (list: TaskTagView[]) => list.map((tag) => tag.tagName).join(' · ');
+    if (!previous) {
+      return tags.length ? [`🏷️ ${names(tags)}`] : [];
+    }
+
+    const currentIds = new Set(tags.map((tag) => tag.tagId));
+    const previousIds = new Set(previous.map((tag) => tag.tagId));
+    const added = tags.filter((tag) => !previousIds.has(tag.tagId));
+    const removed = previous.filter((tag) => !currentIds.has(tag.tagId));
+    if (!added.length && !removed.length) {
+      return tags.length ? [`🏷️ ${names(tags)}`] : [];
+    }
+
+    return [
+      tags.length ? `🏷️ ${names(tags)}` : '🏷️ 태그 없음',
+      ...(added.length ? [`➕ 추가: ${names(added)}`] : []),
+      ...(removed.length ? [`➖ 제거: ${names(removed)}`] : []),
+    ];
   }
 
   /**
@@ -367,7 +394,7 @@ export class TeamService {
     teamId: number;
     createTaskDto: CreateTeamTaskDto;
     userId: number;
-  }): Promise<TeamTask> {
+  }): Promise<TeamTask & { tags: TaskTagView[] }> {
     // 팀 멤버 권한 확인 (활성화된 멤버만)
     // 이 검증이 팀 존재·활성까지 포함하므로(getTeamMembersBy가 활성 팀만 조인) 별도 팀 조회는 없다 —
     // 남겨두면 멤버 검증에 먼저 걸려 도달할 수 없는 404 분기가 된다
@@ -386,16 +413,34 @@ export class TeamService {
       endAt: createTaskDto.endAt || null,
     });
 
-    const task = await this.teamTaskRepository.save(taskEntity);
+    // 태그가 있으면 태스크 저장과 연결을 한 트랜잭션으로 — 태그 검증 실패 시 태스크도 남기지 않는다
+    const tagIds = createTaskDto.tagIds ?? [];
+    let task: TeamTask;
+    let tags: TaskTagView[] = [];
+    if (tagIds.length > 0) {
+      ({ task, tags } = await this.dataSource.transaction(async (manager: EntityManager) => {
+        await assertTeamTagIds(manager, teamId, tagIds);
+        const savedTask = await manager.save(taskEntity);
+        await replaceTaskTags(manager, savedTask.taskId, tagIds);
+        const tagsByTaskId = await findTagsByTaskIds(manager, [savedTask.taskId]);
+        return { task: savedTask, tags: tagsByTaskId.get(savedTask.taskId) ?? [] };
+      }));
+    } else {
+      task = await this.teamTaskRepository.save(taskEntity);
+    }
 
     const url = this.getTeamTaskUrl({ teamId, taskId: task.taskId });
     this.notificationPort.notifyTeam({
       team: teamMember,
-      content: { title: '🆕 새 태스크', subject: task.taskName, lines: this.taskPeriodLines(task) },
+      content: {
+        title: '🆕 새 태스크',
+        subject: task.taskName,
+        lines: [...this.taskPeriodLines(task), ...this.taskTagLines(tags)],
+      },
       url,
     });
 
-    return task;
+    return Object.assign(task, { tags });
   }
 
   async updateTask({
@@ -408,7 +453,7 @@ export class TeamService {
     taskId: number;
     updateTaskDto: UpdateTeamTaskDto;
     userId: number;
-  }): Promise<TeamTask> {
+  }): Promise<TeamTask & { tags: TaskTagView[] }> {
     // 팀 멤버 권한 확인 (활성화된 멤버만)
     const teamMember = await this.verifyTeamMemberAccess(teamId, userId);
 
@@ -442,17 +487,43 @@ export class TeamService {
     // 한쪽만 바꿔도 기존 값과 역전될 수 있으므로 병합 결과로 검증한다
     this.assertValidTaskPeriod(task.startAt, task.endAt);
 
-    // 업데이트된 엔티티 저장
-    await this.teamTaskRepository.save(task);
+    // 업데이트된 엔티티 저장 — tagIds가 오면(빈 배열 포함) 연결 전체 교체를 같은 트랜잭션으로
+    const { tagIds } = updateTaskDto;
+    // 알림의 추가·제거 줄을 만들려고 교체 직전 태그를 같은 트랜잭션에서 읽어 둔다 (D-022)
+    let previousTags: TaskTagView[] | undefined;
+    if (tagIds !== undefined) {
+      await this.dataSource.transaction(async (manager: EntityManager) => {
+        // 같은 태스크의 태그 교체가 동시에 오면 delete→insert가 엇갈려 PK 위반(ORA-00001)이 난다 — 태스크 행을 잠가 직렬화.
+        // findOne은 take 1 → `FETCH NEXT 1 ROWS ONLY`가 붙고 Oracle은 이를 FOR UPDATE와 함께 쓸 수 없어(ORA-02014) QueryBuilder로 잠근다
+        await manager
+          .createQueryBuilder(TeamTask, 'task')
+          .setLock('pessimistic_write')
+          .where('task.taskId = :taskId', { taskId })
+          .getMany();
+        await assertTeamTagIds(manager, teamId, tagIds);
+        previousTags = (await findTagsByTaskIds(manager, [taskId])).get(taskId) ?? [];
+        await manager.save(task);
+        await replaceTaskTags(manager, taskId, tagIds);
+      });
+    } else {
+      await this.teamTaskRepository.save(task);
+    }
+    // 응답·소켓은 변경 여부와 무관하게 현재 태그 전체를 싣는다
+    const tagsByTaskId = await findTagsByTaskIds(this.dataSource.manager, [taskId]);
+    const tags = tagsByTaskId.get(taskId) ?? [];
 
     const url = this.getTeamTaskUrl({ teamId, taskId });
     this.notificationPort.notifyTeam({
       team: teamMember,
-      content: { title: '✏️ 태스크 수정', subject: task.taskName, lines: this.taskPeriodLines(task) },
+      content: {
+        title: '✏️ 태스크 수정',
+        subject: task.taskName,
+        lines: [...this.taskPeriodLines(task), ...this.taskTagLines(tags, previousTags)],
+      },
       url,
     });
 
-    return task;
+    return Object.assign(task, { tags });
   }
 
   /**
@@ -767,6 +838,7 @@ export class TeamService {
       crtdAt: Date;
       crtdBy: number;
       userName: string | null;
+      tags: TaskTagView[];
     }>;
   }> {
     // 1. 팀 멤버 권한 확인
@@ -787,8 +859,15 @@ export class TeamService {
       actStatus: actStatusFilter ?? [ActStatus.ACTIVE],
     });
 
+    // 4. 태그는 연결만 따로 한 번에 읽어 붙인다 (getTeamTasksBy는 알림 경로와 공유 — 건드리지 않는다)
+    const tagsByTaskId =
+      tasks.length > 0 ? await findTagsByTaskIds(this.dataSource.manager, tasks.map((task) => task.taskId)) : new Map<number, TaskTagView[]>();
+
     // 조회 결과에는 팀의 알림 채널 정보가 섞여 있다 — 응답용으로 공개 필드만 남긴다
-    return { team, tasks: tasks.map(toPublicTask) };
+    return {
+      team,
+      tasks: tasks.map((task) => ({ ...toPublicTask(task), tags: tagsByTaskId.get(task.taskId) ?? [] })),
+    };
   }
 
   /**
@@ -866,6 +945,7 @@ export class TeamService {
       crtdAt: Date;
       crtdBy: number;
       userName: string | null;
+      tags: TaskTagView[];
     };
     comments: Array<{
       commentId: number;
@@ -900,8 +980,11 @@ export class TeamService {
     // 4. 댓글 목록 조회
     const comments = await this.getCommentsByTaskId(taskId);
 
+    // 5. 태그 조회
+    const tagsByTaskId = await findTagsByTaskIds(this.dataSource.manager, [taskId]);
+
     return {
-      task: toPublicTask(task),
+      task: { ...toPublicTask(task), tags: tagsByTaskId.get(taskId) ?? [] },
       comments,
     };
   }
