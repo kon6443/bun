@@ -3,8 +3,8 @@
 ## 상태
 
 - **조사일**: 2026-08-21
-- **현재 상태**: **병목 위치 실측 확정** (`/api/auth/callback/kakao` = 794 ms, 체인의 74%) · **구간 계측 적용 완료**(§5-2·5-3) · 스파이크 재현 대기 · **원인 미확정**
-- **다음 행동**: 스파이크 1회만 발생하면 §6-2 Loki 쿼리로 794 ms가 자동 분해된다. 그때까지 추가 수정 없음.
+- **현재 상태**: **병목 위치 실측 확정** (`/api/auth/callback/kakao` = 794 ms, 체인의 74%) · ⚠️ **구간 계측(§5-2·5-3)은 코드만 작성되고 배포되지 않았다** (2026-10-16 확인, §9) · **원인 미확정**
+- **다음 행동**: §9 재조사 결과를 따른다 — (1) 운영 Loki/Prometheus로 기존 `responseTime` 분포 판정(배포 불필요), (2) 계측 WIP 커밋·배포(사용자 승인 대기).
 - **1차 조사 문서**: [`../next-bun/docs/KAKAO_LOGIN_ISSUE.md`](../../../next-bun/docs/KAKAO_LOGIN_ISSUE.md) (2026-01-27, 결론 "카카오 서버 측 문제로 제어 불가")
   → 본 문서는 그 결론을 **부분 정정**한다. 우리 코드에도 제거 가능한 홉이 있다(§4 순위 2·4).
 - **조사 방식**: 서브에이전트 31개 오케스트레이션 — 4축(프론트/백엔드/인프라/웹검색) 병렬 조사로 가설 39건 수집 → 26건을 반증 검증(external·low confidence 13건 제외)
@@ -369,3 +369,214 @@ docker exec <next-container> sh -c \
 - `next-bun/src/app/components/TeamBoard.tsx:512` Effect B에 `sessionStatus` 가드가 없어 하드 로드 시 `getTeamTasks`가 2회 발화한다. **병렬이라 지연 기여는 없으나** 불필요한 요청이다.
 - 문서 불일치: [`docs/deploy.md:9`](../deploy.md)의 `infra_caddy replicas 2` vs 실제 `infra/docker-stack.yml:28` `1`. [`tasks-monitoring.md:6`](tasks-monitoring.md) 헤더가 "미진행"인데 체크리스트는 배포 완료.
 - `bun/src/modules/auth/auth.controller.ts:28`이 `@ApiResponse({ status: 200 })`인데 실제는 201. 프론트는 `response.ok`로 받으므로(`next-bun/src/services/authService.ts:67`) 무해하며, `:26-27`에 그 취지의 주석이 이미 있다.
+
+---
+
+## 9. 2026-10-16 재조사 (백엔드 서브에이전트 + 프론트 세션 병렬, 조사만)
+
+### 9-1. 문서 전제의 정정
+- **§5-2·§5-3 "적용 완료"는 사실이 아니다.** 계측 코드는 두 레포의 미커밋 작업트리에만 있고 `origin/main`에서 `kakaoMs`·`login.backend` grep 0건. 따라서 §6-2b 쿼리는 결과 0건이고 "스파이크 1회 대기"는 성립하지 않았다.
+- **운영 Next 런타임은 Bun이다** (`next-bun/Dockerfile:28` `CMD ["bun", "server.js"]`, 베이스 `oven/bun:1` 부유 태그). 이 문서는 Node를 암묵 전제했다.
+- 인프라 변경: fs-01 **2 OCPU/12GB로 축소**(`docs/deploy.md:19`), Next 레플리카 **4**. §7의 "4 OCPU·Next 10"은 낡았다.
+- `database.config.ts`의 `expireTime: 5`는 **Thin 모드 전용**이라 이 앱(thick 모드, `app.module.ts:74-79` `initOracleClient`)에서는 무효다(node-oracledb API 문서). 주석 "5분마다 연결 상태 체크"는 사실과 다르다.
+- "콜드 커넥션 배제"는 **첫 커넥션에 한해서만 유효** — 헬스체크가 모든 레플리카에서 30초마다 DB ping을 한다(`infra/docker-stack.app.yml` healthcheck, `health.controller.ts:23-25`). 2·3번째 커넥션(5분 유휴 후 닫힘, poolTimeout 300)의 신규 생성 비용은 배제되지 않았다.
+
+### 9-2. 새 가설 순위 (모두 추정 — 운영 데이터로 판정 전)
+| 순위 | 가설 | 패턴 | 판정 관측 |
+|---|---|---|---|
+| 1 | 컨테이너 DNS 5초 타임아웃(Docker 내장 DNS + A/AAAA 병렬 질의 유실) — 카카오 DNS TTL이 3~5초(로컬 dig)라 드문 로그인은 매번 신규 조회(Next 3회 이상, Nest 1회) | 정상 + **정확히 5초 단위** | 백엔드 `responseTime` 4.9~5.6s 몰림, 브라우저 callback +5s 계단 |
+| 2 | **Bun에서 next-auth 카카오 호출의 10초 timeout이 연결 단계에 안 걸린다** — openid-client `https.request({timeout})`는 Bun에서 소켓 연결 후에만 시작(로컬 실측: 무응답 IP에 Node 2.0s timeout / Bun 12s 무이벤트). 특정 카카오 LB IP 불통 시 상한 없음 | 10초 초과, 수십 초 | 브라우저 callback > 10s 회차 |
+| 3 | fs-01 2 OCPU에서 Nest 3·Next 4·Caddy·Redis·모니터링이 limit 없이 경합 | 배포·cron과 겹칠 때 수백 ms~수 s | node_exporter CPU vs 느린 요청 시각 |
+| 4 | 풀 확장 시 ATP mTLS 신규 커넥션 생성(동시성 있을 때만) | 1~수 s | 계측 후 `dbMs` |
+| 5 | Swarm IPVS 유휴 연결 끊김(~900s)과 헤어핀 keep-alive 충돌 | 유휴 후 첫 로그인만 | Caddy 로그 upstream 소요 |
+| 6 | 슬롯1 `handleCpuIntensiveLoop` 동기 루프(로컬 실측 276~280 ms/회) | 슬롯1만 0.3~0.6s | Prometheus `nodejs_eventloop_lag_max_seconds` by replica |
+| — | 기존 순위 1·2(카카오 token/userinfo 편차, 백엔드 중복 검증)는 유지 | | |
+
+### 9-3. 지연이 아니라 실패로 체감되는 것
+- **로그인 스로틀 키 공유**: Next가 공인 도메인으로 백엔드를 호출(헤어핀)해 `X-Forwarded-For`가 모든 사용자에게 같은 서버 출구 IP가 된다(`custom-throttler.guard.ts:24-28`) → 로그인 라우트 한도(초당 2·분당 10, 레플리카별 인메모리, `throttle.constants.ts:8-11`)를 전 사용자가 공유. 동시 로그인 시 429 → 재시도로 "오래 걸림" 체감.
+- 로그인 버튼 중복 클릭 방지 없음 + next-auth state 쿠키 1개 → 두 번 시작하면 먼저 시작한 callback이 `OAuthCallback` 실패.
+- 회원가입 전용 프론트 경로는 없다(라우트 전수). 가입 체감 차이는 카카오 동의 화면 + 백엔드 INSERT뿐.
+
+### 9-4. 판정 절차 (순서)
+1. **배포 불필요** — 운영 Loki: `/api/v1/auth/kakao` `responseTime` 분포·5초 몰림·레플리카 편중·429 건수 / Prometheus: 이벤트 루프 지연·fs-01 CPU. 브라우저 §6-1b 반복으로 +5s 계단 vs 10s 초과 판별.
+2. **배포 필요(승인 대상)** — 계측 WIP 배포 + next-auth callback 전체 소요 로그(카카오 2홉 서버 측 분리).
+3. 원인 확정 후 수정 — DNS 옵션(`single-request-reopen` 등) / Next Node 런타임 전환 또는 연결 단계 abort / 내부 base URL(헤어핀 제거, 스로틀 키 문제도 해소) / 풀 고정 크기 / `oven/bun` 버전 고정.
+
+## 10. 2026-10-16 사용자 결정과 진행 계획
+
+### 10-1. 결정
+| # | 항목 | 결정 | 비고 |
+|---|---|---|---|
+| D1 | 슬롯1 `handleCpuIntensiveLoop` | **유지** (의도된 OCI 유휴 회수 방지) | §9-2 순위 6 종결 |
+| D2 | 로그인 버튼 중복 클릭 방지 | **진행** (프론트) | 클릭 즉시 비활성 + 로딩. 대상: 로그인 페이지 버튼, 팀 화면 `LoginButton` |
+| D3 | 배포 직후 첫 로그인 모듈 예열 | **진행** (프론트) — 외부 호출 없이 next-auth 경로 모듈만 미리 로드 | 콜백·백엔드·카카오 호출 금지 |
+| D4 | 유휴 연결 끊김(헤어핀 keep-alive) | **조사·테스트 후 진행** | 1안: 서버 사이드 백엔드 호출을 내부 주소(`prod_nest_app:3500`)로. 로그인 스로틀 키(§9-3) 영향 설계 필요 |
+| D5 | 로컬에서도 가끔 느림 (사용자 관측) | 가설 재가중 | 로컬에는 Docker DNS·노드 CPU 경합이 없다 → 카카오·공용 Oracle ADB·next-auth 경로 쪽 비중 상승 |
+
+### 10-2. 사용자 확인 대기
+- Q1 운영 서버 읽기 전용 점검 — ssh 접속 승인됨(fs-01~03, 수정 금지). **ssh 키가 agent에 없어 접속 실패** → 사용자에게 `ssh-add` 요청 중
+- Q2 계측 WIP(백엔드 `auth.service.ts`, 프론트 `src/lib/auth.ts`) 커밋·배포 여부 — 권장: 배포
+- Q3 보안 업데이트 — next-auth 4.24.13(advisory critical 1·high 1·medium 1, 4.24.15에서 패치), next 15.3.8(critical 2·high 다수, 15.5.x에서 패치). 해당 여부·위험은 조사 중
+- Q4 프론트 런타임 Bun→Node, 패키지 매니저 bun→pnpm 전환 여부 — 조사 결과 후 권고
+
+### 10-3. 사실 (2026-10-16 확인)
+- 백엔드: 패키지 매니저 **pnpm 8.15.9**(`package.json` packageManager), 런타임 **Node 24**(`Dockerfile` `node:24-bookworm-slim`, `CMD ["node", …]`)
+- 프론트: 패키지 매니저 **bun**(`bun.lockb`), 런타임 **Bun**(`oven/bun:1`, `CMD ["bun","server.js"]`), next 15.3.8, next-auth 4.24.13, openid-client 5.7.1
+
+### 10-4. 조사 결과 (2026-10-16, 서브에이전트 — 근거·출처는 대화 보고, 핵심만 기록)
+- **next-auth v4 × 카카오 조합 고유 버그·버전 문제: 찾지 못함.** 4.24.14·4.24.15 릴리스 노트에 카카오·timeout·openid-client 수정 없음. AAAA 레코드 없음(IPv6 무관). 카카오 GSLB A 레코드 TTL 4초 실측.
+- **확정 결함: Bun 1.4.x `node:http` 클라이언트 timeout 회귀** — [oven-sh/bun#41133](https://github.com/oven-sh/bun/issues/41133) (Open, 2026-10-16 확인). 응답 없는 호스트로 연결 중에는 timeout이 걸리지 않는다. openid-client(`https.request({timeout})`)가 이 경로라 운영(Bun)에서 카카오 LB IP 하나가 무응답이면 10초 상한이 없다(OS SYN 재시도 한계까지). 로컬 재현: Node 22 2.0s timeout / Bun 1.4.0 8s 무이벤트. 운영 Bun 정확 버전은 미확인(`oven/bun:1` 부유 태그).
+- **로컬(dev)은 Node로 실행된다**(next bin shebang) → Bun 결함은 로컬 지연을 설명하지 못한다. 로컬·운영 공통 후보: 카카오 token/userinfo 편차, TTL 4초 DNS 매회 조회, 공용 Oracle ADB 커넥션 생성. 로컬 전용: `next dev` 온디맨드 컴파일.
+- **보안**: next-auth 4.24.13 advisory 3건은 우리 앱 실질 미해당(EmailProvider·`getToken`·다중 provider 없음) — 그래도 저위험 패치라 4.24.15 권고. next 15.3.8은 **실제 해당 high 있음**(RSC Server Function DoS 3건, WebSocket upgrade SSRF) → 15.5.27 이상 권고(`eslint-config-next` 동반). critical AVIF RCE는 `next/image` 0건이라 저위험.
+- **런타임 Node 전환**: 코드에 Bun 전용 API 0건. 변경점은 Dockerfile(빌드·런타임 단계)과 스택 healthcheck(`bun -e` → `node -e`, 같은 커밋 필수)뿐. **패키지 매니저 pnpm 전환은 런타임과 독립** — lockfile 재생성 시 `^` 범위 의존성 대량 상향 위험 → 별건 권고.
+- 권고 순서: ①운영 `bun -v` 확인 → ②next-auth 4.24.15 → ③next 15.5.x → ④Node 런타임 전환 → ⑤계측 배포 후 Loki 분해. 각 단계 별도 배포·로그인 확인.
+
+### 10-5. D3 예열 — 측정 후 보류 (2026-10-16)
+- 운영과 같은 standalone 빌드(Bun 1.4.0, 로컬)에서 콜드 기동 5회 측정: 레플리카당 첫 인증 요청 콜드 비용 **약 70~190 ms**(signin 첫 요청 42~134 ms, 두 번째 3~9 ms). 운영 ARM 경합 시 2~3배 추정 — 그래도 수백 ms 상한.
+- 보고된 3~9.5초 스파이크와 크기가 맞지 않고 배포 직후 레플리카당 1회에만 붙는다 → **구현 보류**(사용자 지시 "추천한다면 진행"에 따라 비추천으로 판정). 필요해지면 healthcheck에서 `/api/auth/csrf` 1회 호출이 최소안.
+
+### 10-6. D4 유휴 연결 끊김 — 실측과 설계 결정 (2026-10-16)
+- **로컬 실측(프론트 세션)**: 유휴 3초 뒤 FIN 없이 패킷을 버리는 프록시로 IPVS 유휴 만료를 흉내 냄 → **Bun fetch는 조용히 끊긴 풀 소켓을 재사용해 abort까지 멈춤(15 s)**, Node fetch(undici)는 서버 Keep-Alive 힌트·기본 4초로 소켓을 먼저 닫아 정상. `Connection: close`는 두 런타임 모두 해결(1~5 ms). Bun은 65초 유휴 뒤에도 소켓 재사용. 운영에서 실제로 걸리는지는 Caddyfile·OCI NAT 유휴 정책 미확인.
+- 서버 사이드 백엔드 호출은 **1곳뿐**(`next-bun/src/lib/auth.ts` jwt 콜백 → `authService.postKakaoSignInUp`). 두 스택 모두 `sys_default` overlay.
+- **결정 (bun-3b, 사용자 승인 범위 "충분한 조사·테스트 후 진행")**:
+  - ① 로그인 백엔드 호출 `Connection: close` (런타임 무관 보험)
+  - ② 서버 전용 base URL `SERVER_API_BASE`(런타임 env, 스택 `http://prod_nest_app:3500`, 미설정 시 `NEXT_PUBLIC_API` 폴백 = 즉시 롤백 수단)
+  - ③ 사용자 IP 전달 — Next route handler를 AsyncLocalStorage로 감싸 Caddy가 붙인 `x-forwarded-for`(형식 검증)를 백엔드 요청 `X-Forwarded-For`로 전달. ②·③ 동시 배포 필수(헤어핀 폴백 시 Caddy가 덮어씀)
+  - 백엔드: `CustomThrottlerGuard.getTracker`를 XFF 첫 값 → **`req.ip`**(`trust proxy 1`)로 교체 — 사용자별 스로틀 키 복원 + XFF 첫 값 위조로 한도 우회 차단(WORKLOG 백엔드 감사 M4 일부 해소)
+- 남는 위험: Next 23000 포트가 외부 노출이면 Next에 직접 위조 XFF를 보내 로그인 스로틀 우회 가능(영향 낮음, 방화벽 확인 필요). 내부 DNS도 Docker 내장 DNS라 §9-2 가설 1은 남는다.
+
+### 10-7. 구현 현황 (2026-10-16, 미커밋)
+| 레포 | 브랜치 | 내용 | 검증 |
+|---|---|---|---|
+| bun | `feat-onam-login` | `CustomThrottlerGuard.getTracker` → `req.ip` + spec 4건 | unit 통과, E2E 97/97, lint 경고 7→6 |
+| next-bun | `feat-onam-login` | D2 로그인 중복 클릭 방지(진입점 6곳 → 공통 1곳) · D4 ① `Connection: close` · ② `SERVER_API_BASE`+스택 env · ③ ALS로 사용자 IP → `X-Forwarded-For` | lint 경고 4(기준선), typecheck, test 22 files/269, build, standalone 스모크 |
+- 상세 실측·회귀 절차: `next-bun/docs/tasks/kakao-login-latency-front.md`
+- 배포 순서: 백·프 어느 쪽이 먼저 나가도 현재보다 나빠지지 않는다. 효과(사용자별 스로틀 키)는 둘 다 배포된 뒤.
+- 미검증: 실제 카카오 콜백 경로의 XFF 전달·운영 overlay 내부 직행 — 배포 후 백엔드 로그 `req.ip`로 확인.
+- 차단: 재부팅으로 ssh-agent가 비어 GitHub push·서버 접속 불가(사용자 `ssh-add` 대기).
+
+### 10-8. 사용자 결정 추가 (2026-10-16)
+- **next 패키지 업데이트: 진행 승인** ("필요하면 진행") — §10-4 권고대로 next-auth 4.24.15 → next·eslint-config-next 15.5.27 이상, 단계별 배포·로그인 확인. 로그인 개선(§10-7) 배포 이후 착수.
+- **프론트 런타임 Bun→Node 전환**: 미결(사용자 답 대기).
+- **프론트 패키지 매니저 bun→pnpm 전환: 이 태스크(§10의 모든 작업) 완료 직후 바로 착수** — 런타임과 독립 작업. 절차 초안: `bun install --yarn`으로 yarn.lock 생성 → `pnpm import`로 현재 버전 보존 → Dockerfile·CI(`setup-bun`·`bun install`·`bun run`)·`package.json` `ci:core`·레포 문서/규약(CLAUDE.md 명령어) 갱신 → 유령 의존성 점검 → 별도 브랜치·배포. 백엔드와 같은 pnpm 메이저로 맞출지 함께 결정.
+- 스로틀 단위 전수조사 요청 → §11.
+
+## 11. 스로틀 단위 전수조사 (2026-10-16)
+
+### 11-1. 현재 구조 (코드 근거)
+- 전역 `APP_GUARD` `CustomThrottlerGuard`(`app.module.ts`) — 모든 HTTP 라우트에 초당 5·분당 60(`THROTTLE_SHORT/LONG`). 예외: 로그인 `POST /auth/kakao`는 초당 2·분당 10(`auth.controller.ts:24`), `@SkipThrottle`은 health·main·telegram webhook 3곳뿐.
+- 저장소: `ThrottlerModule.forRoot`에 storage 미지정 → **레플리카별 인메모리**(3레플리카 각자 카운트, 요청 분산에 따라 한도가 들쭉날쭉).
+- 키(`getTracker`): `request.user`가 있으면 `user-{id}`, 없으면 IP. **그러나 전역 가드는 라우트의 `@UseGuards(JwtAuthGuard)`보다 먼저 실행된다** → `request.user`(설정 위치는 `jwt-auth.guard.ts:45` 한 곳)가 항상 비어 있어 **userId 분기는 죽은 코드** — 로그인 사용자 API도 전부 IP 기준.
+- 경로별 실제 키:
+  - 브라우저가 직접 부르는 API(팀·태스크·채팅 등): 브라우저 → Caddy → Nest → 키 = **사용자 실제 IP** (단, 같은 IP 뒤의 여러 사용자는 공유)
+  - 로그인(`/auth/kakao`): 브라우저 → Next 서버가 공인 도메인으로 호출(헤어핀) → 키 = **Next 서버 출구 IP 하나** → **전 사용자가 초당 2·분당 10 공유**
+  - WS(채팅 등): 이 가드 대상 아님. 채팅은 별도 Redis 레이트리밋(`team-chat.service.ts` `consumeRateLimit`, 사용자·팀 단위)
+- (수정 전) IP 키는 XFF **첫 값**이라 요청자가 위조해 한도 우회 가능 → §10-6에서 `req.ip`로 교체(미배포).
+
+### 11-2. 운영 실측 (fs-01 → Loki, 읽기 전용)
+- 최근 30일 Loki: `res_statusCode=429` **0건**, 로그인 요청 **4건**(10-14, 백엔드 응답 61·174·183·208 ms, 전부 201). 현재 트래픽에서는 스로틀 공유 문제가 실제 429로 터진 기록은 없다. **백엔드 로그인 처리 시간도 정상** — 느림이 있었다면 Next 쪽 구간(카카오·DNS·Bun)이다(표본 4건 한계).
+- 현재 백엔드 컨테이너 로그(20시간): 요청 48건, 429 0건.
+
+### 11-3. 문제와 영향
+| 문제 | 영향 | 발생 조건 |
+|---|---|---|
+| 로그인 키 = Next 서버 IP 공유 | 동시 로그인 몰리면 전원 429 | 초당 3명·분당 11명 이상(레플리카 분산 시 그 이상) |
+| 로그인 사용자도 IP 키(userId 분기 죽음) | 같은 회사·학교 Wi-Fi·통신사 CGNAT 뒤 사용자들이 초당 5·분당 60을 공유 → 팀 화면 활발한 사용 시 429 | 같은 공인 IP 다수 사용자 |
+| 인메모리 저장소 | 레플리카마다 따로 세어 한도가 정확하지 않음(최대 3배·불균일), 재시작 시 초기화 | 상시 |
+
+### 11-4. 수정안 (사용자 결정 대기)
+1. 로그인 경로 — §10-6(내부 주소 + 사용자 IP 전달 + `req.ip`)로 해소(구현 완료·미배포).
+2. **로그인 사용자 키를 userId로**: `getTracker`에서 쿠키/Bearer 토큰을 `JwtService.verify`(서명 검증만, DB 조회 없음)로 확인해 `user-{id}`, 실패·부재 시 IP. 가드 실행 순서를 바꾸지 않고 해결. 위험 낮음(검증 실패 시 기존 동작).
+3. **Redis 저장소**: 이미 쓰는 Redis에 throttler storage 연결 → 레플리카 공유 카운트. 새 의존성(`@nest-lab/throttler-storage-redis` 등) 필요 → Ask 대상.
+
+### 11-5. 사용자 질문에 대한 확인 (2026-10-16)
+- **HTTP 스로틀은 Redis를 쓰지 않는다.** 근거 2경로: `ThrottlerModule.forRoot([...])`(`app.module.ts:94-97`)에 storage 옵션 없음 / `package.json`에 throttler storage 패키지 없음(`@nestjs/throttler`만). Redis는 WS 어댑터·온라인 상태·**채팅 레이트리밋**에만 쓰인다.
+- **로그인 사용자도 IP로 센다.** `user-{id}` 분기는 2026-04-06 `cb4ead4`(API 스로틀링 도입)에서 작성됐지만, 전역 가드(`APP_GUARD`)는 컨트롤러·라우트 가드(`@UseGuards(JwtAuthGuard)`)보다 **먼저** 실행된다(NestJS 가드 실행 순서: global → controller → route). `request.user`는 `jwt-auth.guard.ts:45`에서만 설정되므로 스로틀 시점에 항상 비어 있다 → 의도(아이디 기준)대로 동작한 적이 없다.
+- **WebSocket**: HTTP 스로틀 대상이 아니다.
+  - 팀 채팅: `chat:send` 20회/10초, `chat:read` 60회/10초 — **사용자·팀 단위, Redis 고정 윈도**(`chat.constants.ts:19-22`, `team.gateway.ts:302,372`). Redis 장애 시 통과(fail-open, 의도).
+  - 팀 `joinTeam`·`leaveTeam`: 제한 없음.
+  - 낚시(`/fishing`): `MOVE`·`CHAT_MESSAGE`·`CATCH_RESULT` 등 **서버 측 제한 없음**(클라이언트 throttle만) — 기등재 D30.
+- **같은 와이파이(공인 IP 공유)는 의도된 동작**(사용자 확인). 로그인 경로만 사용자 IP로 고치면 나머지 비로그인 요청은 의도대로 동작한다.
+
+### 11-6. 결정 (2026-10-16)
+- 로그인 경로 사용자 IP 기준 — §10-6 구현으로 진행(완료·미커밋).
+- **로그인 사용자 키를 userId로 (사용자가 원래 의도한 설정)** — 진행 여부 사용자 확인 대기(권장: 진행 — 토큰 서명만 검증, DB 조회 없음, 실패 시 IP).
+- Redis 저장소 — 사용자 확인 대기(새 의존성).
+- **커밋 정책: 이번 묶음은 작업을 모두 끝낸 뒤 리뷰하고 커밋한다(사용자 지시). 그 전까지 전부 미커밋.**
+- **계측 WIP(2026-08-21 작성·미커밋)도 이번 묶음에 포함해 함께 커밋 대상** — 백엔드 `auth.service.ts`, 프론트 `src/lib/auth.ts`.
+- 프론트 콜백 전체 소요 계측 설계(승인 대기): route 래퍼에서 `/api/auth/callback/kakao`만 1줄 — `tag: login.callback`(실패 `login.callback.error`, `Location`에 `/auth/error`·`error=`면 실패), 쿼리·쿠키·IP 미기록. 분해: 카카오 2홉 ≈ `login.callback.ms − login.backend.ms`. 상관 ID는 넣지 않는다.
+- 프론트 계측 WIP 리뷰 지적 1건: 주석의 문서 상대경로 `../../bun/...` → `../../../bun/...` (리뷰 단계에서 수정).
+
+## 12. 2026-10-16 결정 — 스로틀 정석화·프론트 런타임·콜백 계측
+
+### 12-1. 사실 확인 (사용자 질문 "Redis Pub/Sub으로 공통으로 세고 있지 않나")
+- **아니다.** HTTP 스로틀 카운트는 레플리카별 인메모리다. 근거 3경로:
+  1. `ThrottlerModule.forRoot`(`app.module.ts:94-97`)에 `storage` 없음 → 기본 `ThrottlerStorageService`(Map + setTimeout, `node_modules/@nestjs/throttler/dist/throttler.service.js`)
+  2. throttler 저장소 패키지 미설치(`package.json`에 `@nestjs/throttler`만)
+  3. Redis 클라이언트는 `redis-io.adapter.ts`의 pub/sub 2개뿐이고, 이를 받는 곳은 `main.ts`의 `setRedisClient` 3곳(OnlineUser·FishingOnline·TeamChat)뿐 — 스로틀러는 없다
+- Redis Pub/Sub은 **Socket.IO 이벤트를 레플리카 간에 중계**하는 용도(어댑터)이고 카운터 공유와 무관하다.
+- **HTTP 전역 스로틀 가드는 WebSocket 이벤트에 걸리지 않는다** — 로컬 프로브(전역 `APP_GUARD` + 한도 2, WS 이벤트 4연속 → 4회 모두 정상 응답, 2026-10-16). WS 보호는 채팅 전용 Redis 레이트리밋뿐.
+
+### 12-2. 결정 (사용자 지시)
+| # | 항목 | 결정 | 담당 |
+|---|---|---|---|
+| T1 | HTTP 스로틀 카운터 | **Redis 공유 저장소로 전환**(정석). 새 의존성 없이 기존 ioredis(pub 클라이언트)로 `ThrottlerStorage` 구현 — Lua 원자 연산, Redis 미연결·지연 시 레플리카 인메모리로 폴백(채팅 레이트리밋과 같은 fail-open) | 백엔드 |
+| T2 | 로그인 사용자 스로틀 키 | **userId 기준**(원래 의도) — 가드 안에서 액세스 토큰 서명만 검증(DB 조회 없음), 실패·부재 시 `req.ip` | 백엔드 |
+| T3 | WS 채팅 레이트리밋 키 | **팀 단위 → 사용자(ID) 단위**로 — 여러 팀을 오가며 우회 불가 | 백엔드 |
+| R1 | 프론트 런타임 | **Bun → Node 전환** 확정 | 프론트 |
+| C1 | 카카오 로그인 콜백 전체 소요 로그 | **추가** (§11-6 설계) | 프론트 |
+- 커밋 정책 유지: 이번 묶음 전체 완료 → 리뷰 → 커밋. next-auth·next 업데이트는 그 다음 단계, pnpm 전환은 이 태스크 완료 직후.
+
+### 12-3. 구현 현황 (2026-10-16, 미커밋)
+| 레포 | 항목 | 변경 | 검증 |
+|---|---|---|---|
+| bun | T1 Redis 스로틀 저장소 | 신규 `src/common/throttler/redis-throttler.storage.ts`(Lua 원자 고정 윈도+차단 키, ready 아님·200ms 초과·오류 시 인메모리 폴백), `app.module.ts` `storage`, `main.ts`에서 pub 클라이언트 주입 | 단위 6건(결과 변환·차단·미연결·부팅 직후·오류·타임아웃). **실 Redis 다중 인스턴스 공유 검증은 로컬 Docker 꺼짐으로 미실행** |
+| bun | T2 로그인 사용자 userId 키 | `custom-throttler.guard.ts` 생성자 주입 + 토큰 서명 검증, 공용 `src/common/utils/access-token.utils.ts`(JwtAuthGuard와 같은 추출 규칙) | 단위 7건(쿠키·Bearer·위조 서명·만료·비로그인·XFF 위조·ip 없음) |
+| bun | T3 채팅 레이트리밋 사용자 단위 | 키 `chat:rl:{action}:{userId}` (팀 합산), 주석·DESIGN.md 갱신 | team-chat 단위 25건 |
+| bun | 전체 | | `pnpm ci:core` lint 에러 0·경고 6(기준 7에서 1 감소), unit 36 suites/766, build 0, E2E 9/97 |
+| next-bun | C1 콜백 전체 소요 로그 | `route.ts` 래퍼 + `src/lib/loginTiming.ts` | 단위 4건 |
+| next-bun | R1 Node 24 런타임 | Dockerfile(빌드·운영 `node:24-bookworm-slim`, bun은 의존성 설치용 바이너리만, `USER node`, `CMD node server.js`) + 스택 healthcheck `node -e …`(같은 커밋) + 워크플로 주석 | lint·typecheck·test 23/273. standalone Node 24 vs Bun 비교: 기동 448 vs 530 ms, 스모크 전부 200, RSS +25 MB/레플리카, #41133 재현 Node 2.0 s timeout, R1 회귀 Node 정상. **Docker 이미지 빌드는 로컬 데몬 꺼짐으로 미실행** |
+- **T1 실 Redis 검증 (2026-10-16, 로컬 `bun-redis` 6380)**: 저장소 인스턴스 2개(레플리카 A/B 흉내)가 번갈아 increment → `A:1 B:2 A:3 B:4 A:5 B:6/BLOCK`(한도 5 공유), 차단 중 A도 차단(Retry-After 2 s), 차단·윈도 만료 후 B에서 1부터 재시작. 카운터 키 PEXPIRE 확인.
+
+### 12-4. 다음 순서 (2026-10-16 사용자 지시)
+1. 남은 구현: 프론트 Docker 이미지 실빌드 검증 + **next-auth 4.24.15 → next·eslint-config-next 15.5.x** (같은 브랜치, 별도 커밋 예정)
+2. 리뷰 루프 — 백·프 각 세션 `/review` + 레포 전용 리뷰 스킬 + 독립 Opus 서브에이전트, 교차검증·수정을 상·중 0건까지 반복
+3. 최종 리뷰 → 로컬 API·Playwright 실측(로그인은 사용자) → 커밋 → develop → main
+4. 이 태스크 종료 직후 프론트 pnpm 전환(§10-8)
+
+### 12-5. 리뷰 중 실측 (2026-10-16)
+- **스로틀 키 통합 E2E 추가** `test/throttle-key.e2e-spec.ts` — 실제 DI(APP_GUARD + ConfigService + 저장소 주입)·`trust proxy 1` 위에서 3건: 같은 IP의 다른 로그인 사용자는 한도 분리 / XFF 첫 값 위조로 우회 불가 / 서명 위조 토큰은 IP 버킷. 이전 구현(XFF 첫 값)으로 되돌리면 2건 실패(뮤테이션 확인).
+- **운영 포트 외부 노출**: 로컬에서 fs-01 공인 IP로 23000(Next)·23500(Nest)·9090 TCP 접속 → 모두 closed/filtered. Next 직접 접근으로 위조 XFF를 넣는 경로(§10-6 남은 위험)는 외부에서 닫혀 있다(관측 지점 1곳 기준).
+- Caddy 버전 v2.11.7. 컨테이너의 `/etc/caddy/Caddyfile`은 기본 템플릿(26줄, reverse_proxy 주석뿐)이라 실제 라우팅 설정 위치는 미확인 — XFF 처리는 Caddy v2 기본(미신뢰 프록시의 XFF 무시, remote IP로 설정)으로 가정. 어느 쪽이든 `trust proxy 1`은 마지막(Caddy가 붙인) 값을 쓰므로 결론은 같다.
+
+### 12-6. 백엔드 리뷰 루프 (2026-10-16) — 수렴
+| 라운드 | A (메인 `/review`·review-flow) | B (독립 Opus) | 조치 |
+|---|---|---|---|
+| 1 | 스로틀 키 통합 E2E 공백 → `test/throttle-key.e2e-spec.ts` 추가(뮤테이션 2건 실패 확인) | 중 3·하 6: ①느리거나 조용히 끊긴 Redis에서 매 요청 +400 ms·로그 폭주 ②어댑터 클라이언트(`maxRetriesPerRequest:null`) 재연결 시 밀린 명령 일괄 재전송 → 엉뚱한 429 ③`api-http.md` rule이 XFF 첫 값을 지시 / 차단 해제 의미·D-007 문서·Lua 실검증 공백·EVAL 매회 전송·프론트 XFF 첫 값 | 스로틀 **전용 연결**(오프라인 큐·재전송 끔, `commandTimeout` 200 ms, keepAlive) + **5초 차단기**(경고 1회) + `defineCommand`, 차단 해제 시 카운터 리셋(Lua), rule·D-007·README 갱신, opt-in 실 Redis E2E `test/redis-throttler.redis.e2e-spec.ts`(`THROTTLE_REDIS_TEST_PORT`), 프론트에 XFF 마지막 값 전달 |
+| 2 | — | **상·중 0**, 하 2(E2E 주석·타이머 정리) | 하 2 반영 |
+- 최종: `pnpm ci:core` 경고 6·unit 767 통과·build 0 / E2E 10 suites 100 통과 + 2 skip(opt-in) / 실 Redis(6380) 5/5.
+
+### 12-7. 프론트 Docker 실빌드·패키지 업데이트 (2026-10-16, 프론트 세션)
+- **R1 Docker 실빌드(로컬 arm64, push 없음)**: 이미지 bun 306 MB → Node 320 MB(15.3.8) → 331 MB(15.5.28). 컨테이너: 런타임 node만·사용자 `node`·스택 healthcheck exit 0·`.next/cache` 쓰기 정상·health/providers/csrf/session/signin POST 200·OG 5종 200·로그 에러 0. 메모리(요청 55회 후) Node 89.7 MB(15.5 82.5 MB) vs bun 92.9 MB — 앞서 standalone 측정(+25 MB)과 달리 컨테이너 기준으로는 차이 미미.
+- **next-auth 4.24.15**(lock만, 범위 `^4.24.11` 유지). "NEXTAUTH_URL 우선" 변경: 레포에 `AUTH_TRUST_HOST`·`VERCEL` 0건 → 서버 env에 없으면 동작 동일(서버 env 미확인). OAuth state 쿠키 provider 바인딩 → 배포 순간 진행 중이던 로그인 1회 실패(재시도로 해결, 릴리스 노트 명시).
+- **next·eslint-config-next 15.5.28**(정확 고정). 15.5의 `.next/types/validator.ts`가 `pagesDir` 기준으로 src 여부를 판정(`next/dist/build/index.js:465`) → 루트 `pages/`(_app·_error, styled-jsx 회피용)와 `src/app` 혼재 구조에서 타입 검사 실패 → **`pages/` → `src/pages/` 이동 승인**(메인, 동작 무관·설정 참조 0건 확인). `next lint` deprecation 경고는 기록만.
+- 프론트 `extractClientIp`를 XFF **마지막** 값으로 수정(백엔드 리뷰 B 지적).
+
+### 12-8. 프론트 리뷰 루프 (2026-10-16, 프론트 세션) — 수렴
+- R1: A(`/review` 상0·중0·하3, review-front 상0·중1·하8) · B(Opus 상0·중1·하6). CONFIRMED 중 2건 수정:
+  - 초대 수락 페이지(버튼 훅 없음)에서 bfcache 복귀 시 모듈 잠금이 남아 다른 화면 로그인 버튼 영구 busy → `shared.ts` 모듈 레벨 `pageshow(persisted)` 리셋 + 회귀 테스트(수정 제거 시 실패 확인)
+  - `serverFetch`가 env를 별칭으로 읽어 `NEXT_PUBLIC_API`가 빌드 시 인라인되지 않음 → standalone에서 `SERVER_API_BASE` 제거(롤백) 시 base `''`로 로그인 전부 실패 가능 → `process.env.X` 리터럴로 수정, 새 빌드 산출물에서 인라인 확인
+  - 하: 초대 페이지 실패 후 1회 재시도, callbackUrl의 `error=`로 성공 콜백 오판(→ Location 경로로 판정), 문서·README 보정, "롤백은 이미지만이 아니라 스택 파일 단위"(healthcheck가 `node -e`라서) 기록
+- R2(수정분만): A·B 상·중 0, 공통 하 1(`loginTiming`의 `new URL`이 route `finally`에서 throw 시 성공 응답을 500으로 바꿀 수 있음) → try/catch + 응답 보존 회귀 테스트
+- B가 백엔드 계약 일치 확인: `trust proxy 1`/`req.ip`와 XFF 마지막 값 기준.
+- **리뷰 중 발견한 기존 결함**: `authService.ts` 응답 형태 검증 실패 로그가 accessToken 포함 응답 전체를 출력 → 시크릿 로그 금지(레포 Never) 위반이라 이번 묶음에서 수정(메인 결정, `fix(auth)` 별도 커밋).
+- 후속(기록만): 같은 화면 다른 LoginButton busy 잔존, disabled 버튼 포커스, `oven/bun:1`·`node:24` 태그 미고정, 카카오 취소(access_denied) 로그 분리, Caddy 앞 추가 프록시 단계 유무, 초대 페이지·route POST 테스트 공백.
+
+### 12-9. 로컬 실측 (2026-10-16, 사용자 카카오 로그인 1회, 백·프 로컬 dev + 로컬 Redis 6380)
+- **로그인 버튼 연타**: 50 ms 간격 4회 클릭 → `POST /api/auth/signin/kakao` 1회·카카오 authorize 이동 1회, 첫 클릭 직후 버튼 disabled.
+- **구간 분해(첫 실측)**: 브라우저 콜백 **773 ms** (dev 모드) = Next 콜백 핸들러 `login.callback` **513 ms** + 그 밖(dev 온디맨드·브라우저) 260 ms. 핸들러 안: 백엔드 왕복 `login.backend` **208 ms** → 카카오 token+userinfo 2홉 ≈ **305 ms**. 백엔드 `totalMs` **175**(`kakaoMs` 79·`dbMs` 96·`writeMs` 0). 세 로그의 시각이 서로 맞는다(06:30:49.428 / .432 / .434). 정상 케이스 기저값이다.
+- **로그인 백엔드 요청**: `connection: close`, `x-forwarded-for` 1개 값 전달 확인(로컬은 Next dev가 붙인 127.0.0.1).
+- **토큰 로그 노출**: 프론트·백엔드 dev 로그에서 JWT(`eyJ`) 0건.
+- **스로틀**: 로그인 사용자 토큰으로 동시 7회 → 200×5, 429×2(초당 5). 같은 IP의 비로그인 7회는 **별도 버킷**(401×5·429×2). Redis에 `throttle:*` 키 생성 확인.
+- **회귀**: API 7/7(알림 채널 키 노출 0), 화면 28/0 — 3개 뷰포트 로드·넘침·뷰 전환·뒤로가기·`?tab=archive`·빠른 탭 전환·첫 로딩 탭 전환, **일반 사용 중 429 0건**(사용자 단위 초당 5 한도에서 화면 동작이 막히지 않음).
+- 실측 후 dev 서버 종료·로그인 상태 파일 삭제.
