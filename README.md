@@ -36,7 +36,7 @@
 | 모니터링 | Prometheus (`prom-client`, `/api/v1/metrics`) |
 | 보안·성능 | helmet, compression, `@nestjs/throttler` |
 | 문서화 | Swagger (`@nestjs/swagger`) |
-| 패키지 매니저 | pnpm 8 |
+| 패키지 매니저 | pnpm 10 |
 
 ## 아키텍처 개요
 
@@ -79,7 +79,7 @@ WebSocket은 namespace `/teams`, room `team-{teamId}` 기준. 인증은 `handsha
 
 ### 사전 요구사항
 
-- Node.js + pnpm 8 (`packageManager` 필드 기준)
+- Node.js + pnpm 10 — `corepack enable` 후 `package.json` `packageManager`가 버전의 단일 기준(Dockerfile도 corepack 사용)
 - Oracle Instant Client — thick 모드로 동작하므로 wallet 접속에 필요
 - Redis — 실시간 프레즌스·Socket.IO 브로드캐스트·채팅 레이트리밋·**HTTP 스로틀 카운터 공유**용. 없어도 HTTP API는 정상 기동한다(스로틀은 레플리카 인메모리로 폴백)
 
