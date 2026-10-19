@@ -580,3 +580,22 @@ docker exec <next-container> sh -c \
 - **스로틀**: 로그인 사용자 토큰으로 동시 7회 → 200×5, 429×2(초당 5). 같은 IP의 비로그인 7회는 **별도 버킷**(401×5·429×2). Redis에 `throttle:*` 키 생성 확인.
 - **회귀**: API 7/7(알림 채널 키 노출 0), 화면 28/0 — 3개 뷰포트 로드·넘침·뷰 전환·뒤로가기·`?tab=archive`·빠른 탭 전환·첫 로딩 탭 전환, **일반 사용 중 429 0건**(사용자 단위 초당 5 한도에서 화면 동작이 막히지 않음).
 - 실측 후 dev 서버 종료·로그인 상태 파일 삭제.
+
+## 13. 운영 배포 결과 (2026-10-19)
+- 백엔드: #261(→develop)·#262(→main), 커밋 5개. 배포 run 39190262690 — `prod_nest_app: completed` 3/3. 운영 Redis에 `throttle:*` 키 생성(레플리카 간 공유 동작).
+- 프론트: next-bun #341·#342, 커밋 9개. 배포 run 39190459396 — Node 24 이미지, 4/4 `Update completed`, 수렴 약 85초. 컨테이너 사용자 `node`, 메모리 레플리카당 55~57 MB(백엔드 78~79 MB), 노드 가용 8.4 GB.
+- **운영 로그인 실측(사용자 로그아웃→로그인 1회, 02:38:22Z)**:
+
+| 구간 | 운영 | 로컬(§12-9) |
+|---|---|---|
+| Next 콜백 핸들러 `login.callback` | 675 ms | 513 ms |
+| ㄴ 카카오 token+userinfo 2홉 (= callback − backend) | ≈ 331 ms | ≈ 305 ms |
+| ㄴ 백엔드 왕복 `login.backend` | 344 ms | 208 ms |
+| 　ㄴ 백엔드 `totalMs` (kakao 152 · db 149 · write 0) | 301 ms | 175 ms |
+| 　ㄴ Next↔Nest 네트워크 (= backend − totalMs) | **43 ms** | — |
+
+  - 백엔드가 받은 로그인 요청: `host: prod_nest_app:3500`(내부 주소 직행 확인), `connection: close`, `x-forwarded-for`에 **사용자 공인 IP**(값은 기록하지 않음) → `req.ip` = 사용자 IP, 스로틀 키 사용자 단위 확인.
+  - 배포 후 3시간: `login.callback.error`·`login.backend.error`·`OAuthCallback` 0건, 429 0건. `NEXTAUTH_URL` 관련 오류 없음(로그인 정상).
+- 기존 경고 `Unsupported route path`는 배포 전 7일에도 16건 — 이번 변경과 무관.
+- **남은 판정**: 간헐 스파이크는 이제 발생 시 위 세 로그로 자동 분해된다(§6-2b 쿼리 사용 가능). 다음 스파이크 관측 시 이 표와 비교.
+- **다음 작업**: 프론트 패키지 매니저 bun → pnpm 전환(§10-8) 착수.
