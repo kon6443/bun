@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { verify, JwtPayload } from 'jsonwebtoken';
+import { extractHttpAccessToken } from '../utils/access-token.utils';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
 import {
@@ -47,20 +48,10 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   /**
-   * Cookie(`access_token`) 우선 → Authorization Bearer 헤더 보조
+   * Cookie(`access_token`) 우선 → Authorization Bearer 헤더 보조 (규칙은 `extractHttpAccessToken` 한 곳)
    */
   protected extractToken(request: Request): string | null {
-    const cookieToken = request.cookies?.access_token;
-    if (cookieToken && typeof cookieToken === 'string') {
-      return cookieToken;
-    }
-
-    const authHeader = request.headers['authorization'];
-    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice(7);
-    }
-
-    return null;
+    return extractHttpAccessToken(request);
   }
 
   protected verifyToken(token: string): AccessTokenPayload {

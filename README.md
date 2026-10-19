@@ -69,7 +69,7 @@ WebSocket은 namespace `/teams`, room `team-{teamId}` 기준. 인증은 `handsha
 | `scheduler` | — | Cron (태스크 자동 아카이브) |
 | `main` | `/`, `/health-check` | 루트, 헬스체크 (`@nestjs/terminus` DB ping) |
 
-`src/common/`에 횡단 관심사가 모여 있다 — `guards`, `filters`, `decorators`, `adapters`(RedisIoAdapter), `port`(Port/Adapter), `metrics`, `logger`, `constants`, `enums`, `dto`, `utils`.
+`src/common/`에 횡단 관심사가 모여 있다 — `guards`, `filters`, `decorators`, `adapters`(RedisIoAdapter), `throttler`(Redis 스로틀 저장소), `port`(Port/Adapter), `metrics`, `logger`, `constants`, `enums`, `dto`, `utils`.
 
 ### 주요 테이블
 
@@ -81,7 +81,7 @@ WebSocket은 namespace `/teams`, room `team-{teamId}` 기준. 인증은 `handsha
 
 - Node.js + pnpm 8 (`packageManager` 필드 기준)
 - Oracle Instant Client — thick 모드로 동작하므로 wallet 접속에 필요
-- Redis — 실시간 프레즌스용. 없어도 HTTP API는 정상 기동한다
+- Redis — 실시간 프레즌스·Socket.IO 브로드캐스트·채팅 레이트리밋·**HTTP 스로틀 카운터 공유**용. 없어도 HTTP API는 정상 기동한다(스로틀은 레플리카 인메모리로 폴백)
 
 ### 설치 및 실행
 

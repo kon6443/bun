@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, FindOptionsWhere } from 'typeorm';
@@ -23,6 +23,8 @@ export type UserType = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(User)
@@ -117,20 +119,25 @@ export class AuthService {
     kakaoUserSign: { accessToken: string; kakaoNickname?: string };
   }): Promise<{ userId: number; userName: string; loginType: string; accessToken: string }> {
     const { accessToken, kakaoNickname } = kakaoUserSign;
+    const startedAt = Date.now();
 
     // 카카오 accessToken 검증 요청, 응답으로 kakaoId 수신
     const kakaoId = await this.getKakaoId({ accessToken });
+    const kakaoMs = Date.now() - startedAt;
 
     // 카카오로부터 응답받은 kakaoId 로 내부 USERS 테이블 유저 검색
+    const dbStartedAt = Date.now();
     const [user] = await this.getUserBy({
       kakaoIds: [kakaoId],
       isActivateds: [1],
     });
+    const dbMs = Date.now() - dbStartedAt;
 
     const loginType: LoginType = 'KAKAO';
     let userId: number;
     let userName: string;
 
+    const writeStartedAt = Date.now();
     if (!user) {
       // 내부 Users 테이블에 없을 경우 회원가입 처리
       userId = await this.userSignUp({
@@ -144,6 +151,15 @@ export class AuthService {
       // 기존 사용자: DB의 userName 또는 기본 닉네임
       userName = getDisplayName(user.userName, userId);
     }
+    const writeMs = Date.now() - writeStartedAt;
+
+    // 로그인 지연 구간 계측 — 간헐적 수 초 스파이크의 범인을 카카오/DB로 분해하기 위한 것.
+    // 이 구간에 계측이 0건이라 스파이크가 발생해도 원인을 특정할 수 없었다.
+    // 판정 기준과 Loki 쿼리: docs/tasks/tasks-kakao-login-latency.md
+    this.logger.log(
+      { kakaoMs, dbMs, writeMs, totalMs: Date.now() - startedAt, isNewUser: !user },
+      '카카오 로그인 구간 측정',
+    );
 
     return {
       userId,

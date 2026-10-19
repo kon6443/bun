@@ -23,7 +23,7 @@ import { advanceReadCursor, findLatestMessageId, isUniqueConstraintError } from 
  *
  * 원본은 Oracle이다. 메시지는 전송 즉시 DB에 COMMIT한 뒤 방에 뿌린다(D-020 — Redis 버퍼 없음).
  * Redis는 레이트 리밋 카운터에만 쓴다:
- * - chat:rl:{send|read}:{teamId}:{userId} → INCR 카운터 (TTL = 윈도 초, 첫 INCR 때만 설정)
+ * - chat:rl:{send|read}:{userId} → INCR 카운터 (TTL = 윈도 초, 첫 INCR 때만 설정, 모든 팀 합산)
  */
 @Injectable()
 export class TeamChatService {
@@ -58,7 +58,8 @@ export class TeamChatService {
     if (this.redis?.status !== 'ready') return true;
 
     const { limit, windowSec } = CHAT_RATE_LIMITS[action];
-    const key = `chat:rl:${action}:${teamId}:${userId}`;
+    // 사용자 단위로 센다 — 팀 단위면 여러 팀 방을 돌며 한도를 N배로 쓸 수 있다. teamId는 로그 맥락용
+    const key = `chat:rl:${action}:${userId}`;
     try {
       // MULTI로 묶어 INCR과 TTL 설정 사이에 키가 TTL 없이 남는 일을 막는다. NX: 윈도 시작 때만 TTL 설정
       const results = await this.redis.multi().incr(key).expire(key, windowSec, 'NX').exec();
