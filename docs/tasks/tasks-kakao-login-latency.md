@@ -580,3 +580,36 @@ docker exec <next-container> sh -c \
 - **스로틀**: 로그인 사용자 토큰으로 동시 7회 → 200×5, 429×2(초당 5). 같은 IP의 비로그인 7회는 **별도 버킷**(401×5·429×2). Redis에 `throttle:*` 키 생성 확인.
 - **회귀**: API 7/7(알림 채널 키 노출 0), 화면 28/0 — 3개 뷰포트 로드·넘침·뷰 전환·뒤로가기·`?tab=archive`·빠른 탭 전환·첫 로딩 탭 전환, **일반 사용 중 429 0건**(사용자 단위 초당 5 한도에서 화면 동작이 막히지 않음).
 - 실측 후 dev 서버 종료·로그인 상태 파일 삭제.
+
+## 13. 운영 배포 결과 (2026-10-19)
+- 백엔드: #261(→develop)·#262(→main), 커밋 5개. 배포 run 39190262690 — `prod_nest_app: completed` 3/3. 운영 Redis에 `throttle:*` 키 생성(레플리카 간 공유 동작).
+- 프론트: next-bun #341·#342, 커밋 9개. 배포 run 39190459396 — Node 24 이미지, 4/4 `Update completed`, 수렴 약 85초. 컨테이너 사용자 `node`, 메모리 레플리카당 55~57 MB(백엔드 78~79 MB), 노드 가용 8.4 GB.
+- **운영 로그인 실측(사용자 로그아웃→로그인 1회, 02:38:22Z)**:
+
+| 구간 | 운영 | 로컬(§12-9) |
+|---|---|---|
+| Next 콜백 핸들러 `login.callback` | 675 ms | 513 ms |
+| ㄴ 카카오 token+userinfo 2홉 (= callback − backend) | ≈ 331 ms | ≈ 305 ms |
+| ㄴ 백엔드 왕복 `login.backend` | 344 ms | 208 ms |
+| 　ㄴ 백엔드 `totalMs` (kakao 152 · db 149 · write 0) | 301 ms | 175 ms |
+| 　ㄴ Next↔Nest 네트워크 (= backend − totalMs) | **43 ms** | — |
+
+  - 백엔드가 받은 로그인 요청: `host: prod_nest_app:3500`(내부 주소 직행 확인), `connection: close`, `x-forwarded-for`에 **사용자 공인 IP**(값은 기록하지 않음) → `req.ip` = 사용자 IP, 스로틀 키 사용자 단위 확인.
+  - 배포 후 3시간: `login.callback.error`·`login.backend.error`·`OAuthCallback` 0건, 429 0건. `NEXTAUTH_URL` 관련 오류 없음(로그인 정상).
+- 기존 경고 `Unsupported route path`는 배포 전 7일에도 16건 — 이번 변경과 무관.
+- **남은 판정**: 간헐 스파이크는 이제 발생 시 위 세 로그로 자동 분해된다(§6-2b 쿼리 사용 가능). 다음 스파이크 관측 시 이 표와 비교.
+- **다음 작업**: 프론트 패키지 매니저 bun → pnpm 전환(§10-8) 착수.
+
+## 14. 후속 — pnpm 10 전환 (2026-10-19, 사용자 결정: 프론트 bun→pnpm 10, 백엔드 8→10)
+- **백엔드** (`chore-onam-pnpm10`): `pnpm@10.34.7` — `packageManager`가 단일 기준, Dockerfile은 `corepack enable`. lock v6 → v9. `.npmrc`에 pnpm 8의 공개 호이스트(`*eslint*`·`*prettier*`) 유지(에디터 확장이 루트에서 찾도록).
+  - pnpm 10으로 바로 install하면 v6 lock을 인정하지 않고 **간접 의존성 288개를 재해결**했다 → 폐기. **pnpm 9.15.9 `--lockfile-only`로 v9 변환(버전 보존) → pnpm 10 `--frozen-lockfile`** 경로로 이관, 패키지@버전 집합 차이 **0/860**.
+  - pnpm 10은 의존성 빌드 스크립트를 기본 실행하지 않는다 → 불필요 확인 후 `pnpm.ignoredBuiltDependencies` 명시: `@nestjs/core`(opencollective 안내), `@scarf/scarf`(사용 통계), `esbuild`(플랫폼 바이너리는 optional 의존성으로 설치, tsx 동작 확인), `oracledb`(install 스크립트는 버전 검사·안내뿐, linux/darwin 바이너리 동봉 — 이미지 안 `linux-arm64.node` 확인), `unrs-resolver`.
+  - 검증: `pnpm ci:core`(경고 6·767·build), E2E 100, 로컬 `docker build`(앱 기동 없이 이미지 안 모듈 resolve·oracledb 로드 확인).
+  - 리뷰(독립 Opus): 상·중 0. lock 대조(snapshot 키·importers·integrity 차이 0), prod 이미지 패키지 집합 동일(329), 빌드 스크립트 5개 무시 근거 확인. 하 반영: 호이스트 유지(.npmrc), pnpm 버전 고정점 단일화(corepack), 감사 CM6 기록.
+  - 커밋 전 재리뷰(새 독립 Opus, 2026-10-19): 상·중 0. 깨끗한 store 설치 무경고·lock 불변, pnpm 10 `--lockfile-only` 재생성 바이트 동일, 이미지 `dist` bare require 26개 resolve, prod 패키지 집합 develop과 동일(329). **후속(하)**: ① `strictDepBuilds: true`로 미분류 빌드 스크립트를 CI에서 실패시키기 ② 런타임 이미지의 pnpm store·corepack 캐시 정리(store는 기존 문제) ③ Node 25부터 corepack 미포함 — 메이저 상향 시 설치 방식 변경 ④ `prettier`를 devDependency로 명시(현재 peer + 호이스트 의존, 기존 문제). 미확인: 실제 Actions run(PR 후 확인), amd64 빌드.
+  - 이 절 이전의 "pnpm 8.15.9" 기록(§10-3, 백엔드 감사 WORKLOG CM6)은 당시 사실로 둔다.
+- **프론트** (`chore-onam-pnpm`): `bun.lockb` → `pnpm-lock.yaml`, `pnpm@10.34.7`, Dockerfile corepack, CI `pnpm/action-setup@v4`. `.npmrc`에 `*eslint*` 공개 호이스트(pnpm 스크립트 밖 실행에서 eslint 플러그인 해석).
+  - 패키지@버전 집합 차이 **2/569**(0 아님): 테스트 전용 경로(`@testing-library/dom`)의 `@babel/helper-validator-identifier` dedupe 1건, `@napi-rs/wasm-runtime` bundled 1건(비해당). 공통 항목 integrity 일치.
+  - 설치 스크립트: `onlyBuiltDependencies: []`, `ignoredBuiltDependencies: [esbuild, sharp, unrs-resolver]` — 이미지 standalone에서 sharp 로드 확인.
+  - 검증: lint(경고 4, 기준선 동일)·typecheck·test:run 278·build·Docker 실빌드(314MB)·컨테이너 스모크(주요 라우트 200·healthcheck).
+  - 리뷰: A 상0 중1(`.claude/settings.json:57` 훅 문구 `bun run` — 쓰기 차단이라 사용자가 적용, 훅 실행 확인으로 해소), B 상0 중0. 커밋 전 재리뷰(A + 새 독립 Opus): 상·중 0, 빌드 스크립트 보유 패키지 3개 = `ignoredBuiltDependencies` 일치. 후속: 백엔드와 같이 `strictDepBuilds` 검토.

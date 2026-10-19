@@ -149,3 +149,7 @@ B1 · B2 · B3 · C1 · C2 — 근거는 D-001
   - Deploy Monitoring: success 1m14s(이미지 고정, 구성 변경 없음).
 - 프론트(next-bun) 배포: run 38704433056 success, `Update completed`, 4/4, 수렴 약 87초.
 - 후속: caddy·redis 이미지 버전 고정(CM5 — 부유 태그로 의도치 않은 교체가 실제로 일어났다), 프론트 Dependabot 방침(사용자 결정 대기).
+
+## 2026-10-19 — CM6(Node/pnpm 단일 기준) 부분 해소
+- pnpm 8(EOL) → **pnpm 10.34.7**: `package.json` `packageManager`가 단일 기준, Dockerfile은 `corepack enable`로 같은 버전을 쓴다(상세 `../tasks-kakao-login-latency.md` §14).
+- 남은 항목: `engines`·`.nvmrc` 부재(로컬 Node 22 vs CI·Docker 24) — 후속.

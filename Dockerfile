@@ -5,8 +5,8 @@ FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm globally (lockfile v6.0 호환 — pnpm v8)
-RUN npm install -g pnpm@8
+# pnpm은 corepack이 package.json `packageManager`(단일 기준)대로 준비한다 — 버전을 여기 따로 적지 않는다
+RUN corepack enable
 
 # Copy package files for dependency installation
 COPY package.json pnpm-lock.yaml ./
@@ -44,8 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory inside the container
 WORKDIR /app
 
-# Install pnpm globally (lockfile v6.0 호환 — pnpm v8)
-RUN npm install -g pnpm@8
+# pnpm은 corepack이 package.json `packageManager`(단일 기준)대로 준비한다 — 버전을 여기 따로 적지 않는다
+RUN corepack enable
 
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
