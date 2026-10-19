@@ -98,14 +98,14 @@ describe('TeamChatService', () => {
       expect(exec).not.toHaveBeenCalled();
     });
 
-    it('유저·팀·동작별 키에 INCR하고 윈도 시작 때만 TTL을 걸어야 함', async () => {
+    it('유저·동작별 키에 INCR하고 윈도 시작 때만 TTL을 걸어야 함 (팀과 무관하게 합산)', async () => {
       useRedis('ready');
       exec.mockResolvedValue([[null, 1], [null, 1]]);
 
       await service.consumeRateLimit('send', TEAM_ID, USER_ID);
 
-      expect(multi.incr).toHaveBeenCalledWith(`chat:rl:send:${TEAM_ID}:${USER_ID}`);
-      expect(multi.expire).toHaveBeenCalledWith(`chat:rl:send:${TEAM_ID}:${USER_ID}`, CHAT_RATE_LIMITS.send.windowSec, 'NX');
+      expect(multi.incr).toHaveBeenCalledWith(`chat:rl:send:${USER_ID}`);
+      expect(multi.expire).toHaveBeenCalledWith(`chat:rl:send:${USER_ID}`, CHAT_RATE_LIMITS.send.windowSec, 'NX');
     });
 
     it.each([
