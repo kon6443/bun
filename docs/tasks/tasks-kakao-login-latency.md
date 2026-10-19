@@ -606,5 +606,10 @@ docker exec <next-container> sh -c \
   - pnpm 10은 의존성 빌드 스크립트를 기본 실행하지 않는다 → 불필요 확인 후 `pnpm.ignoredBuiltDependencies` 명시: `@nestjs/core`(opencollective 안내), `@scarf/scarf`(사용 통계), `esbuild`(플랫폼 바이너리는 optional 의존성으로 설치, tsx 동작 확인), `oracledb`(install 스크립트는 버전 검사·안내뿐, linux/darwin 바이너리 동봉 — 이미지 안 `linux-arm64.node` 확인), `unrs-resolver`.
   - 검증: `pnpm ci:core`(경고 6·767·build), E2E 100, 로컬 `docker build`(앱 기동 없이 이미지 안 모듈 resolve·oracledb 로드 확인).
   - 리뷰(독립 Opus): 상·중 0. lock 대조(snapshot 키·importers·integrity 차이 0), prod 이미지 패키지 집합 동일(329), 빌드 스크립트 5개 무시 근거 확인. 하 반영: 호이스트 유지(.npmrc), pnpm 버전 고정점 단일화(corepack), 감사 CM6 기록.
+  - 커밋 전 재리뷰(새 독립 Opus, 2026-10-19): 상·중 0. 깨끗한 store 설치 무경고·lock 불변, pnpm 10 `--lockfile-only` 재생성 바이트 동일, 이미지 `dist` bare require 26개 resolve, prod 패키지 집합 develop과 동일(329). **후속(하)**: ① `strictDepBuilds: true`로 미분류 빌드 스크립트를 CI에서 실패시키기 ② 런타임 이미지의 pnpm store·corepack 캐시 정리(store는 기존 문제) ③ Node 25부터 corepack 미포함 — 메이저 상향 시 설치 방식 변경 ④ `prettier`를 devDependency로 명시(현재 peer + 호이스트 의존, 기존 문제). 미확인: 실제 Actions run(PR 후 확인), amd64 빌드.
   - 이 절 이전의 "pnpm 8.15.9" 기록(§10-3, 백엔드 감사 WORKLOG CM6)은 당시 사실로 둔다.
-- **프론트**: 프론트 세션이 `chore-onam-pnpm`에서 진행(같은 원칙 — 버전 보존 이관·빌드 스크립트 허용 목록·유령 의존성 점검).
+- **프론트** (`chore-onam-pnpm`): `bun.lockb` → `pnpm-lock.yaml`, `pnpm@10.34.7`, Dockerfile corepack, CI `pnpm/action-setup@v4`. `.npmrc`에 `*eslint*` 공개 호이스트(pnpm 스크립트 밖 실행에서 eslint 플러그인 해석).
+  - 패키지@버전 집합 차이 **2/569**(0 아님): 테스트 전용 경로(`@testing-library/dom`)의 `@babel/helper-validator-identifier` dedupe 1건, `@napi-rs/wasm-runtime` bundled 1건(비해당). 공통 항목 integrity 일치.
+  - 설치 스크립트: `onlyBuiltDependencies: []`, `ignoredBuiltDependencies: [esbuild, sharp, unrs-resolver]` — 이미지 standalone에서 sharp 로드 확인.
+  - 검증: lint(경고 4, 기준선 동일)·typecheck·test:run 278·build·Docker 실빌드(314MB)·컨테이너 스모크(주요 라우트 200·healthcheck).
+  - 리뷰: A 상0 중1(`.claude/settings.json:57` 훅 문구 `bun run` — 쓰기 차단이라 사용자가 적용, 훅 실행 확인으로 해소), B 상0 중0. 커밋 전 재리뷰(A + 새 독립 Opus): 상·중 0, 빌드 스크립트 보유 패키지 3개 = `ignoredBuiltDependencies` 일치. 후속: 백엔드와 같이 `strictDepBuilds` 검토.
