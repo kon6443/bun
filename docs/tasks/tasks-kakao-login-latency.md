@@ -599,3 +599,12 @@ docker exec <next-container> sh -c \
 - 기존 경고 `Unsupported route path`는 배포 전 7일에도 16건 — 이번 변경과 무관.
 - **남은 판정**: 간헐 스파이크는 이제 발생 시 위 세 로그로 자동 분해된다(§6-2b 쿼리 사용 가능). 다음 스파이크 관측 시 이 표와 비교.
 - **다음 작업**: 프론트 패키지 매니저 bun → pnpm 전환(§10-8) 착수.
+
+## 14. 후속 — pnpm 10 전환 (2026-10-19, 사용자 결정: 프론트 bun→pnpm 10, 백엔드 8→10)
+- **백엔드** (`chore-onam-pnpm10`): `pnpm@10.34.7` — `packageManager`가 단일 기준, Dockerfile은 `corepack enable`. lock v6 → v9. `.npmrc`에 pnpm 8의 공개 호이스트(`*eslint*`·`*prettier*`) 유지(에디터 확장이 루트에서 찾도록).
+  - pnpm 10으로 바로 install하면 v6 lock을 인정하지 않고 **간접 의존성 288개를 재해결**했다 → 폐기. **pnpm 9.15.9 `--lockfile-only`로 v9 변환(버전 보존) → pnpm 10 `--frozen-lockfile`** 경로로 이관, 패키지@버전 집합 차이 **0/860**.
+  - pnpm 10은 의존성 빌드 스크립트를 기본 실행하지 않는다 → 불필요 확인 후 `pnpm.ignoredBuiltDependencies` 명시: `@nestjs/core`(opencollective 안내), `@scarf/scarf`(사용 통계), `esbuild`(플랫폼 바이너리는 optional 의존성으로 설치, tsx 동작 확인), `oracledb`(install 스크립트는 버전 검사·안내뿐, linux/darwin 바이너리 동봉 — 이미지 안 `linux-arm64.node` 확인), `unrs-resolver`.
+  - 검증: `pnpm ci:core`(경고 6·767·build), E2E 100, 로컬 `docker build`(앱 기동 없이 이미지 안 모듈 resolve·oracledb 로드 확인).
+  - 리뷰(독립 Opus): 상·중 0. lock 대조(snapshot 키·importers·integrity 차이 0), prod 이미지 패키지 집합 동일(329), 빌드 스크립트 5개 무시 근거 확인. 하 반영: 호이스트 유지(.npmrc), pnpm 버전 고정점 단일화(corepack), 감사 CM6 기록.
+  - 이 절 이전의 "pnpm 8.15.9" 기록(§10-3, 백엔드 감사 WORKLOG CM6)은 당시 사실로 둔다.
+- **프론트**: 프론트 세션이 `chore-onam-pnpm`에서 진행(같은 원칙 — 버전 보존 이관·빌드 스크립트 허용 목록·유령 의존성 점검).
