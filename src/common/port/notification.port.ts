@@ -42,6 +42,11 @@ export interface TeamNotificationParams {
  */
 export interface INotificationPort {
   notifyTeam(params: TeamNotificationParams): void;
+  /**
+   * 운영자용 피드백 채널 알림 (fire-and-forget) — 대상은 env `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`.
+   * env가 없는 채널은 보내지 않는다 (docs/tasks/feedback D-008)
+   */
+  notifyFeedbackChannel(content: TeamNotificationContent): void;
 }
 
 /**

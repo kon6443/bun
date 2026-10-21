@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-10-21 — 신규 모듈이 단위·E2E를 다 통과하고도 부팅에서 죽었다 (가드 의존 미등록)
+
+- **실패 양상**: `FeedbackModule`이 `TypeOrmModule.forFeature([Feedback])`만 등록해, 라우트의 `JwtAuthGuard`가 요구하는 User Repository를 해석하지 못했다. 단위 878·E2E 131 통과 상태에서 `pnpm dev` 부팅이 `UnknownDependenciesException`으로 실패했다.
+- **탐지 신호**: 신규 모듈을 만들었는데 검증이 단위(서비스 단독)와 `createE2eApp()`(컨트롤러만 조립 + `JwtAuthGuard` override)뿐이다 — 둘 다 **모듈 DI 배선을 조립하지 않는다**.
+- **근본 원인**: E2E 헬퍼는 DB 차단을 위해 모듈 대신 컨트롤러·프로바이더를 직접 조립하고 가드를 대체한다. 그래서 "모듈이 가드 의존을 import했는가"는 어떤 테스트도 보지 않았다.
+- **예방 규칙**: 신규 모듈은 실제 모듈을 import하고 Repository 토큰만 `overrideProvider`로 바꾼 **배선 spec**을 함께 둔다(`src/modules/feedback/feedback.module.spec.ts` — 원인 제거 시 같은 예외로 실패함을 확인). 완료 전 `pnpm dev` 부팅 로그에서 신규 라우트 매핑(`Mapped {/api/v1/...}`)까지 확인한다.
+
 ## 2026-10-20 — 리뷰 라운드마다 settings 적용을 사용자에게 따로 요청했다 (사용자 교정)
 
 - **실패 양상**: 권한 정비 중 리뷰가 지적을 낼 때마다 settings 변경안을 만들어 사용자에게 바로 `cp`·`git apply`를 요청했다(백엔드 4회·프론트 3회). 사용자: "뭘 자꾸 적용하는거야? 아까부터?"

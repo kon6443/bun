@@ -21,3 +21,22 @@ export const TEAM_TAG_MAX_PER_TEAM = 100;
 
 /** 태스크당 태그 최대 개수 (D-014) */
 export const TASK_TAG_MAX_PER_TASK = 10;
+
+/** 피드백 제목 최대 길이 (앞뒤 공백 제거 후) — 프론트와 같은 값 (docs/tasks/feedback DESIGN §2-1) */
+export const FEEDBACK_TITLE_MAX_LENGTH = 100;
+
+/** 피드백 내용 최대 길이 (앞뒤 공백 제거 후) */
+export const FEEDBACK_CONTENT_MAX_LENGTH = 5000;
+
+/** 피드백 작성 직전 화면 경로 최대 길이 */
+export const FEEDBACK_PAGE_PATH_MAX_LENGTH = 500;
+
+/** 피드백 User-Agent 저장 길이 — 넘으면 잘라서 저장 */
+export const FEEDBACK_USER_AGENT_MAX_LENGTH = 500;
+
+/** 사용자당 최근 24시간 피드백 작성 상한 (D-005) */
+export const FEEDBACK_DAILY_LIMIT = 20;
+
+/** 내 피드백 목록 기본·최대 페이지 크기 */
+export const FEEDBACK_LIST_DEFAULT_LIMIT = 20;
+export const FEEDBACK_LIST_MAX_LIMIT = 50;
