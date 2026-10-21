@@ -31,6 +31,20 @@ export const GameSessionUnavailableErrorResponseDto = defineDomainError({
   message: '지금은 랭킹 등록을 준비할 수 없습니다. 잠시 후 다시 시도해주세요.',
 });
 
+/** 리플레이 검증을 지금 처리할 수 없음 (503) — 대기열 초과·타임아웃·검증기 오류. 세션은 남아 있어 Retry-After 뒤 같은 세션으로 다시 낸다 (defense DESIGN §B4) */
+export const GameVerifyBusyErrorResponseDto = defineDomainError({
+  code: 'GAME_VERIFY_BUSY',
+  status: 503,
+  message: '기록 확인이 밀려 있습니다. 잠시 후 다시 시도해주세요.',
+});
+
+/** 주간 도전을 열 수 없음 (503) — 주간 seed 시크릿 미설정. 다른 모드는 영향 없음 (defense DESIGN §B3) */
+export const GameWeeklyUnavailableErrorResponseDto = defineDomainError({
+  code: 'GAME_WEEKLY_UNAVAILABLE',
+  status: 503,
+  message: '지금은 주간 도전을 이용할 수 없습니다.',
+});
+
 /** 리플레이를 재현할 수 없음 (422) — 형식·게임 오버 불일치·실제 경과 시간 초과 */
 export const GameReplayInvalidErrorResponseDto = defineDomainError({
   code: 'GAME_REPLAY_INVALID',

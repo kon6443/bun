@@ -1,5 +1,5 @@
 import golden from './tetris-engine/__fixtures__/golden-replays.json';
-import { ENGINE_VERSION, MAX_FRAMES, MAX_INPUT_LENGTH, simulateReplay } from './tetris-engine';
+import { ENGINE_VERSION, FRAMES_PER_SECOND, MAX_FRAMES, MAX_INPUT_LENGTH, simulateReplay } from './tetris-engine';
 import { GAME_REPLAY_MAX_FRAMES, GAME_REPLAY_MAX_INPUT_LENGTH } from '../../common/constants/app.constants';
 import { tetrisGameEngine } from './tetris-game-engine';
 
@@ -23,9 +23,13 @@ describe('테트리스 엔진 사본 — 골든 리플레이', () => {
     expect(ENGINE_VERSION).toBe(1);
   });
 
-  it('DTO 상한이 엔진 상한과 같아야 함 (다르면 DTO를 통과한 리플레이가 엔진에서 INVALID_HEADER로 거절되거나 그 반대)', () => {
-    expect(GAME_REPLAY_MAX_FRAMES).toBe(MAX_FRAMES);
-    expect(GAME_REPLAY_MAX_INPUT_LENGTH).toBe(MAX_INPUT_LENGTH);
+  it('레지스트리 상한·틱레이트가 엔진 상수와 같고, DTO 공통 상한이 그 이상이어야 함 (DTO가 더 작으면 정상 리플레이가 422)', () => {
+    expect(tetrisGameEngine.maxFrames).toBe(MAX_FRAMES);
+    expect(tetrisGameEngine.maxInputLength).toBe(MAX_INPUT_LENGTH);
+    expect(tetrisGameEngine.ticksPerSecond).toBe(FRAMES_PER_SECOND);
+    expect(tetrisGameEngine.maxSpeed).toBe(1);
+    expect(GAME_REPLAY_MAX_FRAMES).toBeGreaterThanOrEqual(MAX_FRAMES);
+    expect(GAME_REPLAY_MAX_INPUT_LENGTH).toBeGreaterThanOrEqual(MAX_INPUT_LENGTH);
   });
 
   it('성공·실패 케이스가 모두 있어야 함', () => {
@@ -39,15 +43,29 @@ describe('테트리스 엔진 사본 — 골든 리플레이', () => {
     expect(simulateReplay(c.input)).toEqual(c.expected);
   });
 
-  it('검증 어댑터는 성공이면 엔진 점수·요약 값을, 실패면 사유를 돌려줘야 함', () => {
+  // 픽스처 입력 { seed, das, arr, frames, inputs } → 레지스트리 입력 { seed, frames, inputs, params: { das, arr } }
+  const toRegistryInput = ({ das, arr, ...rest }: GoldenCase['input']) => ({ ...rest, boardKey: 'default', params: { das, arr } });
+
+  it('검증 어댑터는 성공이면 엔진 점수·요약 값을, 실패면 사유를 돌려줘야 함', async () => {
     const ok = cases.find((c) => c.name === 'back-to-back')!;
     const fail = cases.find((c) => c.expected.ok === false)!;
 
-    expect(tetrisGameEngine.verify(ok.input)).toEqual({
+    await expect(tetrisGameEngine.verify(toRegistryInput(ok.input))).resolves.toEqual({
       ok: true,
       score: ok.expected.score,
       detail: expect.objectContaining({ lines: ok.expected.lines, level: ok.expected.level, engineVersion: 1, das: ok.input.das, arr: ok.input.arr }),
     });
-    expect(tetrisGameEngine.verify(fail.input)).toEqual({ ok: false, reason: fail.expected.reason });
+    await expect(tetrisGameEngine.verify(toRegistryInput(fail.input))).resolves.toEqual({ ok: false, reason: fail.expected.reason });
+  });
+
+  it.each([
+    ['das·arr 정수', { das: 10, arr: 2 }, true],
+    ['범위 밖이어도 형식만 본다 (범위는 엔진 INVALID_HEADER)', { das: 999, arr: -1 }, true],
+    ['arr 누락', { das: 10 }, false],
+    ['정의 외 키', { das: 10, arr: 2, extra: 1 }, false],
+    ['정수 아님', { das: 10.5, arr: 2 }, false],
+    ['빈 객체', {}, false],
+  ])('params 형식 검사 — %s', (_name, params, expected) => {
+    expect(tetrisGameEngine.isValidParams(params as Record<string, number>)).toBe(expected);
   });
 });
