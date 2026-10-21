@@ -249,6 +249,27 @@ describe('E2E 게임', () => {
     });
   });
 
+  describe('GET /games/:gameType/scores/:scoreId (기록 요약)', () => {
+    it('200 — 랭킹 항목 형태 + 전체 순위, 리플레이 입력·민감 필드 없음', async () => {
+      gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, playerName: 'a', score: 900, detail: '{"lines":3}', durationMs: 1000, crtdAt: new Date('2026-10-21T00:00:00.000Z') } as GameScore);
+
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41')).expect(200);
+
+      expect(res.body.data).toEqual({ rank: 3, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, createdAt: '2026-10-21T00:00:00.000Z' });
+    });
+
+    it.each([
+      ['없거나 숨긴 기록', '/games/tetris/scores/41', 404, 'GAME_SCORE_NOT_FOUND'],
+      ['모르는 게임', '/games/pacman/scores/41', 404, 'GAME_NOT_FOUND'],
+      ['숫자가 아닌 ID', '/games/tetris/scores/abc', 400, 'BAD_REQUEST'],
+    ])('%s → %i %s', async (_name, path, status, code) => {
+      gameScoreRepository.findOne.mockResolvedValue(null);
+
+      const res = await request(app.getHttpServer()).get(e2e.url(path)).expect(status);
+      expect(res.body.code).toBe(code);
+    });
+  });
+
   describe('GET /games/:gameType/scores/:scoreId/replay', () => {
     it('없거나 숨긴 기록은 404 GAME_SCORE_NOT_FOUND', async () => {
       gameScoreRepository.findOne.mockResolvedValue(null);
