@@ -10,7 +10,8 @@
 #   모델이 직접 쓴 핸드오프가 더 정확함 → 본 산출물은 "(auto-snapshot)"
 #   헤더로 구분되며 다음 세션에서 검토·보강 대상.
 #
-# 트리거(등록): .claude/settings.json › hooks.PreCompact (matcher "*"). timeout 값은 settings.json이 SSOT — 주석에 숫자를 복제하지 않는다.
+# 트리거(등록): .claude/settings.json › hooks.PreCompact (matcher 없음 = 모든 compact). timeout 값은 settings.json이 SSOT — 주석에 숫자를 복제하지 않는다.
+# 저장 위치는 세션 작업 디렉토리(cwd) 기준이다 — worktree에서 compact하면 그 worktree의 docs/handoff에 남는다.
 #   ⚠️ 등록은 사용자가 직접 한다 (settings.json 은 AI 쓰기 deny 대상).
 #
 # 입력 (stdin — hook payload JSON):
