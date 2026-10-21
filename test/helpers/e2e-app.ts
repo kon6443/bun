@@ -1,7 +1,9 @@
 import { INestApplication, Provider, Type } from '@nestjs/common';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import { JSON_BODY_LIMIT } from '../../src/common/constants/app.constants';
 import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
 import { createGlobalValidationPipe } from '../../src/common/pipes/global-validation-pipe';
 import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
@@ -20,7 +22,7 @@ import { User } from '../../src/entities/User';
  *  - `APP_PIPE`: `createGlobalValidationPipe()` — AppModule과 **같은 팩토리**를 공유하므로
  *    `whitelist`·`forbidNonWhitelisted`·`enableImplicitConversion` 설정이 어긋날 수 없다
  *  - `APP_FILTER`: `HttpExceptionFilter` — 도메인 에러가 `{code, message, timestamp}`로 나가는지
- *  - `cookieParser` + `setGlobalPrefix('api/v1')`: main.ts와 동일
+ *  - JSON 본문 한도(`JSON_BODY_LIMIT`) · `cookieParser` + `setGlobalPrefix('api/v1')`: main.ts와 동일
  *
  * 재현하지 않는 것: helmet·compression(응답 본문에 영향 없음), CORS(같은 프로세스라 무의미),
  * `CustomThrottlerGuard`(rate limit이 테스트를 깨뜨린다 — 필요하면 스펙에서 직접 조립).
@@ -84,12 +86,14 @@ export const createE2eApp = async ({
 
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication({
+  const app = moduleRef.createNestApplication<NestExpressApplication>({
     // 에러 경로 테스트(502·403 등)가 정상 동작으로 error 로그를 남긴다.
     // 실패처럼 보이는 노이즈가 쌓이면 진짜 문제를 놓치므로 앱 로거를 끈다.
     // 로그 정책 자체는 http-exception.filter.spec.ts(21케이스)가 검증한다.
     logger: false,
   });
+  // main.ts와 같은 JSON 본문 한도
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
   await app.init();

@@ -64,6 +64,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
 | `feedback` | `/feedbacks` | 사용자 피드백 작성·내 피드백 조회, 운영자 피드백 채널 알림 |
+| `games` | `/games` | 게임 모음집 — 세션 발급(Redis), 리플레이 재실행 검증 후 랭킹 등록, 기간별 랭킹, 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
 | `fishing` | — | FishingGateway (실시간 맵/위치) |
@@ -74,7 +75,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 
 ### 주요 테이블
 
-`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`, `TEAM_CHAT_MESSAGES`, `TEAM_CHAT_READ_CURSORS`, `TEAM_TAGS`, `TEAM_TASK_TAGS`, `FEEDBACKS`
+`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`, `TEAM_CHAT_MESSAGES`, `TEAM_CHAT_READ_CURSORS`, `TEAM_TAGS`, `TEAM_TASK_TAGS`, `FEEDBACKS`, `GAME_SCORES`, `GAME_REPLAYS`
 
 ## 개발 환경 설정
 
@@ -82,7 +83,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 
 - Node.js + pnpm 10 — `corepack enable` 후 `package.json` `packageManager`가 버전의 단일 기준(Dockerfile도 corepack 사용)
 - Oracle Instant Client — thick 모드로 동작하므로 wallet 접속에 필요
-- Redis — 실시간 프레즌스·Socket.IO 브로드캐스트·채팅 레이트리밋·**HTTP 스로틀 카운터 공유**용. 없어도 HTTP API는 정상 기동한다(스로틀은 레플리카 인메모리로 폴백)
+- Redis — 실시간 프레즌스·Socket.IO 브로드캐스트·채팅 레이트리밋·**HTTP 스로틀 카운터 공유**·**게임 세션(seed)**용. 없어도 HTTP API는 정상 기동한다(스로틀은 레플리카 인메모리로 폴백). 단 게임 세션 발급·랭킹 등록은 Redis가 필요하다(없으면 503 `GAME_SESSION_UNAVAILABLE` — 플레이는 프론트 로컬로 가능)
 
 ### 설치 및 실행
 
@@ -93,7 +94,7 @@ pnpm dev          # watch 모드 → http://localhost:3500/api/v1
 
 ### 로컬 Redis 실행
 
-WebSocket 온라인 상태(프레즌스)와 멀티 레플리카 브로드캐스트에 쓰인다. **없어도 HTTP API는 정상 기동**하며 WS 프레즌스만 동작하지 않는다.
+WebSocket 온라인 상태(프레즌스)와 멀티 레플리카 브로드캐스트, 게임 세션에 쓰인다. **없어도 HTTP API는 정상 기동**하며 WS 프레즌스와 게임 랭킹 등록(503)만 동작하지 않는다.
 
 ```bash
 # 운영과 동일 이미지로 띄우기
@@ -121,7 +122,7 @@ docker stop bun-redis && docker rm bun-redis
 
 **검증 대상(필수)**: `ENV`, `EXPRESS_PORT`, `JWT_SECRET`, `LOG_LEVEL`, `NEXT_PUBLIC_DOMAIN`, `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `REDIS_PORT`
 
-**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음)
+**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음)
 
 > ⚠️ **LOCAL과 PROD가 동일한 Oracle DB를 공유한다.** 로컬에서 실행하는 쿼리가 곧 상용 데이터에 영향을 준다.
 
@@ -158,7 +159,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-20 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **860/860**(38 스위트), E2E **117 통과 · 2 skip**(Redis 필요), build 통과.
+> `pnpm ci:all` 기준선(2026-10-21 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **969/969**(47 스위트), E2E **160 통과 · 2 skip**(Redis 필요), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
