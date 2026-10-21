@@ -40,3 +40,10 @@ export const FEEDBACK_DAILY_LIMIT = 20;
 /** 내 피드백 목록 기본·최대 페이지 크기 */
 export const FEEDBACK_LIST_DEFAULT_LIMIT = 20;
 export const FEEDBACK_LIST_MAX_LIMIT = 50;
+
+/**
+ * JSON 요청 본문 한도 — main.ts와 E2E(test/helpers/e2e-app.ts)가 같은 값을 쓴다.
+ * 게임 리플레이 최대(입력 120,000개, delta 합 ≤ 216,000프레임) 본문이 이론상 약 262KB라 300kb (docs/tasks/games D-014).
+ * Express 기본값은 100kb.
+ */
+export const JSON_BODY_LIMIT = '300kb';

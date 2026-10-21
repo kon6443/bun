@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -13,7 +14,7 @@ import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { TeamChatService } from './modules/team/team-chat.service';
 import { ConfigService } from '@nestjs/config';
-import { GRACEFUL_SHUTDOWN_TIMEOUT_MS } from './common/constants/app.constants';
+import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -33,7 +34,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   try {
-    const app = await NestFactory.create(AppModule, {
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
       bufferLogs: true,
     });
 
@@ -114,6 +115,11 @@ async function bootstrap() {
       }
       return next();
     });
+
+    // JSON 본문 한도 (게임 리플레이 제출 — JSON_BODY_LIMIT 주석). 초과는 413 PAYLOAD_TOO_LARGE
+    // ⚠️ 위 미들웨어(enableCors·helmet 등) 뒤에 둔다 — useBodyParser는 호출 즉시 등록되므로 앞에 두면 파서가 내는
+    // 400·413 응답에 CORS·보안 헤더가 빠져 브라우저가 본문을 못 읽는다. Nest 기본 파서(init 시 등록)와 같은 위치(docs/tasks/games D-017)
+    app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
 
     // 글로벌 프리픽스
     app.setGlobalPrefix('api/v1');
