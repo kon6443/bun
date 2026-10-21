@@ -9,6 +9,7 @@ import { FileShare } from '../FileShare';
 import { TeamChatMessage } from '../TeamChatMessage';
 import { TeamTag } from '../TeamTag';
 import { TeamTaskTag } from '../TeamTaskTag';
+import { Feedback } from '../Feedback';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import type { RoleKey } from '../../common/constants/role.constants';
 import type { TeamMemberType, TeamService } from '../../modules/team/team.service';
@@ -148,6 +149,24 @@ export const createTeamTaskTag = (overrides: Partial<TeamTaskTag> = {}): TeamTas
   crtdAt: FIXED_DATE,
   task: UNSET,
   tag: UNSET,
+  ...overrides,
+});
+
+export const createFeedback = (overrides: Partial<Feedback> = {}): Feedback => ({
+  feedbackId: 1,
+  userId: 1,
+  category: 'BUG',
+  title: '저장 버튼이 반응하지 않아요',
+  content: '태스크 수정 화면에서 저장을 눌러도 반영되지 않습니다.',
+  status: 'RECEIVED',
+  adminReply: null,
+  repliedAt: null,
+  pagePath: null,
+  userAgent: null,
+  buildSha: null,
+  crtdAt: FIXED_DATE,
+  mdfdAt: null,
+  user: UNSET,
   ...overrides,
 });
 
