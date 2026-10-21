@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { NotificationAdapter } from './notification.adapter';
 import { TelegramService } from './telegram.service';
 import { DiscordService } from './discord.service';
@@ -23,18 +25,31 @@ const CONTENT: TeamNotificationContent = { title: '🆕 새 태스크', subject:
 
 describe('NotificationAdapter', () => {
   let adapter: NotificationAdapter;
-  let telegramService: { sendTeamNotification: jest.Mock };
-  let discordService: { sendTeamNotification: jest.Mock };
+  let telegramService: { sendTeamNotification: jest.Mock; sendMessageAsync: jest.Mock };
+  let discordService: { sendTeamNotification: jest.Mock; sendWebhookMessage: jest.Mock };
+  /** 운영자 피드백 채널 env — 테스트마다 바꾼다 */
+  let env: Record<string, string | undefined>;
 
   beforeEach(async () => {
-    telegramService = { sendTeamNotification: jest.fn().mockResolvedValue(undefined) };
-    discordService = { sendTeamNotification: jest.fn().mockResolvedValue(undefined) };
+    telegramService = {
+      sendTeamNotification: jest.fn().mockResolvedValue(undefined),
+      sendMessageAsync: jest.fn().mockResolvedValue(undefined),
+    };
+    discordService = {
+      sendTeamNotification: jest.fn().mockResolvedValue(undefined),
+      sendWebhookMessage: jest.fn().mockResolvedValue(undefined),
+    };
+    env = {
+      FEEDBACK_TELEGRAM_CHAT_ID: '-100777',
+      FEEDBACK_DISCORD_WEBHOOK_URL: 'https://discord.test/feedback-hook',
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationAdapter,
         { provide: TelegramService, useValue: telegramService },
         { provide: DiscordService, useValue: discordService },
+        { provide: ConfigService, useValue: { get: jest.fn((key: string) => env[key]) } },
       ],
     }).compile();
 
@@ -113,5 +128,47 @@ describe('NotificationAdapter', () => {
     expect(discordService.sendTeamNotification).toHaveBeenCalledWith(
       expect.objectContaining({ team: emptyTeam }),
     );
+  });
+
+  describe('notifyFeedbackChannel — 운영자 피드백 채널 (docs/tasks/feedback D-008)', () => {
+    const FEEDBACK: TeamNotificationContent = { title: '📮 새 피드백 · 버그 리포트', subject: '<저장> 안 됨', quote: '본문' };
+
+    it('env의 텔레그램 chatId·디스코드 웹훅으로 각각 보내고, 팀 알림 경로는 쓰지 않아야 함', () => {
+      adapter.notifyFeedbackChannel(FEEDBACK);
+
+      expect(telegramService.sendMessageAsync).toHaveBeenCalledWith(
+        '-100777',
+        '📮 새 피드백 · 버그 리포트\n<b>&lt;저장&gt; 안 됨</b>\n<blockquote>본문</blockquote>',
+      );
+      expect(discordService.sendWebhookMessage).toHaveBeenCalledWith(
+        'https://discord.test/feedback-hook',
+        '📮 새 피드백 · 버그 리포트\n**<저장\\> 안 됨**\n> 본문',
+      );
+      expect(telegramService.sendTeamNotification).not.toHaveBeenCalled();
+      expect(discordService.sendTeamNotification).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['텔레그램', 'FEEDBACK_TELEGRAM_CHAT_ID', () => telegramService.sendMessageAsync, () => discordService.sendWebhookMessage],
+      ['디스코드', 'FEEDBACK_DISCORD_WEBHOOK_URL', () => discordService.sendWebhookMessage, () => telegramService.sendMessageAsync],
+    ])('%s env가 없으면 그 채널만 건너뛰어야 함 (safe default)', (_name, key, skipped, other) => {
+      env[key] = undefined;
+
+      adapter.notifyFeedbackChannel(FEEDBACK);
+
+      expect(skipped()).not.toHaveBeenCalled();
+      expect(other()).toHaveBeenCalledTimes(1);
+    });
+
+    it('발송이 실패해도 예외를 던지지 않고 로그만 남겨야 함 (작성 결과에 영향 없음)', async () => {
+      const loggerError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      telegramService.sendMessageAsync.mockRejectedValue(new Error('Telegram API 오류: 400'));
+      discordService.sendWebhookMessage.mockRejectedValue(new Error('Discord Webhook 오류: 404'));
+
+      expect(() => adapter.notifyFeedbackChannel(FEEDBACK)).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(loggerError).toHaveBeenCalledTimes(2);
+    });
   });
 });

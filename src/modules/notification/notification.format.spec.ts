@@ -2,6 +2,8 @@ import type { NotificationTeamInfo } from '../../common/port/notification.port';
 import {
   NOTIFICATION_QUOTE_MAX_LENGTH,
   renderDiscordMarkdown,
+  renderFeedbackDiscordMarkdown,
+  renderFeedbackTelegramHtml,
   renderTelegramHtml,
 } from './notification.format';
 
@@ -108,5 +110,19 @@ describe('renderDiscordMarkdown', () => {
     const md = renderDiscordMarkdown(TEAM, { title: 't', subject: 's', quote: 'q' });
 
     expect(md).not.toMatch(/<\/?(b|blockquote)>/);
+  });
+});
+
+describe('renderFeedback* — 운영자 피드백 채널 (팀명 없음)', () => {
+  const content = { title: '📮 새 피드백 · 문의', subject: 'a < b & *c*', lines: ['#1 · 홍길동 (userId 1)'], quote: '본문' };
+
+  it('텔레그램: 팀명 없이 제목 머리줄 + 같은 줄 구성, 사용자 입력은 이스케이프해야 함', () => {
+    expect(renderFeedbackTelegramHtml(content)).toBe(
+      '📮 새 피드백 · 문의\n<b>a &lt; b &amp; *c*</b>\n#1 · 홍길동 (userId 1)\n<blockquote>본문</blockquote>',
+    );
+  });
+
+  it('디스코드: 팀명 없이 제목 머리줄 + 같은 줄 구성, 서식 문자는 이스케이프해야 함', () => {
+    expect(renderFeedbackDiscordMarkdown(content)).toBe('📮 새 피드백 · 문의\n**a < b & \\*c\\***\n\\#1 · 홍길동 (userId 1)\n> 본문');
   });
 });
