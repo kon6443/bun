@@ -41,6 +41,7 @@ NestJS + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub. �
 | 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `README.md` "아키텍처 개요" + `docs/architecture.md` |
 | Claude 설정 · 훅 · 권한 규칙 · 2세션 운영 | `docs/tasks/tasks-claude-config.md` (두 레포 공통 이력) + `docs/tasks/claude-config-audit/STATUS.md` + `docs/tasks/claude-sessions-2026-10/STATUS.md`. 권한 deny를 추가하면 **탐침으로 반드시 시험**한다 |
 | 팀 태그 · 태스크 태그 · 태그 알림 | `docs/tasks/team-task-tags/STATUS.md` |
+| 사용자 피드백 · 내 피드백 | `docs/tasks/feedback/STATUS.md` |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 (설계 단계) | `.claude/rules/schema-migrations.md` + `docs/tasks/tasks-nestjs-improvements.md`에서 `grep -n 'DB 마이그레이션\|Entity↔DB'`로 찾은 절 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (해당 태스크 절) |
