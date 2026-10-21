@@ -21,6 +21,7 @@ import { AuthUnauthorizedErrorResponseDto } from '../auth/auth-error.dto';
 import { GamesService } from './games.service';
 import {
   GameReplayResponseDto,
+  GameScoreSummaryResponseDto,
   GameScoreSubmittedResponseDto,
   GameSessionResponseDto,
   GetRankingsQueryDto,
@@ -108,6 +109,22 @@ export class GamesController {
   @ApiCommonInternalServerErrorResponse()
   async getRankings(@Param('gameType') gameType: string, @Query() query: GetRankingsQueryDto) {
     const data = await this.gamesService.getRankings(gameType, query);
+    return { code: 'SUCCESS', data, message: '' };
+  }
+
+  @Get(':gameType/scores/:scoreId')
+  @ApiOperation({
+    summary: '기록 요약',
+    description: '누구나 조회. 리플레이 입력 없이 이름·점수·상세 값·전체 순위만 — 공유 링크 미리보기(OG)용 (docs/tasks/game-share D-008)',
+  })
+  @ApiParam(GAME_TYPE_PARAM)
+  @ApiParam({ name: 'scoreId', description: '랭킹 기록 ID', type: Number })
+  @ApiResponse({ status: 200, description: 'SUCCESS (rank는 전체 기간 순위)', type: GameScoreSummaryResponseDto })
+  @ApiResponse({ status: 400, description: 'scoreId가 숫자가 아님 (BAD_REQUEST)' })
+  @ApiResponse({ status: 404, description: 'GAME_NOT_FOUND · GAME_SCORE_NOT_FOUND(없음·숨김)', type: GameScoreNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  async getScore(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number) {
+    const data = await this.gamesService.getScore(gameType, scoreId);
     return { code: 'SUCCESS', data, message: '' };
   }
 

@@ -259,6 +259,34 @@ describe('GamesService', () => {
     });
   });
 
+  describe('getScore (기록 요약 — 공유 미리보기용)', () => {
+    it('숨기지 않은 기록을 전체 순위와 함께 돌려주고, 민감 필드·리플레이는 조회하지 않아야 함', async () => {
+      gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, playerName: 'a', score: 900, detail: '{"lines":3}', durationMs: 1000, crtdAt: new Date(NOW) } as GameScore);
+      const qb = createMockQueryBuilder({ getCount: 4 });
+      gameScoreRepository.createQueryBuilder.mockReturnValue(qb as never);
+
+      const result = await service.getScore('tetris', 41);
+
+      const [options] = gameScoreRepository.findOne.mock.calls[0] as [{ where: unknown; select: Record<string, boolean> }];
+      expect(options.where).toEqual({ scoreId: 41, gameType: 'TETRIS', isHidden: 0 });
+      expect(options.select).not.toHaveProperty('ipHash');
+      expect(options.select).not.toHaveProperty('userId');
+      expect(gameReplayRepository.findOneBy).not.toHaveBeenCalled();
+      expect(qb.andWhere).not.toHaveBeenCalledWith('s.crtdAt >= :periodStart', expect.anything());
+      expect(result).toEqual({ rank: 5, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, createdAt: new Date(NOW) });
+    });
+
+    it('없거나 숨긴 기록은 404 GAME_SCORE_NOT_FOUND', async () => {
+      gameScoreRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getScore('tetris', 41)).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+    });
+
+    it('모르는 게임은 404 GAME_NOT_FOUND', async () => {
+      await expect(service.getScore('pacman', 41)).rejects.toMatchObject({ code: 'GAME_NOT_FOUND', status: 404 });
+    });
+  });
+
   describe('getReplay', () => {
     it('숨김이 아닌 기록이면 gzip을 풀어 재생 데이터를 돌려줘야 함', async () => {
       gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date(NOW) } as GameScore);
