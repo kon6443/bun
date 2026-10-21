@@ -21,4 +21,4 @@ paths:
 - [ ] 핸들러에 WS Guard 부착 + 팀 멤버십 검증
 - [ ] `@UsePipes(new ValidationPipe({ transform: true }))` + 페이로드 DTO
 - [ ] 상태는 Redis에 (인메모리 금지)
-- [ ] 프론트(`../next-bun`) 이벤트명·페이로드와 1:1 대조 (스킬 `next-bun`)
+- [ ] 프론트 이벤트명·페이로드와 1:1 대조 — 프론트 세션에 질의 (스킬 `next-bun`)

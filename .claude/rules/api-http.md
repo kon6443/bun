@@ -30,7 +30,7 @@ throw new AuthUnauthorizedErrorResponseDto('카카오 액세스 토큰이 필요
   3. 그 외 → `INTERNAL_SERVER_ERROR` + 고정 메시지 (원본 노출 안 함)
 - 응답 바디에 **`statusCode` 필드는 없다** — HTTP 상태와 `code`로 분기한다.
 - 로그 레벨은 필터가 나눈다: `status >= 500`은 `error`(스택 포함), 그 외는 `warn`.
-- 에러 코드·상태코드를 바꾸면 API 계약 변경이다 — 프론트(`../next-bun`) 사용처를 grep하고 커밋 본문에 대응 필요 여부를 쓴다.
+- 에러 코드·상태코드를 바꾸면 API 계약 변경이다 — 프론트 사용처는 프론트 세션에 확인하고(스킬 `next-bun`) 커밋 본문에 대응 필요 여부를 쓴다.
 
 ## 입력 검증 — 전역 ValidationPipe 하나
 

@@ -21,7 +21,7 @@
 | 프로젝트 | 스택 | 역할 |
 |---|---|---|
 | **`bun`** (이 저장소) | NestJS 11 + TypeScript | 백엔드 API + WebSocket 서버 |
-| `../next-bun` | Next.js 15 App Router + Bun | 프론트엔드 |
+| `../next-bun` | Next.js App Router (버전은 그 레포 README) | 프론트엔드 — 별도 세션이 담당(`CLAUDE.md` "세션 운영") |
 
 ## 기술 스택
 
@@ -54,13 +54,13 @@
   ※ 에러는 HttpExceptionFilter가 도메인 에러 DTO 형식으로 통일
 ```
 
-WebSocket은 namespace `/teams`, room `team-{teamId}` 기준. 인증은 `handshake.auth.token` → Bearer 헤더 순으로 확인하며, 멀티 레플리카 브로드캐스트는 Redis Pub/Sub이 담당한다.
+WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{teamId}` 기준. 인증은 `handshake.auth.token` → Bearer 헤더 순으로 확인하며, 멀티 레플리카 브로드캐스트는 Redis Pub/Sub이 담당한다.
 
 ### 모듈 구성
 
 | 모듈 | 라우트 | 역할 |
 |---|---|---|
-| `team` | `/teams` | 팀·태스크·댓글·초대 CRUD, TeamGateway(실시간), OnlineUserService |
+| `team` | `/teams` | 팀·태스크·댓글·초대·태그 CRUD, 팀 채팅(저장·읽음), TeamGateway(실시간), OnlineUserService |
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림 |
@@ -73,7 +73,7 @@ WebSocket은 namespace `/teams`, room `team-{teamId}` 기준. 인증은 `handsha
 
 ### 주요 테이블
 
-`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`
+`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`, `TEAM_CHAT_MESSAGES`, `TEAM_CHAT_READ_CURSORS`, `TEAM_TAGS`, `TEAM_TASK_TAGS`
 
 ## 개발 환경 설정
 
@@ -110,6 +110,7 @@ docker stop bun-redis && docker rm bun-redis
 ```
 
 - 접속 정보 기본값은 `localhost:6379`이므로(`src/common/adapters/redis-io.adapter.ts`) `.env`에 `REDIS_HOST`를 안 넣어도 로컬에서는 붙는다. `REDIS_PORT`는 검증 대상 필수 변수다.
+- ⚠️ 6379를 **다른 프로젝트의 Redis가 이미 쓰고 있으면** 그 Redis(비밀번호 있음)에 붙어 `NOAUTH Authentication required`가 난다 — `-p 6380:6379`로 띄우고 `.env`의 `REDIS_PORT=6380`. 확인: `printf 'PING\r\n' | nc -w 2 localhost 6380` → `+PONG`
 - 운영(`infra_redis`)은 `--appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru`로 뜬다 — 영속성·축출 정책까지 재현하려면 같은 옵션을 붙인다.
 - Redis를 끈 상태로 앱을 띄우면 경고 로그만 남고 기동은 성공해야 한다. 이 동작 자체가 검증 항목이다.
 
@@ -154,10 +155,10 @@ pnpm ci:all              # lint → 스텁 검사 → test → test:e2e → buil
 pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (발견 시 실패)
 ```
 
-> ⚠️ **CI 파이프라인은 lint·test·E2E를 실행하지 않는다.** `deploy-to-oci.yml`은 docker build → push → ssh deploy만 하고, `Dockerfile`도 `pnpm install` 후 `pnpm run build`만 돌린다. 즉 **테스트를 통과시키는 관문은 로컬의 `pnpm ci:all`이 유일하다** — `main` push는 검증 없이 배포로 직행한다.
+> **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-09-23 실측): lint 0 errors / 경고 7건, 스텁 0건, 단위 **647/647**, E2E **79/79**, build 통과.
-> ⚠️ `--testPathPattern`(단수형)은 jest 30에서 동작하지 않는다 — `--testPathPatterns`(복수형)를 쓴다.
+> `pnpm ci:all` 기준선(2026-10-20 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **860/860**(38 스위트), E2E **117 통과 · 2 skip**(Redis 필요), build 통과.
+> ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
 
@@ -169,12 +170,14 @@ pnpm db:migrate:up              # 적용
 pnpm db:migrate:revert          # 되돌리기
 pnpm db:migrate:list            # 적용 상태 확인
 pnpm db:migrate:fake            # 베이스라인 등록 전용 (1회성)
+
+pnpm db:select '<SELECT …>'     # 읽기 전용 조회 — 단일 SELECT·WITH만, READ ONLY 트랜잭션, 행 상한 200(--max-rows=N, 최대 1000), 토큰·웹훅 컬럼 값 가림, --json
 ```
 
 - 이력 테이블: `TYPEORM_MIGRATIONS` · 파일: `migrations/<timestamp>-PascalCase.ts`
 - **작성 규칙**: 멱등 작성(Oracle DDL은 자동 커밋이라 실패 시 부분 적용됨), 1개 = 1목적, `down()` 필수(init 제외)
 - **스키마 변경은 항상 Entity 수정 + 마이그레이션 파일 세트로** — 드리프트 방지
-- ⚠️ LOCAL/PROD 동일 DB이므로 **DB에 접속하는 명령은 담당자가 직접 실행**한다 (`.claude/settings.json`의 deny로 기술적 차단)
+- ⚠️ LOCAL/PROD 동일 DB이므로 **DB에 접속하는 명령은 담당자가 직접 실행**한다. 예외는 읽기 전용 `pnpm db:select`(쓰기는 `scripts/db-select.ts`의 SQL 가드 + READ ONLY 트랜잭션이 거부). `.claude/settings.json` deny는 마이그레이션·`sqlplus` 같은 **주요 CLI만** 막고 스크립트 안의 DB 연결은 못 막는다 — 나머지는 `CLAUDE.md` Never 표의 행동 규칙이다
 - ⚠️ `db:migrate:fake`는 pending이 있는 상태에서 실행하면 DDL 없이 기록만 되어 **조용히 미적용**된다 — 평상시엔 `up`만 사용
 
 상세: [`docs/tasks/tasks-nestjs-improvements.md`](docs/tasks/tasks-nestjs-improvements.md) D33/D34
@@ -218,7 +221,7 @@ AI 에이전트용 작업 규약은 [`CLAUDE.md`](CLAUDE.md)가 진입점(SSOT)�
 **프로젝트를 처음 접하는 사람/AI는:**
 
 1. 이 README로 전체 그림 파악 (프로젝트 맵, 아키텍처, 배포)
-2. `CLAUDE.md`의 문서 라우팅 표에서 작업 유형에 맞는 문서 확인 (코드 규약·형제 레포 규약은 자동 로드)
+2. `CLAUDE.md`의 문서 라우팅 표에서 작업 유형에 맞는 문서 확인 (코드 규약은 자동 로드). 프론트는 별도 세션이 담당한다 — `CLAUDE.md` "세션 운영"
 3. 작업 시 기존 코드 패턴과 컨벤션을 우선적으로 따름
 
 ## 라이선스
