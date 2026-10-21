@@ -63,7 +63,8 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 | `team` | `/teams` | 팀·태스크·댓글·초대·태그 CRUD, 팀 채팅(저장·읽음), TeamGateway(실시간), OnlineUserService |
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
-| `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림 |
+| `feedback` | `/feedbacks` | 사용자 피드백 작성·내 피드백 조회, 운영자 피드백 채널 알림 |
+| `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
 | `fishing` | — | FishingGateway (실시간 맵/위치) |
 | `scheduler` | — | Cron (태스크 자동 아카이브) |
@@ -73,7 +74,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 
 ### 주요 테이블
 
-`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`, `TEAM_CHAT_MESSAGES`, `TEAM_CHAT_READ_CURSORS`, `TEAM_TAGS`, `TEAM_TASK_TAGS`
+`USERS`, `TEAMS`, `USER_TEAMS`, `TEAM_TASKS`, `TASK_COMMENTS`, `TEAM_INVITATIONS`, `TEAM_TELEGRAM_LINKS`, `FILE_SHARES`, `TEAM_CHAT_MESSAGES`, `TEAM_CHAT_READ_CURSORS`, `TEAM_TAGS`, `TEAM_TASK_TAGS`, `FEEDBACKS`
 
 ## 개발 환경 설정
 
@@ -120,7 +121,7 @@ docker stop bun-redis && docker rm bun-redis
 
 **검증 대상(필수)**: `ENV`, `EXPRESS_PORT`, `JWT_SECRET`, `LOG_LEVEL`, `NEXT_PUBLIC_DOMAIN`, `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `REDIS_PORT`
 
-**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장)
+**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음)
 
 > ⚠️ **LOCAL과 PROD가 동일한 Oracle DB를 공유한다.** 로컬에서 실행하는 쿼리가 곧 상용 데이터에 영향을 준다.
 
