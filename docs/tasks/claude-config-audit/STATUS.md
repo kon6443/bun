@@ -2,6 +2,7 @@
 
 - **상태**: 🟢 완료 — 커밋·PR 머지 완료(main 반영, 배포 미트리거) (2026-10-08)
 - **브랜치**: `feat-onam` · **최종수정**: 2026-10-08
+> **2026-10 이후**: 형제 레포 교차 주입 훅·`test-inject-sibling-claudemd.sh`는 백·프 2세션 체제로 삭제됐다(`../claude-sessions-2026-10/DECISIONS.md` D-007). 아래 이력의 해당 서술·검증 명령은 당시 기준이다.
 - **관련 문서**: RECOMMENDATIONS.md(추천안) · DECISIONS.md · WORKLOG.md · 선행 이력 `../tasks-claude-config.md`(평면 문서, 그대로 유지)
 
 ## 목표 & 수용 기준

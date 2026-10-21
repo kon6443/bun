@@ -1,6 +1,6 @@
 # FiveSouth Backend (NestJS)
 
-NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub.
+NestJS + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub. 버전은 [`README.md`](README.md) 기술 스택.
 
 **문서 경계** — 같은 내용을 두 곳에 쓰지 않는다:
 
@@ -16,11 +16,18 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 ---
 
+## 세션 운영 — 백·프 2세션 체제 (상시 적용, 사용자가 따로 말하지 않아도)
+
+- **이 레포 세션(백엔드)이 메인이다.** 사용자는 메인과만 소통한다 — 프론트 요청도 메인이 받아 프론트 세션에 전달하고, 프론트 세션의 보고·질문은 메인이 요약해 사용자에게 전달한다.
+- **역할 경계**: 백엔드 작업·코드 읽기는 메인, 프론트(`../next-bun`) 작업·코드 읽기·조사·리뷰 루프는 **프론트 세션**. 메인은 프론트 소스를 읽거나 고치지 않고 프론트 리뷰 서브에이전트를 띄우지 않는다. 프론트가 API·소켓을 어떻게 쓰는지는 프론트 세션에 질의한다 — 답은 `파일:라인 + 인용`, 정확성은 답한 세션 책임. 프론트 앱을 띄워 브라우저로 확인하는 최종 검증(Playwright)은 소스 읽기가 아니라 메인의 몫이다.
+- **메인의 몫**: 요청 라우팅 · 태스크 문서(SSOT) 작성·관리(어느 레포에 있든) · 사용자 질문·결정 중계 · 양쪽 결과 대조 · 최종 검증(build·실제 API·Playwright) · 보고.
+- **세션 찾기**: 직접 탐색하지 않는다(`ListAgents`로 고르지 않는다). 태스크 폴더 STATUS의 "세션·브랜치" 표에 있으면 그 세션으로, 없으면 사용자에게 어느 세션인지 묻는다. 프론트 세션이 없으면 사용자에게 새 프론트 세션을 열어 달라고 요청한다. 정해진 세션은 STATUS 표에 기록하고, 바뀌면 갱신한다.
+- **소통**: `SendMessage`로 지시(작업 위치·범위·완료 기준·보고 형식 포함)하고, 완료 대기는 `notify_when_idle`로 받는다.
+
 ## 자동 로드되는 것 (읽으라고 지시하지 않는다)
 
 - `.claude/rules/*.md` — 파일 종류별 규약. `src/`의 `.ts`를 읽으면 `core.md`(rule 지도 포함)와 그 파일 종류의 rule이 로드된다. 코드를 아직 안 연 설계 단계엔 아래 Key Patterns를 보고, 상세가 필요하면 해당 rule을 직접 Read한다
-- 프론트(`../next-bun`) 규약 — 그 레포 파일을 건드리는 순간 PreToolUse 훅이 `CLAUDE.md`·경로에 맞는 rule을 주입한다. 주입 상한을 넘는 파일은 "지금 Read하라" 지시만 온다 — 따른다
-- 스킬 `next-bun` — 프론트가 API·소켓을 어떻게 쓰는지 보고 **설계하는 단계**에 요청 의도로 발동
+- 스킬 `next-bun` — 프론트가 API·소켓을 어떻게 쓰는지 알아야 하는 **설계 단계**에 발동해 프론트 세션 질의 양식을 안내한다
 
 ## 문서 라우팅 — 자동 로드되지 않는 문서
 
@@ -30,9 +37,10 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 |---|---|
 | **버그 · 장애 · 에러 · 회귀 · "안 됨" 조사** | `docs/playbooks/recurring-issues-playbook.md` — 반복 결함 클러스터별 **최우선 확인 지점**부터 진단 |
 | 대규모 리팩터링·마이그레이션 **착수 전** · 사용자 교정 **직후** | `docs/lessons.md` — 작업 방식의 누적 교훈 (검토 후 새 교훈은 append) |
-| 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프. 없으면 생략 |
+| 세션 재개 · `/compact` **직후** 맥락 복구 | `docs/handoff/` 최신 스냅샷 — PreCompact 훅이 남긴 핸드오프(세션 작업 디렉토리 기준이라 worktree에서 compact했으면 그 worktree 안에 있다 — worktree를 지우기 전에 옮긴다). 없으면 생략 |
 | 구조 파악 · 신규 모듈 · 파일 위치 탐색 | `README.md` "아키텍처 개요" + `docs/architecture.md` |
-| Claude 설정 · 훅 · 권한 규칙 · 형제 레포(`../next-bun`) 교차 로드 | `docs/tasks/tasks-claude-config.md` (두 레포 공통 이력) + `docs/tasks/claude-config-audit/STATUS.md`. 권한 deny를 추가하면 **탐침으로 반드시 시험**한다 |
+| Claude 설정 · 훅 · 권한 규칙 · 2세션 운영 | `docs/tasks/tasks-claude-config.md` (두 레포 공통 이력) + `docs/tasks/claude-config-audit/STATUS.md` + `docs/tasks/claude-sessions-2026-10/STATUS.md`. 권한 deny를 추가하면 **탐침으로 반드시 시험**한다 |
+| 팀 태그 · 태스크 태그 · 태그 알림 | `docs/tasks/team-task-tags/STATUS.md` |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 (설계 단계) | `.claude/rules/schema-migrations.md` + `docs/tasks/tasks-nestjs-improvements.md`에서 `grep -n 'DB 마이그레이션\|Entity↔DB'`로 찾은 절 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (해당 태스크 절) |
@@ -55,7 +63,7 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 
 | 금지 | 이유 |
 |---|---|
-| **DB에 접속하는 명령 실행** — `db:migrate:up`/`fake`/`revert`/**`list`**, `sqlplus`, DataSource를 직접 여는 스크립트(`tsx`·`node` 포함) | **LOCAL과 PROD가 동일 DB** — 모든 `up`이 곧 상용 적용. `list`조차 첫 실행 시 이력 테이블을 생성한다. AI는 **파일 작성까지만**. `.claude/settings.json` deny는 Claude Code가 인식하는 명령만 막고 스크립트 내부의 DB 연결은 못 막는다 — 이 행동 규칙이 최후 방어선이다. **근거의 유효기간**: LOCAL과 PROD의 DB가 분리되면 재검토한다 |
+| **DB에 접속하는 명령 실행** — `db:migrate:up`/`fake`/`revert`/**`list`**, `sqlplus`, DataSource·드라이버를 직접 여는 스크립트(`tsx`·`node` 포함) | **LOCAL과 PROD가 동일 DB** — 모든 `up`이 곧 상용 적용. `list`조차 첫 실행 시 이력 테이블을 생성한다. AI는 **파일 작성까지만**. `.claude/settings.json` deny는 Claude Code가 인식하는 명령만 막고 스크립트 내부의 DB 연결은 못 막는다 — 이 행동 규칙이 최후 방어선이다. **예외 2개만**: ① 읽기 전용 조회 **`pnpm db:select '<SELECT>'`** — 허가 없이 실행한다(단일 SELECT·WITH 가드 + READ ONLY 트랜잭션 + 행 상한·민감 컬럼 가림, `scripts/db-select.ts`). 다른 경로로 조회 스크립트를 만들지 않는다 ② 로컬 실행 `pnpm dev`(부팅 시 접속) — 사용자 지시가 있을 때. **근거의 유효기간**: LOCAL과 PROD의 DB가 분리되면 재검토한다 |
 | `db:migrate:fake`를 평상시 사용 | pending이 있는 상태면 DDL 없이 기록만 되어 **조용히 미적용** |
 | Caddyfile을 Git에 커밋 · 설정 파일·커밋 문서에 회사명·무관한 타 프로젝트명 기입 | 공개 저장소 — 도메인·IP·조직 정보 노출. 짝 레포 `next-bun` 참조만 허용 |
 | 시크릿(JWT_SECRET·wallet·봇 토큰)을 코드·로그·응답·문서에 기입 | 커밋 이력에 영구 보존된다 |
@@ -63,17 +71,16 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 | E2E에서 `AppModule` import | `TypeOrmModule`이 **부팅만으로 상용 DB에 붙는다** — `createE2eApp()`을 쓴다 |
 | 인메모리 변수·타이머로 공유 상태 관리 | 여러 레플리카로 뜬다 — 레플리카별로 중복 실행된다. Redis + `TASK_SLOT` 가드 |
 | `any` · `@ts-ignore` 등 타입 억제 | 글로벌 `engineering.md` §3 |
-| 사용자 지시 없는 `git commit`·`push` | auto mode에서도 금지 |
 
 ### Ask — 실행 전 반드시 사용자 승인
 
 | 확인 대상 | 비고 |
 |---|---|
-| 커밋 · 푸시 · 머지 · 리베이스 · 태그 | `main` push는 곧 자동 배포다 |
-| 배포 · `docker` 명령 · `ssh`/`scp` | 운영 서버 영향 |
+| 커밋 · 푸시 · 머지 · 리베이스 · 태그 | **사용자 지시 없이는 하지 않는다(auto mode 포함)**. `main` push는 곧 자동 배포다 |
+| 배포 · 원격·운영에 닿는 `docker`(stack·service·context·push 등) · `ssh`/`scp` | 운영 서버 영향. 로컬 docker는 조회(ps·images·logs·inspect·version·info·compose ps/logs)만 확인 없이 쓴다 — run·exec·rm·build·compose up/down/build와 `-c`/`--context`/`-H`·`DOCKER_HOST`/`DOCKER_CONTEXT` 접두가 붙은 명령은 확인(호스트 마운트·빌드 컨텍스트·`-o` 출력으로 sandbox 우회 가능) |
 | 파일·디렉토리 삭제, 비가역 변경 | |
 | **마이그레이션 실행 요청** | 파일 작성은 AI, 실행은 담당자 — 완료 조건에서 분리해 명시한다 |
-| **API 계약 변경** (상태코드·에러코드) | 프론트(`../next-bun`) 대응 필요 여부까지 커밋 본문에 명시 |
+| **API 계약 변경** (상태코드·에러코드) | 프론트 대응 필요 여부는 프론트 세션에 확인하고 커밋 본문에 명시 |
 | 새 의존성 추가 | 기존 스택으로 안 풀리는지 먼저 확인 |
 | 외부로 발송되는 알림 경로 변경 (Telegram·Discord) | 실제 사용자에게 도달한다 |
 
@@ -86,8 +93,9 @@ NestJS 11 + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub
 - 검증: **`pnpm ci:core`**(lint → test → build) · PR 직전 **`pnpm ci:all`**(+ 스텁 검사 + E2E). 개별 실행은 `pnpm build`·`pnpm lint`·`pnpm test`·`pnpm test:e2e`
   - **테스트는 전부 통과하는 상태가 기준선이다 — 실패가 보이면 내 변경 탓이다**
   - ⚠️ Claude Code **sandbox 안에서는 E2E가 `listen EPERM`으로 대량 실패**한다(테스트 서버가 포트를 못 연다) — 코드 회귀가 아니다. sandbox 밖에서 다시 돌려 판정한다
-  - ⚠️ 부분 실행은 `--testPathPatterns`(복수형) — 단수형 `--testPathPattern`은 jest 30에서 거부된다
-- 실행: `pnpm dev` → `localhost:3500/api/v1` · Swagger `/api/v1/docs` (LOCAL only)
+  - ⚠️ 부분 실행은 `--testPathPatterns`(복수형) — 단수형 `--testPathPattern`은 현재 jest가 거부한다
+- 실행: `pnpm dev` → `/api/v1` · Swagger `/api/v1/docs` (LOCAL only, 포트는 README)
+- 조회: `pnpm db:select '<SELECT …>'` — 읽기 전용, 허가 불필요(Never 표 예외). SQL은 작은따옴표로 감싼다 — 문자열 리터럴이 있으면 큰따옴표로 감싼다(`$` 주의)
 
 ## Key Patterns — 설계 단계 요약
 
