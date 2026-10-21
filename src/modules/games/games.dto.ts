@@ -178,6 +178,10 @@ export class RankingListResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: RankingListDto }) data: RankingListDto;
 }
 
+export class GameScoreSummaryResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: RankingItemDto }) data: RankingItemDto;
+}
+
 export class GameReplayResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: GameReplayDetailDto }) data: GameReplayDetailDto;
 }

@@ -64,7 +64,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
 | `feedback` | `/feedbacks` | 사용자 피드백 작성·내 피드백 조회, 운영자 피드백 채널 알림 |
-| `games` | `/games` | 게임 모음집 — 세션 발급(Redis), 리플레이 재실행 검증 후 랭킹 등록, 기간별 랭킹, 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
+| `games` | `/games` | 게임 모음집 — 세션 발급(Redis), 리플레이 재실행 검증 후 랭킹 등록, 기간별 랭킹, 기록 요약(공유 미리보기용), 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
 | `fishing` | — | FishingGateway (실시간 맵/위치) |
@@ -159,7 +159,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-21 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **969/969**(47 스위트), E2E **160 통과 · 2 skip**(Redis 필요), build 통과.
+> `pnpm ci:all` 기준선(2026-10-21 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **972/972**(47 스위트), E2E **164 통과 · 2 skip**(Redis 필요), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션

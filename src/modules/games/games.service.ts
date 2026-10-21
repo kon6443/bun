@@ -193,21 +193,25 @@ export class GamesService {
     };
   }
 
+  /** 기록 요약 — 누구나 조회, 숨김·없음은 404. 링크 미리보기(OG)용이라 리플레이 입력은 싣지 않는다 (docs/tasks/game-share D-008) */
+  async getScore(gameTypeParam: string, scoreId: number): Promise<RankingItemDto> {
+    const gameType = this.toGameType(gameTypeParam);
+    const score = await this.findVisibleScore(gameType, scoreId);
+    return this.toRankingItem(score, await this.rankOf(gameType, { scoreId: score.scoreId, score: score.score }, null));
+  }
+
   /** 리플레이 재생 데이터 — 누구나 조회, 숨김 기록은 404 (D-011) */
   async getReplay(gameTypeParam: string, scoreId: number): Promise<GameReplayDetailDto> {
     const gameType = this.toGameType(gameTypeParam);
-    const score = await this.gameScoreRepository.findOne({
-      select: { scoreId: true, playerName: true, score: true, detail: true, durationMs: true, crtdAt: true },
-      where: { scoreId, gameType, isHidden: 0 },
-    });
-    const replay = score ? await this.gameReplayRepository.findOneBy({ scoreId, gameType }) : null;
-    if (!score || !replay) {
+    const score = await this.findVisibleScore(gameType, scoreId);
+    const replay = await this.gameReplayRepository.findOneBy({ scoreId, gameType });
+    if (!replay) {
       throw new GameScoreNotFoundErrorResponseDto();
     }
 
     const stored = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
     return {
-      ...this.toRankingItem(score, await this.rankOf(gameType, score, null)),
+      ...this.toRankingItem(score, await this.rankOf(gameType, { scoreId: score.scoreId, score: score.score }, null)),
       engineVersion: replay.engineVersion,
       seed: replay.seed,
       das: stored.das,
@@ -215,6 +219,18 @@ export class GamesService {
       frames: stored.frames,
       inputs: stored.inputs,
     };
+  }
+
+  /** 숨기지 않은 기록 1건 — 없으면 404. IP_HASH·USER_ID는 조회하지 않는다 */
+  private async findVisibleScore(gameType: GameType, scoreId: number): Promise<GameScore> {
+    const score = await this.gameScoreRepository.findOne({
+      select: { scoreId: true, playerName: true, score: true, detail: true, durationMs: true, crtdAt: true },
+      where: { scoreId, gameType, isHidden: 0 },
+    });
+    if (!score) {
+      throw new GameScoreNotFoundErrorResponseDto();
+    }
+    return score;
   }
 
   /** 등록 직후 기간별 순위 — 기록이 그 기간에 속하므로 세 기간 모두 순위가 있다 */
