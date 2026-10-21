@@ -188,7 +188,7 @@
 
 ### §L11. 주간 도전 (D-011)
 - **주기**: 매주 KST 월요일 00:00 시작(기존 주간 랭킹 경계 `ranking-period.ts`와 같은 기준). 보드 `BOARD_KEY = 'weekly-YYYY-Www'`(ISO 주차, KST)
-- **판 구성**(전원 동일): 주간 seed = `HMAC-SHA256(서버 비밀, 'defense-weekly:' + 주차)` 하위 32비트(리서치 04 §5-4) — 서버만 계산, 세션 발급 시 내려준다
+- **판 구성**(전원 동일): 주간 seed = `HMAC-SHA256(서버 비밀, 'defense-weekly:' + 보드 키)` 앞 4바이트(빅엔디언, `weekly-board.ts` `weeklySeed`) — 서버만 계산, 세션 발급 시 내려준다
   - **맵**: 캠페인 맵 8개 + 무한 맵 중 seed로 1개(무한 램프 규칙 적용 — 캠페인 맵을 재활용해 콘텐츠 비용 0)
   - **규칙 변형 2~3개**: 아래 풀에서 seed로 뽑되 상충 조합 금지 표 적용
   - **증강**: 같은 주간 seed로 후보가 결정 → 모두 같은 카드 제시(선택은 각자). 보유 타워 보장 규칙은 끈다(§E1)
@@ -617,7 +617,7 @@ export interface GameEngine {
 }
 ```
 - 구현(I0-B1·I0-B2, `src/modules/games/game-engine.registry.ts`)과 같다. `ReplayInput.boardKey`는 세션 값(보드 도입 전 세션은 `defaultBoardKey`)
-- **B1으로 넘김**(I0-B2 리뷰): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로
+- **B1으로 넘김**(I0-B2 리뷰): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로 ③ (브랜치 최종 리뷰) **엔진이 던진 예외 = 재현 실패(`ok: false`, 세션 소모)**, 워커 인프라 오류(대기열·시간 초과·워커 크래시·워커 처리 실패)만 throw → 503 — 결정적 예외가 503 + 세션 유지로 무한 재시도되지 않게. **워커 답 규약**: 디펜스 워커 스크립트는 `simulateReplay` 결과와 엔진 예외를 잡아 항상 `{ id, ok: true, result: VerifiedReplay }`(재현 실패면 `result.ok === false`)로 답하고, `{ ok: false }`는 워커 자체 처리 실패에만 쓴다(`verify-worker-pool.ts` 머리 주석)
 - `VerifiedReplay`·`detail: Record<string, number>`는 유지(디펜스 detail: `wave·progress·kills·livesLeft·goldEarned·engineVersion`, 증강·주간 규칙 ID는 재생 응답에서 엔진이 다시 계산)
 - 테트리스: `resolveSessionBoard`는 본문 없을 때 `default`만, `params`는 DTO 최상위 `das`·`arr`를 서비스가 옮겨 담는다
 
@@ -625,7 +625,7 @@ export interface GameEngine {
 - `GameSession`에 `boardKey` 추가. Redis 키·GETDEL 방식은 그대로(`game-session.service.ts`)
 - `POST /games/:gameType/sessions` — 본문 선택 `{ board?: 'endless' | 'weekly' }`(테트리스는 본문 없음 그대로, 보내면 422). 서버가 엔진 `resolveSessionBoard(board, now)`로 키·seed 결정(I0-B2 구현 — 레지스트리 `defaultBoardKey`·`resolveSessionBoard`·`isRankingBoard`·`listBoards`):
   - 무한: `boardKey = 'endless-s{현재 시즌}'`, seed = `randomInt`(현행)
-  - 주간: `boardKey = 'weekly-{KST ISO 주차}'`, seed = `HMAC-SHA256(GAME_WEEKLY_SEED_SECRET, 'defense-weekly:' + 주차)` 하위 32비트 — 전원 동일(§L11). **env 미설정이면 주간만 503 `GAME_WEEKLY_UNAVAILABLE`**(무한·테트리스 영향 없음)
+  - 주간: `boardKey = 'weekly-{KST ISO 주차}'`, seed = `HMAC-SHA256(GAME_WEEKLY_SEED_SECRET, 'defense-weekly:' + 보드 키)` 앞 4바이트(BE, `weeklySeed`) — 전원 동일(§L11). **env 미설정이면 주간만 503 `GAME_WEEKLY_UNAVAILABLE`**(무한·테트리스 영향 없음)
   - 주차 경계는 `ranking-period.ts`와 같은 KST 월요일 00:00. **세션 발급 시점의 주 보드**로 등록(자정 넘어 끝나도 그 주)
 - 응답 필드 추가: `boardKey`·`mode`(테트리스는 `default`·`null` — 추가만, 기존 필드 불변)
 - **TTL(벽시계)**: 디펜스 4시간 — 게임 시간 상한 90분(§E5) + 일시정지·증강 대기 여유. 판 도중 세션 갱신은 불가(seed가 판에 묶임) → 프론트가 만료 30분 전 "등록하려면 시간 안에 끝내야 해요" 안내(§F). Redis 키 약 200B — 퇴출 위험 수용 판단은 테트리스와 같음(games D-015)

@@ -9,6 +9,8 @@ import type { Worker } from 'node:worker_threads';
  *
  * 워커 규약: 기동(모듈 로드)을 마치면 `{ ready: true }`를 먼저 보낸다. 그 뒤 `{ id, input }`을 받아
  * `{ id, ok: true, result }` 또는 `{ id, ok: false, error }`를 돌려준다. 한 번에 1건만 맡기고, ready 전에는 맡기지 않는다.
+ * `ok: false`는 **워커 자체의 처리 실패(인프라)** 전용이다 — 리플레이 재현 실패·엔진 예외처럼 입력에 대한 확정 결과는
+ * 워커가 잡아 `{ ok: true, result: { ok: false, reason } }`로 답한다. 그래야 결정적 실패가 503(세션 유지) 무한 재시도가 되지 않는다(defense DESIGN §B2 ③).
  * 레플리카마다 풀이 따로 있다 — 공유 상태가 아니라 프로세스 안의 실행 자원이다.
  *
  * 작업 중에 죽으면 그 작업만 실패시키고 바로 다시 띄운다(입력 탓일 수 있다 — 같은 입력을 반복해도 자리가 꺼지지 않게).
