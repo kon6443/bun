@@ -1,0 +1,50 @@
+{
+  "engineVersion": 1,
+  "sha256": "0d53defc743959b9f393b0ec6421560c8a0b574a3070349031f4f43dd4866309",
+  "files": [
+    {
+      "path": "__fixtures__/golden-replays.json",
+      "sha256": "98510880ed49f90e0816d7a81f028bdc7dd3617200e696ed0f2ca691f18ab6bd"
+    },
+    {
+      "path": "constants.ts",
+      "sha256": "137f4c7b3859681569a8f8f862be80a4d3415a19a21a2f0dd6418cabd15f3ef5"
+    },
+    {
+      "path": "data/enemies.ts",
+      "sha256": "3f4392769d18f84b72934e93368ebf90d8f524e954fe8b5fa54ff5c48063712e"
+    },
+    {
+      "path": "data/maps.ts",
+      "sha256": "0c6f7dcfde631d6023744889583a4878d570529519e54d913eecb4073e20468e"
+    },
+    {
+      "path": "data/stages.ts",
+      "sha256": "3144769c9e1af91981dd03a92631e9dc0dcd114fa4461bbe2a9dbc627e4d6053"
+    },
+    {
+      "path": "data/towers.ts",
+      "sha256": "9948b8a9670af79ddd61e4c10df1a0988407879202e6e81a411920f9922255dc"
+    },
+    {
+      "path": "game.ts",
+      "sha256": "2eb6138b593c32d1efe7e759901397c9b1510e797cc9f884ea5730c45d5e5935"
+    },
+    {
+      "path": "geometry.ts",
+      "sha256": "75230c3a8c8d76fe455cdcb69c0f0c93a3665d768be7ba1cee53e2d1087bcc04"
+    },
+    {
+      "path": "index.ts",
+      "sha256": "647dd02cd4be7777b3d63d6d8460b2c309bb2c7cb02462fe86cd2cb2348bb95d"
+    },
+    {
+      "path": "random.ts",
+      "sha256": "4071a65060eb9441b62b28827660c416876b716078dd3906517f8f5abe66d36d"
+    },
+    {
+      "path": "replay.ts",
+      "sha256": "32f2c13bcea38a50e2db5d2c4e8dd2e03b9e3ac97a099be44e62598666dbb8f6"
+    }
+  ]
+}
