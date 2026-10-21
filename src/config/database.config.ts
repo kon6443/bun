@@ -13,6 +13,8 @@ import { TeamChatReadCursor } from '../entities/TeamChatReadCursor';
 import { TeamTag } from '../entities/TeamTag';
 import { TeamTaskTag } from '../entities/TeamTaskTag';
 import { Feedback } from '../entities/Feedback';
+import { GameScore } from '../entities/GameScore';
+import { GameReplay } from '../entities/GameReplay';
 export default registerAs('database', (): TypeOrmModuleOptions => {
   const config: TypeOrmModuleOptions = {
     type: 'oracle',
@@ -21,7 +23,7 @@ export default registerAs('database', (): TypeOrmModuleOptions => {
     connectString: process.env.ORACLE_DB_CONNECT_STR,
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
-    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink, TeamChatMessage, TeamChatReadCursor, TeamTag, TeamTaskTag, Feedback],
+    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink, TeamChatMessage, TeamChatReadCursor, TeamTag, TeamTaskTag, Feedback, GameScore, GameReplay],
     extra: {
       poolMin: 1,
       poolMax: 3,
