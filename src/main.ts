@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -12,8 +13,9 @@ import { getStorageToken } from '@nestjs/throttler';
 import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { TeamChatService } from './modules/team/team-chat.service';
+import { GameSessionService } from './modules/games/game-session.service';
 import { ConfigService } from '@nestjs/config';
-import { GRACEFUL_SHUTDOWN_TIMEOUT_MS } from './common/constants/app.constants';
+import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -33,7 +35,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   try {
-    const app = await NestFactory.create(AppModule, {
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
       bufferLogs: true,
     });
 
@@ -86,6 +88,10 @@ async function bootstrap() {
     const teamChatService = app.get(TeamChatService);
     teamChatService.setRedisClient(redisAdapter.getPubClient());
 
+    // Redis 클라이언트를 GameSessionService에 주입 (게임 세션 seed — 레플리카 간 공유·1회용)
+    const gameSessionService = app.get(GameSessionService);
+    gameSessionService.setRedisClient(redisAdapter.getPubClient());
+
     // HTTP 스로틀 저장소 전용 Redis 연결 (레플리카 간 카운터 공유 — 어댑터 클라이언트와 분리, 이유는 저장소 주석)
     app.get<RedisThrottlerStorage>(getStorageToken()).connect({
       host: configService.get<string>('REDIS_HOST') || 'localhost',
@@ -114,6 +120,11 @@ async function bootstrap() {
       }
       return next();
     });
+
+    // JSON 본문 한도 (게임 리플레이 제출 — JSON_BODY_LIMIT 주석). 초과는 413 PAYLOAD_TOO_LARGE
+    // ⚠️ 위 미들웨어(enableCors·helmet 등) 뒤에 둔다 — useBodyParser는 호출 즉시 등록되므로 앞에 두면 파서가 내는
+    // 400·413 응답에 CORS·보안 헤더가 빠져 브라우저가 본문을 못 읽는다. Nest 기본 파서(init 시 등록)와 같은 위치(docs/tasks/games D-017)
+    app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
 
     // 글로벌 프리픽스
     app.setGlobalPrefix('api/v1');

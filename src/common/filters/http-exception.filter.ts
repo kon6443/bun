@@ -24,6 +24,8 @@ function getDefaultErrorCode(status: number): string {
     403: 'FORBIDDEN',
     404: 'NOT_FOUND',
     409: 'CONFLICT',
+    413: 'PAYLOAD_TOO_LARGE',
+    415: 'UNSUPPORTED_MEDIA_TYPE',
     422: 'VALIDATION_ERROR',
     429: 'TOO_MANY_REQUESTS',
     500: 'INTERNAL_SERVER_ERROR',
@@ -31,6 +33,34 @@ function getDefaultErrorCode(status: number): string {
     503: 'SERVICE_UNAVAILABLE',
   };
   return statusCodeMap[status] || 'UNKNOWN_ERROR';
+}
+
+/**
+ * Express 미들웨어(body-parser 등)가 던지는 http-errors 형태의 클라이언트 오류.
+ * HttpException이 아니라서 따로 판별하지 않으면 500으로 잘못 나간다 (예: 본문 크기 초과 413, 지원하지 않는 문자셋 415).
+ * JSON 문법 오류(SyntaxError)는 Nest가 필터 전에 BadRequestException으로 바꾸므로 이 분기에 오지 않는다.
+ * `expose: true`는 http-errors가 "클라이언트에 알려도 되는 오류"로 표시한 것이다.
+ */
+interface ExposedClientError extends Error {
+  status: number;
+  expose: true;
+  type?: string;
+}
+
+function isExposedClientError(exception: unknown): exception is ExposedClientError {
+  if (!(exception instanceof Error)) {
+    return false;
+  }
+  const { status, expose } = exception as Partial<ExposedClientError>;
+  return expose === true && typeof status === 'number' && status >= 400 && status < 500;
+}
+
+/** 미들웨어 오류 메시지는 영어 원문 대신 고정 한국어 문구로 — 원문에 내부 정보가 섞일 수 있다 */
+function getClientErrorMessage(status: number): string {
+  if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
+    return '요청 본문이 너무 큽니다.';
+  }
+  return '요청 형식이 올바르지 않습니다.';
 }
 
 @Catch()
@@ -45,7 +75,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+        : isExposedClientError(exception)
+          ? exception.status
+          : HttpStatus.INTERNAL_SERVER_ERROR;
 
     // 에러 코드 및 메시지 추출
     let code: string;
@@ -66,6 +98,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         typeof exceptionResponse === 'string'
           ? exceptionResponse
           : (exceptionResponse as HttpExceptionBody).message || exception.message;
+    } else if (isExposedClientError(exception)) {
+      // 미들웨어(body-parser)의 클라이언트 오류 — 413·400 등 상태 그대로
+      code = getDefaultErrorCode(status);
+      message = getClientErrorMessage(status);
     } else {
       // 알 수 없는 에러인 경우
       code = 'INTERNAL_SERVER_ERROR';

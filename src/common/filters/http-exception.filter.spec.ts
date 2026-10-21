@@ -153,6 +153,36 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  describe('미들웨어 클라이언트 오류 (body-parser의 http-errors)', () => {
+    /**
+     * body-parser가 던지는 모양 그대로 — HttpException이 아니어서 예전에는 500으로 나갔다.
+     * JSON 문법 오류(SyntaxError)는 여기 오지 않는다 — Nest가 필터 전에 BadRequestException으로 바꾼다(E2E games 400 케이스)
+     */
+    const middlewareError = (status: number, type: string, message: string) =>
+      Object.assign(new Error(message), { status, statusCode: status, expose: true, type });
+
+    it.each([
+      ['본문 크기 초과', middlewareError(413, 'entity.too.large', 'request entity too large'), 413, 'PAYLOAD_TOO_LARGE', '요청 본문이 너무 큽니다.'],
+      ['지원하지 않는 문자셋', middlewareError(415, 'charset.unsupported', 'unsupported charset "EUC-KR"'), 415, 'UNSUPPORTED_MEDIA_TYPE', '요청 형식이 올바르지 않습니다.'],
+    ])('%s → 원래 4xx 상태 + 고정 한국어 메시지 (원문 비노출)', (_desc, exception, expectedStatus, code, message) => {
+      filter.catch(exception, host);
+
+      expect(status).toHaveBeenCalledWith(expectedStatus);
+      expect(responseBody()).toEqual({ code, message });
+      expect(Logger.prototype.warn).toHaveBeenCalled();
+      expect(Logger.prototype.error).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['expose 없는 4xx 모양', Object.assign(new Error('x'), { status: 413 })],
+      ['expose가 있어도 5xx', Object.assign(new Error('x'), { status: 503, expose: true })],
+    ])('%s는 클라이언트 오류로 보지 않고 500으로 수렴해야 함', (_desc, exception) => {
+      filter.catch(exception, host);
+
+      expect(status).toHaveBeenCalledWith(500);
+    });
+  });
+
   describe('로깅 레벨 분리', () => {
     it('5xx는 error로 기록해야 함', () => {
       filter.catch(new Error('boom'), host);

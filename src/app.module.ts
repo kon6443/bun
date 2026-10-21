@@ -32,6 +32,7 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { UsersModule } from './modules/users/users.module';
 import { FishingModule } from './modules/fishing/fishing.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { GamesModule } from './modules/games/games.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { MetricsAccessMiddleware } from './common/middleware/metrics-access.middleware';
@@ -118,6 +119,7 @@ const logger = new Logger('AppModule');
     UsersModule,
     FishingModule,
     FeedbackModule,
+    GamesModule,
   ],
 })
 export class AppModule implements NestModule {
