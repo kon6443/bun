@@ -187,7 +187,7 @@
 - **효과 엔진**: 카드는 데이터(`effects: [{ target, stat, op, value }]` 정수 ‰) — 주간 규칙 변형(§L11)과 같은 엔진. 정의 스키마는 §C/§E
 
 ### §L11. 주간 도전 (D-011)
-- **주기**: 매주 KST 월요일 00:00 시작(기존 주간 랭킹 경계 `ranking-period.ts`와 같은 기준). 보드 `BOARD_KEY = 'weekly-YYYY-Www'`(ISO 주차, KST)
+- **주기**: 매주 KST 월요일 00:00 시작(기존 주간 랭킹 경계 `ranking-period.ts`와 같은 기준). 보드 `BOARD_KEY = 'weekly-YYYY-wNN'`(ISO 주차, KST)
 - **판 구성**(전원 동일): 주간 seed = `HMAC-SHA256(서버 비밀, 'defense-weekly:' + 보드 키)` 앞 4바이트(빅엔디언, `weekly-board.ts` `weeklySeed`) — 서버만 계산, 세션 발급 시 내려준다
   - **맵**: 캠페인 맵 8개 + 무한 맵 중 seed로 1개(무한 램프 규칙 적용 — 캠페인 맵을 재활용해 콘텐츠 비용 0)
   - **규칙 변형 2~3개**: 아래 풀에서 seed로 뽑되 상충 조합 금지 표 적용

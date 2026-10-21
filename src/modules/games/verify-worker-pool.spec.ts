@@ -6,7 +6,7 @@ import { VerifyQueueFullError, VerifyTimeoutError, VerifyWorkerError, VerifyWork
  * 검증 워커 풀 (docs/tasks/defense DESIGN §B5) — 실제 worker_threads로 돌린다.
  *
  * 테스트 워커 규약: 기동하면 { ready: true }를 먼저 보낸다. input { ms, value, fail?, crash? } → ms 동안 바쁘게 돈 뒤 value를 돌려준다.
- * fail이면 { ok: false } 답, crash면 워커 안에서 예외(워커 'error' 이벤트), exit면 process.exit(error 없는 종료).
+ * fail이면 { ok: false } 답(워커 자체 처리 실패 = 인프라 흉내 — 재현 실패는 실제 워커에서 { ok: true, result: { ok: false } }로 답한다), crash면 워커 안에서 예외(워커 'error' 이벤트), exit면 process.exit(error 없는 종료).
  */
 const TEST_WORKER = `
 const { parentPort } = require('node:worker_threads');
@@ -17,7 +17,7 @@ parentPort.on('message', ({ id, input }) => {
   if (input.crash) throw new Error('boom');
   if (input.exit) process.exit(0);
   if (input.readyAgain) parentPort.postMessage({ ready: true });
-  if (input.fail) parentPort.postMessage({ id, ok: false, error: 'bad replay' });
+  if (input.fail) parentPort.postMessage({ id, ok: false, error: 'worker failure' });
   else parentPort.postMessage({ id, ok: true, result: input.value });
 });
 `;
@@ -105,10 +105,10 @@ describe('VerifyWorkerPool', () => {
     expect(created).toBe(2);
   });
 
-  it('워커가 실패로 답하면 VerifyWorkerError — 워커는 계속 쓴다', async () => {
+  it('워커 처리 실패 답({ ok: false })이면 VerifyWorkerError — 워커는 계속 쓴다', async () => {
     await makePool(1, 1, 2000);
 
-    await expect(pool.run({ ms: 0, value: 1, fail: true })).rejects.toThrow(new VerifyWorkerError('bad replay'));
+    await expect(pool.run({ ms: 0, value: 1, fail: true })).rejects.toThrow(new VerifyWorkerError('worker failure'));
     await expect(pool.run({ ms: 0, value: 2 })).resolves.toBe(2);
     expect(created).toBe(1);
   });
