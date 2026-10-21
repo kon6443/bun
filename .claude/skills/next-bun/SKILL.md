@@ -1,36 +1,43 @@
 ---
 name: next-bun
-description: 프론트엔드 레포(../next-bun, Next.js)가 백엔드 API·소켓 이벤트를 어떻게 쓰는지 확인하거나, 백엔드 응답·에러 코드·이벤트를 바꿀 때 프론트 영향을 대조할 때 사용한다. 파일을 열기 전 설계 단계에서도 먼저 부른다. 프론트 규약 로드 절차와 계약 접점을 안내한다.
+description: 백엔드 API·소켓 이벤트를 프론트(../next-bun)가 어떻게 쓰는지 알아야 하거나, 응답·에러 코드·요청 DTO·이벤트를 바꿀 때 프론트 영향을 확인해야 할 때 사용한다. 파일을 열기 전 설계 단계에서도 먼저 부른다. 프론트 소스를 직접 읽지 않고 프론트 세션에 질의하는 양식과 계약 접점을 안내한다.
 ---
 
-<!-- paths frontmatter 를 일부러 쓰지 않는다: 스킬 paths 도 이 레포 루트 기준 glob 이라
-     ../next-bun/** 를 매칭하지 못한다. 넣으면 자동 발동이 영구히 죽는다.
-     출처: docs/tasks/tasks-claude-config.md C3-6 -->
+<!-- paths frontmatter 를 일부러 쓰지 않는다: 요청 의도로 발동하는 스킬이다. -->
 
-# 프론트(`../next-bun`) 작업 절차
+# 프론트 영향 확인 — 프론트 세션에 질의한다
 
-## 1. 규약 먼저 로드
-- `../next-bun` 파일을 건드리면 훅이 프론트 `CLAUDE.md`를 자동 주입한다. **설계 단계라 아직 파일을 안 열었다면** 지금 읽는다:
-  ```
-  Read ../next-bun/CLAUDE.md
-  ```
-- 파일 종류별 프론트 규약은 `../next-bun/.claude/rules/`에 있고 해당 프론트 파일을 건드리면 훅이 주입한다. 설계 단계라면 `ls ../next-bun/.claude/rules/`로 목록을 보고 필요한 것만 직접 읽는다. 진단·작업 절차는 프론트 `CLAUDE.md`의 라우팅 표를 따른다.
+백·프 2세션 체제다(`CLAUDE.md` "세션 운영"). 메인(이 세션)은 **프론트 소스를 읽지 않는다** — 프론트가 무엇을 어떻게 쓰는지는 **프론트 세션에 질의**하고, 답의 정확성은 답한 세션이 책임진다. 근거: `docs/tasks/claude-sessions-2026-10/DECISIONS.md` D-004·D-007.
 
-## 2. 계약 접점 — 백엔드를 바꾸면 여기서 프론트가 깨진다
-값의 SSOT는 이 레포 `.claude/rules/`의 해당 rule이다. 바꾸기 전에 프론트 쪽 사용처를 grep한다.
+## 1. 어느 세션에 묻나
+- 태스크 폴더 STATUS의 "세션·브랜치" 표에 프론트 세션이 있으면 그 세션.
+- 없으면 **사용자에게 묻는다**(`ListAgents`로 고르지 않는다). 프론트 세션이 없으면 사용자에게 새 프론트 세션을 열어 달라고 요청한다.
 
-| 접점 | 백엔드 SSOT | 프론트 사용처 |
-|---|---|---|
-| 성공 응답 `{ code, data, message }` | `api-http.md` 응답 절 | `../next-bun/src/services/teamService.ts` |
-| 에러 `{ code, message, timestamp }` · 에러 `code` 값 | `api-http.md` 에러 절 · `src/modules/*/*-error.dto.ts` | `../next-bun/src/types/api.ts`의 `ApiError`·`ErrorCode` (사용처 `teamService.ts`) |
-| 요청 DTO 필드 (`forbidNonWhitelisted`) | `api-http.md` 입력 검증 절 | 서비스 호출부의 요청 바디 — 필드를 지우거나 이름을 바꾸면 프론트 요청이 **422 `VALIDATION_ERROR`** |
-| 인증 쿠키 `access_token` · WS `handshake.auth.token` | `api-http.md` 인증/인가 절 | `../next-bun/src/lib/auth.ts` |
-| 소켓 이벤트명·페이로드 · room `team-{teamId}` | `realtime-ws.md` | `../next-bun/src/types/socket.ts` (프론트는 self-event를 걸러낸다) |
-| 날짜 (UTC 저장, 표시 시점 변환) | `datetime.md` | 프론트 표시 로직 |
+## 2. 질의 양식 (`SendMessage`)
+```
+[메인] 프론트 영향 확인 요청 — <한 줄 요지>
+- 바꾸려는 것: <백엔드 변경 — 경로·필드·에러 코드·이벤트명, 백엔드 근거 파일:라인>
+- 묻는 것: <사용처가 있는가 / 어떤 화면·흐름이 영향받나 / 대응이 필요한가>
+- 답 형식: 사용처마다 `파일:라인 + 인용`, 영향 판단, 필요한 프론트 대응(있으면 규모). 못 찾으면 탐색 범위를 밝혀 "X 범위에서 찾지 못함"
+- 수정은 하지 말 것(조사만) / 또는 수정 범위: <…>
+```
+- 답이 오면 근거를 그대로 태스크 문서(WORKLOG)에 옮기고, 결정이 필요하면 사용자에게 올린다.
 
-- 에러 코드·상태코드를 바꾸면 **API 계약 변경**이다 — 커밋 본문에 프론트 대응 필요 여부를 적는다(CLAUDE.md Ask 표).
+## 3. 직접 확인해도 되는 것 — 계약 산출물만
+- 로컬 백엔드가 떠 있으면 Swagger(`/api/v1/docs`, JSON은 `/api/v1/docs-json`)는 이 레포가 만든 계약 산출물이라 직접 확인해도 된다.
+- 프론트 소스·프론트 규약 문서는 직접 읽지 않는다.
 
-## 3. 수정 범위
-- 이 세션의 주 레포는 **백엔드**다. 프론트 파일 수정은 사용자가 명시적으로 요청했을 때만.
-- 프론트는 **별도 git 레포**다 — 커밋도 따로 한다.
-- 조사가 여러 파일에 걸치면 `frontend-researcher` 에이전트에 맡긴다.
+## 4. 계약 접점 — 이걸 바꾸면 프론트 질의가 필요하다
+값의 SSOT는 이 레포 `.claude/rules/`다. 프론트 사용처는 사본을 두지 않는다(D-004) — 매번 질의한다.
+
+| 접점 | 백엔드 SSOT |
+|---|---|
+| 성공 응답 `{ code, data, message }` | `api-http.md` 응답 절 |
+| 에러 `{ code, message, timestamp }` · 에러 `code` 값 | `api-http.md` 에러 절 · `src/modules/*/*-error.dto.ts` |
+| 요청 DTO 필드 — `forbidNonWhitelisted`라 어긋나면 **422 `VALIDATION_ERROR`** | `api-http.md` 입력 검증 절 |
+| 인증 쿠키 `access_token` · WS `handshake.auth.token` | `api-http.md` 인증/인가 절 |
+| 소켓 이벤트명·페이로드 · room `team-{teamId}` | `realtime-ws.md` |
+| 날짜 (UTC 저장, 표시 시점 변환) | `datetime.md` |
+
+- 에러 코드·상태코드를 바꾸면 **API 계약 변경**이다 — 프론트 세션 답을 근거로 커밋 본문에 대응 필요 여부를 적는다(`CLAUDE.md` Ask 표).
+- 프론트 수정이 필요하면 프론트 세션에 작업으로 지시한다 — 메인이 프론트 파일을 고치지 않는다. 프론트는 별도 git 레포라 커밋도 프론트 세션이 한다.

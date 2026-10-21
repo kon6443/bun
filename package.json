@@ -82,7 +82,8 @@
     "db:migrate:up": "tsx node_modules/typeorm/cli.js migration:run -d migration-datasource.ts",
     "db:migrate:fake": "tsx node_modules/typeorm/cli.js migration:run --fake -d migration-datasource.ts",
     "db:migrate:revert": "tsx node_modules/typeorm/cli.js migration:revert -d migration-datasource.ts",
-    "db:migrate:list": "tsx node_modules/typeorm/cli.js migration:show -d migration-datasource.ts"
+    "db:migrate:list": "tsx node_modules/typeorm/cli.js migration:show -d migration-datasource.ts",
+    "db:select": "tsx scripts/db-select.ts"
   },
   "packageManager": "pnpm@10.34.7",
   "pnpm": {

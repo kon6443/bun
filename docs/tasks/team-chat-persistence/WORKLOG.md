@@ -333,9 +333,9 @@
 ## 2026-10-14~15 — 실측 (로컬 서버 + Playwright 브라우저 2개)
 
 ### 환경
-- 원래 폴더의 서버(bun 3500, next-bun 3000)를 종료하고 worktree에서 다시 띄웠다(사용자 지시). shrimp(3010·3510)는 건드리지 않았다
+- 원래 폴더의 서버(bun 3500, next-bun 3000)를 종료하고 worktree에서 다시 띄웠다(사용자 지시). 다른 프로젝트 서버(3010·3510)는 건드리지 않았다
 - 백엔드: `REDIS_HOST=localhost REDIS_PORT=6380 pnpm dev`
-  - 6379는 mobisell 개발용 Redis(`mobisell-back-redis-dev`)가 쓰고 있어서 키 충돌을 피해 `bun-redis`를 6380으로 띄웠다(사용자 실행)
+  - 6379는 다른 프로젝트의 개발용 Redis 컨테이너가 쓰고 있어서 키 충돌을 피해 `bun-redis`를 6380으로 띄웠다(사용자 실행)
   - `.env`는 바꾸지 않고 실행 시 환경변수로만 포트를 넘겼다
 - 프론트: worktree에서 `bun run dev`
   - 원래 폴더의 `node_modules`가 두 번 비워졌다(다른 세션이 작업 중인 것으로 추정)
