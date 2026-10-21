@@ -31,9 +31,18 @@ export const escapeDiscordMarkdown = (text: string): string =>
  * <blockquote>댓글</blockquote>
  */
 export function renderTelegramHtml(team: NotificationTeamInfo, content: TeamNotificationContent): string {
-  const { title, subject, lines = [], quote } = content;
+  return renderTelegramBody(`${escapeTelegramHtml(content.title)} · ${escapeTelegramHtml(team.teamName)}`, content);
+}
+
+/** 운영자 피드백 채널용 텔레그램 렌더 — 팀명 없이 제목만 머리줄로 쓴다 */
+export function renderFeedbackTelegramHtml(content: TeamNotificationContent): string {
+  return renderTelegramBody(escapeTelegramHtml(content.title), content);
+}
+
+/** 머리줄(이미 이스케이프됨) 뒤의 subject·lines·quote 줄 구성 — 팀·운영자 알림 공통 */
+function renderTelegramBody(header: string, { subject, lines = [], quote }: TeamNotificationContent): string {
   return [
-    `${escapeTelegramHtml(title)} · ${escapeTelegramHtml(team.teamName)}`,
+    header,
     subject ? `<b>${escapeTelegramHtml(subject)}</b>` : null,
     ...lines.map(escapeTelegramHtml),
     quote ? `<blockquote>${escapeTelegramHtml(truncate(quote, NOTIFICATION_QUOTE_MAX_LENGTH))}</blockquote>` : null,
@@ -44,14 +53,23 @@ export function renderTelegramHtml(team: NotificationTeamInfo, content: TeamNoti
 
 /** 디스코드용 렌더 (Markdown) — 텔레그램과 같은 줄 구성 */
 export function renderDiscordMarkdown(team: NotificationTeamInfo, content: TeamNotificationContent): string {
-  const { title, subject, lines = [], quote } = content;
+  return renderDiscordBody(`${content.title} · ${escapeDiscordMarkdown(team.teamName)}`, content);
+}
+
+/** 운영자 피드백 채널용 디스코드 렌더 — 팀명 없이 제목만 머리줄로 쓴다 */
+export function renderFeedbackDiscordMarkdown(content: TeamNotificationContent): string {
+  return renderDiscordBody(content.title, content);
+}
+
+/** 머리줄(이미 이스케이프됨) 뒤의 subject·lines·quote 줄 구성 — 팀·운영자 알림 공통 */
+function renderDiscordBody(header: string, { subject, lines = [], quote }: TeamNotificationContent): string {
   const quoteLines = quote
     ? truncate(quote, NOTIFICATION_QUOTE_MAX_LENGTH)
         .split('\n')
         .map((line) => `> ${escapeDiscordMarkdown(line)}`)
     : [];
   return [
-    `${title} · ${escapeDiscordMarkdown(team.teamName)}`,
+    header,
     subject ? `**${escapeDiscordMarkdown(subject)}**` : null,
     ...lines.map(escapeDiscordMarkdown),
     ...quoteLines,
