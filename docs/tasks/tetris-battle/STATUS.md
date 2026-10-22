@@ -89,6 +89,8 @@
 
 - 2차: 백 #281(feat→develop) · #282(develop→main) → Deploy NestJS ✅ 5m59s · 프 #363 · #364 → Deploy Next ✅. 인프라·스키마 변경 없음
 
+- 3차: 백 #283→#284(재대결 직후 제출 403 수정) · 프 #365→#366(모바일 넘침 전수 수정·팀 모달 가림) main 머지·배포 (2026-10-22)
+
 ## 운영 메모
 - 로컬 실서버: :3500 = 이 worktree `dist`(cwd defense worktree, `REDIS_PORT=6380`) — 디펜스 서버를 내리고 띄움(bun-62 통보). 테스트 끝나면 bun-62에 알린다
 
