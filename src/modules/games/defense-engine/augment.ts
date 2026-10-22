@@ -12,6 +12,11 @@ import { hasFlag } from './effects';
 import { fnv1a, nextRandom } from './random';
 import { type GameState, towerAllowed } from './state';
 
+function hasLockedSlot(stage: Stage): boolean {
+  for (const slot of stage.map.slots) if (slot.locked) return true;
+  return false;
+}
+
 function draw(state: GameState, n: number): number {
   const [next, value] = nextRandom(state.rngAugment);
   state.rngAugment = next;
@@ -24,6 +29,7 @@ function eligible(state: GameState, stage: Stage, card: AugmentCard, legendary: 
   if (card.rarity === RARITY.LEGENDARY && !legendary) return false;
   if (card.id === AUGMENT_ID.RECYCLE && hasFlag(state.effects, FLAG.NO_SELL)) return false;
   if (card.towers.length > 0 && !towerAllowed(state, stage, card.towers[0])) return false;
+  if (card.id === AUGMENT_ID.PIONEER && !hasLockedSlot(stage)) return false; // 잠긴 슬롯이 없는 맵에선 효과가 없다
   return true;
 }
 

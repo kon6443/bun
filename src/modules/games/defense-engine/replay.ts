@@ -20,7 +20,7 @@ import {
 import { resolveBoard } from './data/stages';
 import { type GameState, applyCommand, createGame, getStateHash, scoreOf, step } from './game';
 
-/** 헤더 mode·boardKey·seed는 서버 세션 값 — 클라이언트 제출값을 믿지 않는다(§E3). 해석은 resolveBoard(무한·주간은 S1 전까지 INVALID_HEADER) */
+/** 헤더 mode·boardKey·seed는 서버 세션 값 — 클라이언트 제출값을 믿지 않는다(§E3). 해석은 resolveBoard(알 수 없는 mode·boardKey는 INVALID_HEADER) */
 export type ReplayInput = {
   mode: string;
   boardKey: string;
@@ -103,10 +103,11 @@ function isValidInputLog(inputs: readonly unknown[]): boolean {
  * input은 서버 DTO가 형식을 막은 뒤의 객체다(null 등은 호출 전에 거른다)
  */
 export function simulateReplay(input: ReplayInput): ReplayResult {
-  const stage = typeof input.mode === 'string' && typeof input.boardKey === 'string' ? resolveBoard(input.mode, input.boardKey) : null;
-  if (!stage || !isIntInRange(input.seed, 0, SEED_MAX) || !isIntInRange(input.ticks, 1, Number.MAX_SAFE_INTEGER)) {
+  if (!isIntInRange(input.seed, 0, SEED_MAX) || !isIntInRange(input.ticks, 1, Number.MAX_SAFE_INTEGER)) {
     return { ok: false, reason: 'INVALID_HEADER' };
   }
+  const stage = typeof input.mode === 'string' && typeof input.boardKey === 'string' ? resolveBoard(input.mode, input.boardKey, input.seed) : null;
+  if (!stage) return { ok: false, reason: 'INVALID_HEADER' };
   if (!Array.isArray(input.inputs)) return { ok: false, reason: 'INVALID_INPUT' };
   if (input.ticks > MAX_TICKS || input.inputs.length > MAX_INPUT_LENGTH) return { ok: false, reason: 'LIMIT_EXCEEDED' };
   if (!isValidInputLog(input.inputs)) return { ok: false, reason: 'INVALID_INPUT' };

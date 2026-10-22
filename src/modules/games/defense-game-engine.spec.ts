@@ -1,5 +1,6 @@
+import { ENDLESS_BOARD_KEYS, isWeeklyBoardKey } from './defense-engine';
 import { createDefenseGameEngine } from './defense-game-engine';
-import { weeklySeed } from './weekly-board';
+import { weeklyBoardAt, weeklySeed } from './weekly-board';
 
 describe('createDefenseGameEngine — 보드·세션·형식 규칙', () => {
   // 2026-10-22(목) KST — 이번 주 weekly-2026-w43, 지난 주 w42
@@ -127,5 +128,12 @@ describe('createDefenseGameEngine — 보드·세션·형식 규칙', () => {
 
     await expect(engineWith('s').verify(input)).resolves.toEqual({ ok: false, reason: 'NOT_ENDED' });
     expect(verify).toHaveBeenCalledWith(input);
+  });
+
+  it('서버가 발급하는 보드 키를 엔진 사본이 해석한다 — 시즌만 올리고 엔진을 안 맞추면 세션은 나가는데 제출이 전부 INVALID_HEADER', () => {
+    expect(ENDLESS_BOARD_KEYS).toContain(engineWith('s').defaultBoardKey);
+    for (const now of [NOW, new Date('2026-12-27T15:00:00.000Z'), new Date('2027-01-03T15:00:00.000Z')]) {
+      expect(isWeeklyBoardKey(weeklyBoardAt(now).boardKey)).toBe(true);
+    }
   });
 });

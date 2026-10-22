@@ -8,7 +8,7 @@
  * 규칙·데이터(타워·적·스테이지 수치 포함)를 바꾸면 ENGINE_VERSION을 올리고 골든 픽스처·매니페스트를 다시 만든다
  */
 
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
 
 // ==================== 시간·좌표 ====================
 
@@ -43,6 +43,12 @@ export const SELL_REFUND_PERMILLE = 700;
 export const RESIST_CAP_PERMILLE = 800;
 /** 킬 보상 G — 캠페인 (골드 per 1000 EHP, §L4) */
 export const KILL_REWARD_G_CAMPAIGN = 110;
+/** 킬 보상 G — 무한·주간 (§L4) */
+export const KILL_REWARD_G_ENDLESS = 45;
+/** 무한 램프(31웨이브 이후) 킬 보상 감쇠 K ‰ (§L6) */
+export const RAMP_REWARD_DECAY_PERMILLE = 300;
+/** 무한·주간 시작 골드 (§L6) */
+export const ENDLESS_START_GOLD = 400;
 
 // ==================== 명령 (§E3) ====================
 

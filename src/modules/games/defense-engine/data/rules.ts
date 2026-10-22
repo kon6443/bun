@@ -1,7 +1,6 @@
 /**
- * 주간 규칙 변형 15개 (defense DESIGN §C8·§L11) — 주간 seed로 2~3개를 뽑는다(상충 표 적용)
- * R3(공중 비율 2배)·R4(보스 웨이브 정예 동반)는 웨이브 생성 단계 규칙이라 엔진은 플래그만 단다(적용은 S1 생성기)
- * 조합별 기준 봇 붕괴 웨이브 ±30% 밖 조합을 거르는 허용 목록(weeklyCombos)도 S1
+ * 주간 규칙 변형 15개 (defense DESIGN §C8·§L11) — 주간 seed로 허용 조합(2~3개, 상충 표 적용) 하나를 뽑는다
+ * R3(공중 2배)·R4(보스 엘리트 동반)는 웨이브 생성기(../wavegen.ts)가 적용한다
  * 원본·동기화 규칙은 ../constants.ts 머리 주석
  */
 
@@ -9,6 +8,7 @@ import { EFFECT_OP, FLAG, RNG_PURPOSE, SCOPE, STAT } from '../constants';
 import type { Effect } from '../effects';
 import { nextRandom, streamSeed } from '../random';
 import { TOWER_ID, TOWERS } from './towers';
+import { WEEKLY_COMBOS } from './weeklyCombos';
 
 export const RULE_ID = {
   GALE: 1,
@@ -72,8 +72,8 @@ export function ruleEffects(id: number, bannedTower: number): Effect[] {
   }
 }
 
-/** 같이 뽑지 않는 쌍 (§C8 표) — R3·R6은 금지 타워가 대공 석궁·테슬라일 때만 */
-function conflicts(a: number, b: number, bannedTower: number): boolean {
+/** 같이 뽑지 않는 쌍 (§C8 표) — R3·R6은 금지 타워가 대공 석궁·테슬라일 때만. 허용 목록 생성(시뮬레이터)·검사에 쓴다 */
+export function conflicts(a: number, b: number, bannedTower: number): boolean {
   const pair = (x: number, y: number) => (a === x && b === y) || (a === y && b === x);
   if (pair(RULE_ID.GALE, RULE_ID.RELENTLESS)) return true;
   if (pair(RULE_ID.RICH_START, RULE_ID.NO_REWARD)) return true;
@@ -81,33 +81,94 @@ function conflicts(a: number, b: number, bannedTower: number): boolean {
   return false;
 }
 
-export type WeeklyRules = { rules: number[]; bannedTower: number };
+export type WeeklyRules = { rules: number[]; bannedTower: number; mapIndex: number };
+
+/** 규칙 조합 → 정수 키 (규칙 id ≤ 15 = RULE_COUNT < 16, 오름차순 2~3개 — 16진 자리) — 같은 조합끼리 묶는다 */
+function rulesKey(entry: readonly number[]): number {
+  let key = entry.length - 2;
+  for (let i = 2; i < entry.length; i++) key = key * 16 + entry[i];
+  return key;
+}
+
+/** filter를 통과한 항목들의 서로 다른 key(목록 순서) 중 하나를 고르게 */
+function pickDistinct(draw: (n: number) => number, key: (entry: readonly number[]) => number, filter: (entry: readonly number[]) => boolean): number {
+  const keys: number[] = [];
+  for (const entry of WEEKLY_COMBOS) {
+    if (!filter(entry)) continue;
+    const k = key(entry);
+    if (keys.indexOf(k) < 0) keys.push(k);
+  }
+  if (keys.length === 0) throw new Error('주간 허용 목록이 비었다');
+  return keys[draw(keys.length)];
+}
+
+/** 조합 무게 단위 — 합법 금지 타워 수(4·6)로 나눠떨어지게 12 */
+export const WEIGHT_UNIT = 12;
+
+/** R6 조합의 상충 없는 금지 타워 수 */
+export function legalBans(entry: readonly number[]): number {
+  let count = 0;
+  for (let banned = 0; banned < TOWERS.length; banned++) {
+    let ok = true;
+    for (let i = 2; i < entry.length; i++) for (let j = i + 1; j < entry.length; j++) if (conflicts(entry[i], entry[j], banned)) ok = false;
+    if (ok) count++;
+  }
+  return Math.max(1, count);
+}
 
 /**
- * 주간 seed → 규칙 2~3개(뽑은 순서) + R6 금지 타워. 같은 seed면 누구나 같은 결과(서버·클라이언트 같은 함수)
- * 상충하면 그 후보를 버리고 다음 후보 — 15개를 다 봐도 못 채우면 채운 만큼
+ * 주간 seed → 맵 → 규칙 수 → 규칙 조합 → 금지 타워를 차례로 고르게 뽑는다(아래). 같은 seed면 누구나 같은 결과(서버·클라이언트 같은 함수)
+ * 항목은 시뮬레이터가 (맵, 조합)마다 걸러 둔 허용 목록(weeklyCombos.ts — 그 맵에서 기준 봇 붕괴 웨이브가 무규칙 대비 대역 안)에서만 고른다(§S5)
  */
-export function pickWeeklyRules(seed: number): WeeklyRules {
+export function pickWeekly(seed: number): WeeklyRules {
   let rng = streamSeed(seed, RNG_PURPOSE.WEEKLY);
   const draw = (n: number) => {
     const [next, value] = nextRandom(rng);
     rng = next;
     return value % n;
   };
-  const want = 2 + draw(2);
-  const bannedTower = draw(TOWERS.length);
-  const remaining: number[] = [];
-  for (let id = 1; id <= RULE_COUNT; id++) remaining.push(id);
-  const rules: number[] = [];
-  while (rules.length < want && remaining.length > 0) {
-    const index = draw(remaining.length);
-    const candidate = remaining[index];
-    remaining.splice(index, 1);
-    let ok = true;
-    for (const chosen of rules) if (conflicts(candidate, chosen, bannedTower)) ok = false;
-    if (ok) rules.push(candidate);
+  // 단계마다 고르게 — 허용 항목 수에 끌리지 않게
+  // 1) 맵(허용 항목이 있는 맵 중) 2) 규칙 수 2·3(그 맵에 있는 것 중)
+  // 3) 규칙 조합 — R6 조합은 상충 없는 금지 타워 변형 중 통과한 비율만큼의 무게(아무 변형 하나만 통과해도 남아 R6이 부풀지 않게)
+  // 4) 금지 타워(R6이면 통과한 것 중)
+  const mapIndex = pickDistinct(draw, (entry) => entry[0], () => true);
+  const size = pickDistinct(draw, (entry) => entry.length - 2, (entry) => entry[0] === mapIndex);
+  const keys: number[] = [];
+  const weights: number[] = [];
+  let total = 0;
+  for (const entry of WEEKLY_COMBOS) {
+    if (entry[0] !== mapIndex || entry.length - 2 !== size) continue;
+    const key = rulesKey(entry);
+    let i = keys.indexOf(key);
+    if (i < 0) {
+      keys.push(key);
+      weights.push(0);
+      i = keys.length - 1;
+    }
+    // 통과 비율만큼의 무게 — R6 없는 조합 = WEIGHT_UNIT, R6 변형 하나 = WEIGHT_UNIT / (상충 없는 금지 타워 수)
+    // (R3+R6은 금지 타워가 석궁·테슬라면 상충이라 합법 변형이 4개 — 6으로 나누면 구조적으로 덜 뽑힌다)
+    const weight = entry[1] > 0 ? Math.floor(WEIGHT_UNIT / legalBans(entry)) : WEIGHT_UNIT;
+    weights[i] += weight;
+    total += weight;
   }
-  return { rules, bannedTower: rules.indexOf(RULE_ID.BAN) >= 0 ? bannedTower : -1 };
+  let roll = draw(total);
+  let chosen = 0;
+  for (; chosen < keys.length - 1; chosen++) {
+    if (roll < weights[chosen]) break;
+    roll -= weights[chosen];
+  }
+  const inCombo = (entry: readonly number[]) => entry[0] === mapIndex && rulesKey(entry) === keys[chosen];
+  const bannedPlusOne = pickDistinct(draw, (entry) => entry[1], inCombo);
+  let combo: readonly number[] = WEEKLY_COMBOS[0];
+  for (const entry of WEEKLY_COMBOS) {
+    if (inCombo(entry)) {
+      combo = entry;
+      break;
+    }
+  }
+  const rules: number[] = [];
+  for (let i = 2; i < combo.length; i++) rules.push(combo[i]);
+  return { rules, bannedTower: bannedPlusOne - 1, mapIndex };
 }
 
 /** 주간 보드 키 형식 — weekly-YYYY-wNN (ISO 주차, 01~53) */

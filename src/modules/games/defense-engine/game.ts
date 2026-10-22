@@ -19,7 +19,7 @@ import {
 import { offerAugments, pickAugment } from './augment';
 import { processDeaths, runAbilities, runProjectiles, runTowers, ultimatePeriod, updateAndMoveEnemies } from './combat';
 import { ENEMIES } from './data/enemies';
-import { STAGES, type Stage } from './data/stages';
+import type { Stage } from './data/stages';
 import { TOWER_ID, TOWERS, towerStage } from './data/towers';
 import { hasFlag, statValue } from './effects';
 import { fnv1a, toHex32 } from './random';
@@ -252,8 +252,10 @@ const deathOrder: Enemy[] = [];
 function spawnFromGroup(state: GameState, stage: Stage, spawner: Spawner, events: number[] | null): void {
   const group = stage.waves[spawner.wave - 1].groups[spawner.group];
   const kind = ENEMIES[group.enemyId];
-  const hp = statValue(state.effects, enemySubject(group.enemyId), STAT.ENEMY_HP, group.hp);
-  const spec = { kind: group.enemyId, hp, wave: spawner.wave, path: group.path, dist: 0, derived: false };
+  // 규칙 변형(R2 등) HP 효과 → 난이도 HP 배율(보상 기준에서는 뺀다)
+  const ruleHp = statValue(state.effects, enemySubject(group.enemyId), STAT.ENEMY_HP, group.hp);
+  const hp = Math.max(1, Math.floor((ruleHp * stage.difficultyHp) / PERMILLE));
+  const spec = { kind: group.enemyId, hp, wave: spawner.wave, path: group.path, dist: 0, derived: false, rewardHp: ruleHp };
   for (let i = 0; i < kind.swarm; i++) createEnemy(state, stage, spec, events);
 }
 
@@ -376,16 +378,20 @@ export function scoreOf(state: GameState): { score: number; wave: number; progre
 
 const flag = (value: boolean) => (value ? 1 : 0);
 
-/** 스테이지 목록 안의 인덱스 (없으면 −1) — 해시에 문자열 대신 넣는다 */
-function stageIndex(id: string): number {
-  for (let i = 0; i < STAGES.length; i++) if (STAGES[i].id === id) return i;
-  return -1;
+/** 문자열 → 글자 코드 목록(길이 먼저) — 보드 식별(스테이지·난이도·무한·주간 키, 맵)을 해시에 넣는다 */
+function pushText(values: number[], text: string): void {
+  values.push(text.length);
+  for (let i = 0; i < text.length; i++) values.push(text.charCodeAt(i));
 }
 
 /** 최종 상태 FNV-1a 32비트 hex — 골든 비교용 (저장하지 않는다). 결과에 영향을 주는 모든 필드(캐시인 afflicted·targetHint 제외), 목록은 개수를 앞에(음수 없음 — 없음 −1은 +1로) */
 export function getStateHash(state: GameState): string {
-  const values: number[] = [
-    stageIndex(state.stageId) + 1,
+  const values: number[] = [];
+  pushText(values, state.stageId);
+  pushText(values, state.board.map.id);
+  values.push(
+    state.board.waves.length,
+    state.board.rampFrom,
     state.seed,
     state.tick,
     state.gold,
@@ -409,7 +415,7 @@ export function getStateHash(state: GameState): string {
     flag(state.over),
     flag(state.victory),
     state.endTick,
-  ];
+  );
   values.push(state.rules.length, ...state.rules);
   values.push(state.augments.length, ...state.augments);
   values.push(state.augmentChoices.length, ...state.augmentChoices);
@@ -419,7 +425,7 @@ export function getStateHash(state: GameState): string {
   values.push(state.enemies.length);
   for (const e of state.enemies) {
     values.push(
-      e.id, e.kind, e.hp, e.maxHp, flag(e.air), e.path, e.pathTotal, e.dist, e.segment, e.segmentStart, e.x, e.y, e.wave, e.reward, e.status,
+      e.id, e.kind, e.hp, e.maxHp, e.rewardHp, flag(e.air), e.path, e.pathTotal, e.dist, e.segment, e.segmentStart, e.x, e.y, e.wave, e.reward, e.status,
       e.resistPhy, e.resistMag, e.phase, e.abilityTimer, flag(e.derived),
       e.slow, e.slowTicks, e.stunTicks, e.stunWindowStart, e.stunCount,
       e.burnSources.length, ...e.burnSources, ...e.burnDps, ...e.burnTicks,

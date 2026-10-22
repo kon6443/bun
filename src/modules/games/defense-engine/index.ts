@@ -6,16 +6,38 @@
 export * from './constants';
 export { AUGMENTS, AUGMENT_ID, type AugmentCard } from './data/augments';
 export { ENEMIES, ENEMY_ID, type EnemyAbility, type EnemyKind } from './data/enemies';
-export { MAP_E1, MAP_E2, type GameMap, type MapPath, type MapSlot } from './data/maps';
-export { RULE_COUNT, RULE_ID, type WeeklyRules, isWeeklyBoardKey, pickWeeklyRules, ruleEffects } from './data/rules';
+export { MAP_E1, MAP_E2, MAP_ENDLESS, MAP_S1, MAP_S2, MAP_S3, MAP_S4, MAP_S5, MAP_S6, MAP_S7, MAP_S8, type GameMap, type MapPath, type MapSlot } from './data/maps';
+export { RULE_COUNT, RULE_ID, type WeeklyRules, conflicts, isWeeklyBoardKey, pickWeekly, ruleEffects } from './data/rules';
+export { WEEKLY_COMBOS } from './data/weeklyCombos';
+export { CAMPAIGN_WAVES, ENDLESS_DESIGNED_PRESSURE, ENDLESS_RAMP_PERMILLE } from './data/waves';
 export {
+  DESIGNED_WAVES,
+  ROLE,
+  ROLE_INTERVAL,
+  type ComposeOptions,
+  type WavePool,
+  type WaveRng,
+  composeWave,
+  endlessPool,
+  endlessPressure,
+  generateEndlessWaves,
+  roleOfWave,
+  spawnSeconds,
+} from './wavegen';
+export {
+  CAMPAIGN_STAGES,
+  DIFFICULTY,
   ENDLESS_BOARD_KEYS,
   STAGES,
   STAGE_E1,
   STAGE_E2,
   STAGE_E2_RULES,
+  WEEKLY_MAPS,
+  endlessBoard,
+  endlessStage,
   findStage,
   resolveBoard,
+  weeklyStage,
   type Stage,
   type Wave,
   type WaveGroup,

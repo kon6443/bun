@@ -6,7 +6,7 @@
 import { RNG_PURPOSE, STAT } from './constants';
 import type { MapPath } from './data/maps';
 import { ruleEffects } from './data/rules';
-import { type Stage, findStage } from './data/stages';
+import type { Stage } from './data/stages';
 import { TOWERS } from './data/towers';
 import { ANY_ENEMY_KIND, type Effect, type EffectSubject, ECONOMY_SUBJECT, statValue } from './effects';
 import { streamSeed } from './random';
@@ -33,6 +33,8 @@ export type Enemy = {
   y: number;
   /** 웨이브 번호 (1부터) */
   wave: number;
+  /** 킬 보상 기준 HP (난이도 배율 전) — 파생 적의 보상 기준 · 킬 보상 */
+  rewardHp: number;
   reward: number;
   status: number;
   /** 현재 저항 ‰ — 용은 2페이즈에서 맞바꾼다 */
@@ -171,6 +173,8 @@ export type WaveProgress = {
 
 export type GameState = {
   stageId: string;
+  /** 해석한 보드(맵·웨이브·규칙) — 무한·주간은 seed로 만든 웨이브를 담는다. 헤더(mode·boardKey·seed)에서 다시 만들 수 있어 해시에 넣지 않는다 */
+  board: Stage;
   seed: number;
   tick: number;
   gold: number;
@@ -217,9 +221,7 @@ export type GameState = {
 };
 
 export function stageOf(state: GameState): Stage {
-  const stage = findStage(state.stageId);
-  if (!stage) throw new Error(`알 수 없는 스테이지: ${state.stageId}`);
-  return stage;
+  return state.board;
 }
 
 export function enemyPath(stage: Stage, air: boolean, index: number): MapPath {
@@ -235,10 +237,11 @@ export function economyStat(state: GameState, stat: number, base: number): numbe
   return statValue(state.effects, ECONOMY_SUBJECT, stat, base);
 }
 
-/** 판 시작 효과 — 규칙 변형 (R6은 금지 타워 인자) */
+/** 판 시작 효과 — 규칙 변형(R6은 금지 타워 인자) → 스테이지 효과(캠페인 난이도) */
 function initialEffects(stage: Stage): Effect[] {
   const effects: Effect[] = [];
   for (const id of stage.rules) for (const e of ruleEffects(id, stage.bannedTower)) effects.push(e);
+  for (const e of stage.effects) effects.push(e);
   return effects;
 }
 
@@ -254,6 +257,7 @@ export function createGame(stage: Stage, seed: number): GameState {
   const effects = initialEffects(stage);
   return {
     stageId: stage.id,
+    board: stage,
     seed,
     tick: 0,
     gold: statValue(effects, ECONOMY_SUBJECT, STAT.START_GOLD, stage.startGold),

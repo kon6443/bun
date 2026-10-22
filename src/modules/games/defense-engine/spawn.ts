@@ -3,15 +3,16 @@
  * 원본·동기화 규칙은 constants.ts 머리 주석
  */
 
-import { EVENT, MAX_ENEMY_HP, PERMILLE, RESIST_CAP_PERMILLE } from './constants';
+import { EVENT, MAX_ENEMY_HP, PERMILLE, RAMP_REWARD_DECAY_PERMILLE, RESIST_CAP_PERMILLE } from './constants';
 import { ENEMIES, type EnemyKind } from './data/enemies';
 import type { MapPath } from './data/maps';
 import type { Stage } from './data/stages';
 import { lerpCoord } from './geometry';
 import { ENEMY_STATUS, type Enemy, type GameState, enemyPath } from './state';
 
-/** 킬 보상 감쇠 K(n)‰ */
-function rewardDecay(wave: number): number {
+/** 킬 보상 감쇠 K(n)‰ — 램프 구간(무한·주간 31+)은 300‰ */
+function rewardDecay(wave: number, rampFrom: number): number {
+  if (rampFrom > 0 && wave > rampFrom) return RAMP_REWARD_DECAY_PERMILLE;
   if (wave <= 10) return 1000;
   if (wave <= 20) return 800;
   return 650;
@@ -24,8 +25,8 @@ function effectiveHp(kind: EnemyKind, hp: number): number {
 }
 
 /** 킬 보상 = max(1, ⌊EHP × G × K(n) / 10⁶⌋) — 효과(현상금 등)는 사망 시 곱한다 */
-export function killReward(kind: EnemyKind, hp: number, wave: number, rewardG: number): number {
-  return Math.max(1, Math.floor((effectiveHp(kind, hp) * rewardG * rewardDecay(wave)) / 1000000));
+export function killReward(kind: EnemyKind, hp: number, wave: number, rewardG: number, rampFrom = 0): number {
+  return Math.max(1, Math.floor((effectiveHp(kind, hp) * rewardG * rewardDecay(wave, rampFrom)) / 1000000));
 }
 
 /** 현재 dist에 맞게 구간·좌표를 옮긴다 — 앞으로만 간다 */
@@ -51,12 +52,15 @@ export type SpawnSpec = {
   /** 경로상 시작 거리 — 소환·분열은 부모 위치 */
   dist: number;
   derived: boolean;
+  /** 킬 보상 기준 HP — 난이도 HP 배율 전(규칙 변형 배율은 반영). 없으면 hp */
+  rewardHp?: number;
 };
 
 /** 적 1마리를 만들어 배열 끝(생성 순번 최대)에 넣는다. 웨이브 집계(total·pending)는 호출자가 맞춘다 */
 export function createEnemy(state: GameState, stage: Stage, spec: SpawnSpec, events: number[] | null): Enemy {
   const kind = ENEMIES[spec.kind];
   const hp = Math.min(MAX_ENEMY_HP, Math.max(1, spec.hp));
+  const rewardHp = Math.min(MAX_ENEMY_HP, Math.max(1, spec.rewardHp ?? hp));
   const path = enemyPath(stage, kind.air, spec.path);
   const enemy: Enemy = {
     // 매 틱 읽는 필드를 앞에 둔다(이동·상태효과·표적 루프의 메모리 접근 — 순서는 결과와 무관)
@@ -77,7 +81,9 @@ export function createEnemy(state: GameState, stage: Stage, spec: SpawnSpec, eve
     hp,
     maxHp: hp,
     wave: spec.wave,
-    reward: killReward(kind, hp, spec.wave, stage.rewardG),
+    // 난이도 HP 배율은 보상에 넣지 않는다(§L5 "적 HP + 타워 비용 두 축만") — 규칙 변형(R2 등)의 HP 배율은 보상에 그대로 반영
+    rewardHp,
+    reward: killReward(kind, rewardHp, spec.wave, stage.rewardG, stage.rampFrom),
     resistPhy: kind.resistPhy,
     resistMag: kind.resistMag,
     phase: 0,

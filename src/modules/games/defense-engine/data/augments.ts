@@ -65,5 +65,5 @@ export const AUGMENTS: readonly AugmentCard[] = [
   card(23, RARITY.RARE, [], [{ scope: SCOPE.RULES, target: 0, stat: STAT.SLOTS_UNLOCK, op: ADD, value: 1 }]), // 개척
 ];
 
-/** 카드 id — 규칙 상충(R8 판매 불가 ↔ 재활용) 등에서 쓴다 */
-export const AUGMENT_ID = { RECYCLE: 19 } as const;
+/** 카드 id — 규칙 상충(R8 판매 불가 ↔ 재활용)·잠긴 슬롯 없는 맵(개척) 제외에서 쓴다 */
+export const AUGMENT_ID = { RECYCLE: 19, PIONEER: 23 } as const;

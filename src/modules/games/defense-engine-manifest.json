@@ -1,22 +1,22 @@
 {
-  "engineVersion": 2,
-  "sha256": "515271f3a67c53818d232af10f78592eeb7d8dce6eb9ac048bb8c922ecd1c21c",
+  "engineVersion": 3,
+  "sha256": "17eee826317f8c1755d29fa21b1f274e0ad3bcc2331d8e29f752a4ec212c7b19",
   "files": [
     {
       "path": "__fixtures__/golden-replays.json",
-      "sha256": "907c41955a16a4b60f25ff37c6476784328b06a885075e198fb8d2e2f8264aba"
+      "sha256": "9fd9759d28961f9571bfa501e0b60eb77dd194879775713ba50d78840dff71fd"
     },
     {
       "path": "augment.ts",
-      "sha256": "2a8d6bf86aaef41bf57779fd39a3e8dc004b2e8e38ed150c9b12ff202ad56f8d"
+      "sha256": "884d97f0ccbc6436ab970efc0160623b9d6c48ae8beadc9009d86c2b996f4065"
     },
     {
       "path": "combat.ts",
-      "sha256": "e2b77c24faab521a43f9ceb22bac69956ea979a0e0673cbb7a49c4961a1f9d45"
+      "sha256": "caadb783ca2add068ae04a0228e574390147424b188b760ba0c844f5b263275c"
     },
     {
       "path": "constants.ts",
-      "sha256": "9cb95eda4b35446b76251a16fcc84e0a6920d8ae4acf312815a0c7ddf6a21e73"
+      "sha256": "f3477a8940195db2283f2eed4ad2fe8ea4ff78e98acee45cb2322eb786eda7a5"
     },
     {
       "path": "damage.ts",
@@ -24,7 +24,7 @@
     },
     {
       "path": "data/augments.ts",
-      "sha256": "55681247d617ec64d155dcd446c2ca3e796c0fc91c36025416c24dd34d95f38e"
+      "sha256": "f7a25e9a3b34e01df1e7a70f04e57ba5bdbddc599c9ac7eaa711392bf4958e6e"
     },
     {
       "path": "data/enemies.ts",
@@ -32,19 +32,27 @@
     },
     {
       "path": "data/maps.ts",
-      "sha256": "484a17895681f27c9d29897ba7150353065ebdcd7f2432fc717df191d2bb165f"
+      "sha256": "8c680f7eab9481b441715b4dc481d0eb6a93180c4a72acb87afd9752d279eabd"
     },
     {
       "path": "data/rules.ts",
-      "sha256": "93c8e36ccf63834434560c70e339bb2fd556f8c52fcf949b1ab1c3e9c9345926"
+      "sha256": "60acca1ea5d206b855290e9994bc8918f5f2db4d8c539baf25c15062e05ce5ed"
     },
     {
       "path": "data/stages.ts",
-      "sha256": "78d4bcb2abc6ec698626e4064d1ba9fd701aa53c6d1c264a29b35009b431d758"
+      "sha256": "a180eca48e983159997a0422aaf388534826bd8d07d27ef57ca9c77586af98dc"
     },
     {
       "path": "data/towers.ts",
       "sha256": "8767923f11fa138d0d3a5138d4e6c5e86d13aee9cf951ba03252582587aeea0b"
+    },
+    {
+      "path": "data/waves.ts",
+      "sha256": "902617374372371a78b9a90aea0c76dc6824ee2f98c65a162abb449ac688e7be"
+    },
+    {
+      "path": "data/weeklyCombos.ts",
+      "sha256": "f08f078ce0dc92132cbbb4846a7f734a17d88c406fab4be0b5eef62f51fb13dd"
     },
     {
       "path": "effects.ts",
@@ -52,7 +60,7 @@
     },
     {
       "path": "game.ts",
-      "sha256": "382a6edbd8c01ce41e3f829556dab96c8b049a6e08ac596ce5d1fc99a7e7f736"
+      "sha256": "113d3fa91e2c2a8300e4215f606719bd0dbd8c1e5523c7a717dd4b554e7200c8"
     },
     {
       "path": "geometry.ts",
@@ -60,7 +68,7 @@
     },
     {
       "path": "index.ts",
-      "sha256": "5da5fa2b63a87a4ba10f5b3c65a8687321721454b8502c9ec083ae9b2e50e2a1"
+      "sha256": "1146c8be48ae92885dc36392773995b6172f239c4160d4611dc13d201bf468d3"
     },
     {
       "path": "random.ts",
@@ -68,19 +76,23 @@
     },
     {
       "path": "replay.ts",
-      "sha256": "410ca26f13eed7c5083a05820cf62a80ee90bc18974b80ae67196ef8d6683ba9"
+      "sha256": "c1f8e0e2753807f1278e028f1973ad2f7f301ad58ca49df6b5d7586cb57b4940"
     },
     {
       "path": "spawn.ts",
-      "sha256": "2af4db9df3646e6394b0e34679dd8711d893901b2f359a981052e44148d1017a"
+      "sha256": "f332b55a00997e2c7cd8989032b92bb509f75469aaae86aad7db68c4278ad900"
     },
     {
       "path": "state.ts",
-      "sha256": "8e8e3af8325a91dd73ab4bbfd7dc7b3631bd9fbd8cb4efe9908d3ce0fac4cc72"
+      "sha256": "95386dd66e1c39ee4008fac85b3b76f3a054dc0cc18a682aff095052b61860e0"
     },
     {
       "path": "status.ts",
       "sha256": "2cbf57a58327509f925db60fda56eb60a228e4b14479aa33e95273afab434f91"
+    },
+    {
+      "path": "wavegen.ts",
+      "sha256": "0ad4b2b3b766f7c512fe605e2c8cc2e15ccee249e1961b151fa57afab3505d10"
     }
   ]
 }

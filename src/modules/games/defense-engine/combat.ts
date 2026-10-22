@@ -65,6 +65,11 @@ const MULTIPLY_HP_PERMILLE = 250;
 /** 증식(R5) 확률 분모 — 효과 value가 ‰ */
 const MULTIPLY_ROLL = 1000;
 
+/** 파생 적(소환·분열·증식)의 킬 보상 기준 HP — 부모의 기준 HP(난이도 배율 전) × 비율 ‰ */
+function derivedRewardHp(parent: Enemy, permille: number): number {
+  return Math.max(1, Math.floor((parent.rewardHp * permille) / PERMILLE));
+}
+
 export function findSpecial(stage: TowerStage, kind: number): TowerSpecial | null {
   for (const s of stage.specials) if (s.kind === kind) return s;
   return null;
@@ -352,7 +357,7 @@ export function runAbilities(state: GameState, stage: Stage, events: number[] | 
         if (enemy.stunTicks > 0 || --enemy.abilityTimer > 0) break;
         enemy.abilityTimer = ability.every;
         const hp = Math.max(1, Math.floor((enemy.maxHp * ability.value) / PERMILLE));
-        const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true };
+        const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true, rewardHp: derivedRewardHp(enemy, ability.value) };
         const made = addDerivedEnemies(state, stage, spec, ability.count, MAX_ALIVE_ENEMIES, events);
         if (events && made > 0) events.push(EVENT.ABILITY, enemy.id, ability.kind, 0);
         break;
@@ -378,7 +383,7 @@ export function runAbilities(state: GameState, stage: Stage, events: number[] | 
         enemy.resistMag = phy;
         const spawn = ENEMIES[ability.spawnKind];
         const hp = Math.max(1, Math.floor((enemy.maxHp * ability.value) / PERMILLE));
-        const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true };
+        const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true, rewardHp: derivedRewardHp(enemy, ability.value) };
         addDerivedEnemies(state, stage, spec, ability.count * spawn.swarm, MAX_ALIVE_ENEMIES, events);
         if (events) events.push(EVENT.ABILITY, enemy.id, ability.kind, 1);
         break;
@@ -677,7 +682,7 @@ export function processDeaths(state: GameState, stage: Stage, deaths: Enemy[], e
     const ability = ENEMIES[enemy.kind].ability;
     if (ability.kind === ABILITY.SPLIT) {
       const hp = Math.max(1, Math.floor((enemy.maxHp * ability.value) / PERMILLE));
-      const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true };
+      const spec = { kind: ability.spawnKind, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true, rewardHp: derivedRewardHp(enemy, ability.value) };
       addDerivedEnemies(state, stage, spec, ability.count, MAX_ALIVE_ENEMIES, events);
     }
     if (splitChance >= 0 && !enemy.derived && !enemy.air) {
@@ -685,7 +690,7 @@ export function processDeaths(state: GameState, stage: Stage, deaths: Enemy[], e
       state.rngCombat = next;
       if (roll % MULTIPLY_ROLL < splitChance) {
         const hp = Math.max(1, Math.floor((enemy.maxHp * MULTIPLY_HP_PERMILLE) / PERMILLE));
-        const spec = { kind: ENEMY_ID.GRUNT, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true };
+        const spec = { kind: ENEMY_ID.GRUNT, hp, wave: enemy.wave, path: enemy.path, dist: enemy.dist, derived: true, rewardHp: derivedRewardHp(enemy, MULTIPLY_HP_PERMILLE) };
         addDerivedEnemies(state, stage, spec, 1, MAX_ALIVE_ENEMIES, events);
       }
     }
