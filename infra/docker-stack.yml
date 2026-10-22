@@ -55,7 +55,7 @@ services:
       - --appendonly
       - "yes"
       - --maxmemory
-      - 128mb
+      - 512mb
       - --maxmemory-policy
       - allkeys-lru
     volumes:
