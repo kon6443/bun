@@ -195,3 +195,10 @@
 - 검증: 단위 **1110/1110**(54) · E2E **190·2 skip**(+14 디펜스) 3회 중 2회 전부 통과, 1회 `file-share` 401 케이스 1건 실패(이번 변경 밖 모듈, 단독 5회 재실행 모두 통과 — 미재현) · 작성 직후 games E2E 첫 4회 중 3회에서 매번 다른 1~2건 실패(메시지 미보존), 이후 12+3회 연속 통과 — 미재현, 원인 미확정(동시 부하 의심) · lint 0 errors·경고 6 · build · stubs 0
 - 추가(사용자 결정 D-027): 진행 중 주간 리플레이 404 — `isReplayPublic` + 단위 6·E2E 1 · prettier를 games 전체에 잘못 돌려 무관 파일 9개 서식 변경 → 역패치로 HEAD 복원, 편집 파일 7개는 3-way 병합으로 편집 줄 외 서식 제거 · 단위 **1116/1116** · games E2E 58/58 · tsc
 - 개발 서버(사용자 구경용): 백엔드 worktree `nest start --watch` 3500(Redis 6380, 운영 DB 접속 — 사용자 지시) · 프론트 worktree `next dev` 3000. `.env`에 `GAME_WEEKLY_SEED_SECRET` 없음 → `/boards`는 무한만, weekly 세션 503(설계대로)
+
+## 2026-10-22 — E2 수신 · 백엔드 사본 동기화(B1-c) · D-028
+- 프론트 E2(`next-bun-1b`, 미커밋 — S1 착수 전 상태 보존: 프론트 세션 scratchpad `e2-snapshot/`(tracked.patch·untracked.tar·status·base `cacfca0`)): 타워 6·적 11·상태효과 6·효과 엔진·증강 24·주간 규칙 15·다중 경로·조기 호출·판매 환급 · ENGINE_VERSION **2** · 매니페스트 `515271f3…` · 골든 **42**(성공 16·실패 26, 사유 6종) · `wavesStarted` 추가 · lint 0·typecheck·test 786(defense 257) · 리뷰 10회차 두 리뷰어 0 · perf (a) 3.2~3.3ms (b) 2.11~2.28s(계약 2.0 초과) → D-028
+- 동기화: 프론트 엔진 폴더(`*.test.ts`·숨김 제외)·매니페스트를 S1 편집 전에 복사 → 백엔드 매니페스트 spec 통과(전체 해시 일치) · 골든 42 백엔드 재현 통과 · golden spec 엔진 버전 단정 2로 · `defense-verify.ts` NOT_STARTED = `wavesStarted === 0`(목숨 5 규칙 등 추정 오판 제거, 테스트 2)
+- 백엔드 Node 실측(dist, 부하 4~5, 중앙값/7회): E2 최장 판 4,495틱 **4.10ms** · Lv5 판 4,115틱 4.51ms · 판 상한 162,000틱(웨이브 미시작) 16.0ms — (a) 계약 ≤300ms 여유. (b)는 프론트 하네스(engine-dev) 수치 사용
+- B1-c 리뷰 R1: review-flow 확정 1·경미 2 / Opus 확정 1·의심 2 — **같은 확정**: 디펜스 E2E 제출 본문이 `engineVersion: 1` 하드코딩 → 엔진 2에서 409(동기화 후 E2E 미실행 — 메인 누락) → 사본 `ENGINE_VERSION` import로 · 서식 1줄·`START_LIVES` 복원 · 의심: 타임아웃 503 반복(O1 완료 판정에 "백엔드 (b) ≤ 타임아웃 절반" 추가) · 서버 경로 NOT_STARTED 실제 엔진 테스트 없음(S1 동기화 때 무한 보드 대기 판으로 추가 — 후속) · Opus 실측: 입력 20,000·162,000틱 최악 19ms, 골든 3회 연속 결정성 일치
+- B1-c 반영 후 검증: 단위 games 240/240 · 전체 E2E **191 통과·2 skip**(sandbox 밖) · E2E 제출 버전을 옛 값 1로 되돌리면 2건 실패 확인 후 원복 · lint 0 errors·경고 6 · tsc · R2 두 리뷰어 **확정 0** → 종료

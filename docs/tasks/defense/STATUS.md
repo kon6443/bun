@@ -1,6 +1,6 @@
 # 디펜스 게임 (게임 모음집 2번째 게임)
 
-- **상태**: 🟡 진행 중 — I0·I0-B2·E1·R1·B1-a 커밋(백 10·프 3, 미푸시) · **B1-b 완료·미커밋**(리뷰 두 리뷰어 0) · E2 프론트 진행 중 · 실기기 측정 대기 (2026-10-22)
+- **상태**: 🟡 진행 중 — I0·I0-B2·E1·R1·B1-a 커밋(백 10·프 3, 미푸시) · B1-b 커밋 · **E2 완료(프론트 미커밋)·B1-c 동기화 미커밋** · S1 진행 중 · 실기기 측정 대기 (2026-10-22)
 - **최종수정**: 2026-10-22
 - **관련 문서**: DECISIONS.md(결정·근거) · WORKLOG.md(조사·검증 기록) · `research/`(디펜스 게임 리서치 01~04) · DESIGN.md(설계 정본 — §L 레벨링 초안) · 선행 작업 `docs/tasks/games/`(테트리스·랭킹·리플레이 정본)
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 메인·백엔드·문서 관리 | 메인(bun) | `bun/.claude/worktrees/defense` | `feat-onam-defense` (`origin/main` `ce438d0` — D-022로 `65e1e03`에서 FF) |
 | 프론트 | `next-bun-1b` | `next-bun/.claude/worktrees/defense` | `feat-onam-defense` (`origin/main` `d189ae6` — D-022로 `f2e66ff`에서 FF) |
+- 병행 작업(2026-10-22 협의): 테트리스 멀티 — 백 `bun/.claude/worktrees/tetris-battle`(세션 `bun-47`)·프 `next-bun-bd`, 브랜치 `feat-onam-tetris-battle`. 신규 모듈·namespace로 분리, `src/modules/games/`·E2E 헬퍼 수정 회피, 테트리스 엔진 수정은 착수 전 재협의
 - 이 폴더는 메인만 수정한다. 프론트 세션은 보고·질문을 메인에 보내고, 메인이 사용자에게 묻는다.
 - 로컬 브랜치(main·develop 등)는 건드리지 않는다(D-002).
 
@@ -28,9 +29,9 @@
 - 완료: 백엔드 worktree · 기존 게임 구조 파악(WORKLOG 착수 절) · 태스크 문서 생성 · 프론트 worktree·조사(WORKLOG 프론트 조사 절)
 - 완료: 리서치 01~04 + 종합 `research/00-synthesis.md`(문서 간 충돌 정리·권장 골격)
 - **다음 할 일**:
-  1. E2 보고 수신(`next-bun-1b`) → 엔진 사본·매니페스트·골든 동기화 + `defense-verify.ts` NOT_STARTED를 `wavesStarted === 0`으로(D-026) → B1 회귀
-  2. 사용자: B1-b 커밋 승인 · 주간 리플레이 공개 정책 결정(DESIGN §B8, 권장 보드 종료 전 404) · 실기기 측정
-  3. S1(시뮬레이터·캠페인 8·무한 웨이브·주간 맵 풀) → 사본 재동기화 후 B1-b와 함께 배포 판단
+  1. B1-c(E2 사본 동기화·wavesStarted) 리뷰 루프 → 사용자 커밋 승인(백 B1-c · 프 E2 — 프론트는 S1과 분리해 `e2-snapshot`으로 커밋)
+  2. S1 진행 중(`next-bun-1b`) → 밸런스 보고서 사용자 공유 · 무한·주간 재현 → 사본 재동기화(+ 무한 보드 대기만 한 판이 실제 엔진으로 NOT_STARTED인지 단위 테스트)
+  3. O1 엔진 최적화(perf (b) ≤ 2.0초, D-028) — 서버 디펜스 배포 전 차단 · 실기기 측정(사용자)
 
 ## 커밋 (2026-10-22 완료, 미푸시 — 백 `8b7c5ce`·`0dcbf4d`·`d2be5ce`·`3b95832`·`a066aaf` + 최종 리뷰 반영 `88106f4`·`76c1bd1`·`14084b6`·`2339af8`·문서 / 프 `87110e1`·`07035eb`·`cacfca0`)
 | # | 레포 | 커밋(가칭) | 파일 |
