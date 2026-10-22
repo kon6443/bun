@@ -202,3 +202,26 @@
 - 백엔드 Node 실측(dist, 부하 4~5, 중앙값/7회): E2 최장 판 4,495틱 **4.10ms** · Lv5 판 4,115틱 4.51ms · 판 상한 162,000틱(웨이브 미시작) 16.0ms — (a) 계약 ≤300ms 여유. (b)는 프론트 하네스(engine-dev) 수치 사용
 - B1-c 리뷰 R1: review-flow 확정 1·경미 2 / Opus 확정 1·의심 2 — **같은 확정**: 디펜스 E2E 제출 본문이 `engineVersion: 1` 하드코딩 → 엔진 2에서 409(동기화 후 E2E 미실행 — 메인 누락) → 사본 `ENGINE_VERSION` import로 · 서식 1줄·`START_LIVES` 복원 · 의심: 타임아웃 503 반복(O1 완료 판정에 "백엔드 (b) ≤ 타임아웃 절반" 추가) · 서버 경로 NOT_STARTED 실제 엔진 테스트 없음(S1 동기화 때 무한 보드 대기 판으로 추가 — 후속) · Opus 실측: 입력 20,000·162,000틱 최악 19ms, 골든 3회 연속 결정성 일치
 - B1-c 반영 후 검증: 단위 games 240/240 · 전체 E2E **191 통과·2 skip**(sandbox 밖) · E2E 제출 버전을 옛 값 1로 되돌리면 2건 실패 확인 후 원복 · lint 0 errors·경고 6 · tsc · R2 두 리뷰어 **확정 0** → 종료
+- 커밋(사용자 승인): 백 `39e1f43`(B1-c)·`bc7983b`(문서) · 프 `638b9da`(E2 — 보존 스냅샷으로 S1과 분리, 임시 인덱스+commit-tree, 커밋 트리 단독 검증: 매니페스트·골든 sha 일치·tsc·eslint 0·vitest 786)
+- `GAME_WEEKLY_SEED_SECRET`: 사용자가 생성해 로컬 worktree `.env`·운영 fs-01 `.env`에 같은 값으로 추가(해시 비교로 일치 확인, 값은 기록하지 않음) · 백엔드 개발 서버 재기동 → `/boards`에 `weekly-2026-w43`(current)·`w42` 노출, weekly 세션 SUCCESS
+
+## 2026-10-22 — 공용화 분리 PR (D-030)
+- 백 `feat-onam-games-common`(base origin/main `c016557`): `c23543a`(=8b7c5ce) · `4306bfb`(=e5e607c, lessons 충돌 — 이번 항목만) · `bec681f` README · `1868baa`(=3b95832 디펜스 설계 문서, CLAUDE.md 라우팅 대전·디펜스 두 줄 유지) — 단위 1290 · E2E 215·56 skip ×3 · lint 0 · build · 리뷰 두 리뷰어 확정 0(낮음: 미사용 주간 에러 DTO·Swagger DEFENSE 문구 → 리베이스 충돌 회피로 PR 본문 명시)
+- 리뷰 의심 "세션 발급 본문 검증 신설" → 프론트 확인: main `882a8b0`·`87110e1` 모두 본문·Content-Type 없음(`gameService.ts:96-99`), strict 스키마 없음, BUSY 자동 재시도 1회 → 해소
+- 프 `feat-onam-games-common`(base `882a8b0`): `6a81e10`(=87110e1, 충돌: gamesPaths·ReplayPlayer·대전 playerName import 3) · `0dfc96a` 주석 — test 644 · 리뷰 2라운드 0
+- 통합(두 브랜치 dist·운영 빌드, 운영 DB): 실API 22/23(로그인 생략) · boards·session boardKey·tetris board 422·defense 404·replay params·rankings board·CORS · Playwright 게임 29/29·공유 14/14+4/4 · OG 200 · 대전 페이지 200 · 서버 종료
+- 푸시(사용자) → PR: 백 https://github.com/kon6443/bun/pull/279 · 프 https://github.com/kon6443/next-bun/pull/361 (base develop) — 머지는 사용자 승인 대기
+
+## 2026-10-22 — 백엔드 디펜스 브랜치 리베이스 (사용자 승인)
+- 공용화 PR #279·#361 머지 후(origin/main `a96f8d2`) `feat-onam-defense`를 origin/main 위로 리베이스. 미커밋 문서는 임시 WIP 커밋으로 묶었다가 리베이스 후 `reset --soft`로 다시 미커밋 상태로 복원(stash 미사용)
+- 자동 제외: `8b7c5ce`(= main `c23543a`) · 충돌 해결: README(main 쪽 유지 후 마지막에 디펜스 서술·env·기준선 재반영 — 미커밋) · CLAUDE.md(main 쪽 = 대전·디펜스 두 줄 — `3b95832`는 빈 커밋이 되어 skip) · lessons.md(두 항목 모두 유지, `e5e607c`는 빈 줄 1줄만 남음)
+- 커밋 14개(디펜스 전용) · HEAD `90f9017` · 검증: tsc · lint 0 errors(경고 6) · 스텁 0 · 단위 **1424/1424**(62) · E2E **230·56 skip** ×2 · build(워커 js 포함)
+- 프론트 디펜스 브랜치 리베이스는 S1 커밋 후(작업 트리에 S1 미커밋 변경)
+
+## 2026-10-22 — S1 완료 수신 · 백엔드 사본 동기화(B1-d)
+- 프론트 S1(R1~R10, 마지막 두 라운드 두 리뷰어 0): 캠페인 8·무한 endless-s1·주간 weekly-YYYY-wNN 데이터 · 생성기·시뮬레이터(병렬 child_process 워커, 순차와 바이트 동일) · 탐색 봇 B8·H3·무교란 계보 고정 · 용 25 단독 규칙 · ENGINE_VERSION 3 · 매니페스트 `17eee826…` · 골든 52(`9fd9759d…`) · lint 0·typecheck·test 877 · 병렬 실측: 기준 봇 21판 2.48배, 주간 4.10배, 주간 전체 85분→7.9분, 웨이브 생성 37분→26분(탐색 봇 2배 무거워진 상태)
+- 진행 경과: (B) 37/30 ✗ → 진단(탐색 봇 5 seed 표본 오차 · 웨이브 25 용 뽑기 운으로 실력 무관 즉사 5/21) → (A) 탐색 봇 보강·용 단독 규칙 → 2029‰ 38✗/45 → (A2) 2740‰ 33✓/43✓
+- 백엔드 동기화(미커밋): 엔진 폴더·매니페스트 복사 → 매니페스트 spec 통과 · 골든 52 재현 · golden spec 버전 3 · 신규 `defense-verify.engine.spec.ts`(골든 무한·주간 판 서버 경로 재현 + 대기만 한 무한·주간 판 실제 엔진 NOT_STARTED) · 실제 워커(dist) 무한·주간 골든 5판 점수 일치, 3~189ms(첫 판은 워커 기동 포함) · 단위 **1445/1445** · E2E 230·56 skip
+- B1-d 리뷰 R1: review-flow 코드 확정 0(문서 확정 1 — README 기준선이 새 spec 추가 전 값) · Opus 확정 0 — 보드 키 해석 2000~2100년 5271개 전부 엔진 해석 OK·주간 판은 boardKey+seed만으로 결정·판 시작 생성 무한 0.08ms/주간 0.57ms·결정성 골든 2회 일치. 후속 반영: 서버 시즌 상수↔엔진 `ENDLESS_BOARD_KEYS`·`isWeeklyBoardKey` 결합 테스트(시즌만 2로 바꾸면 실패 확인 후 원복) · 엔진 spec detail에 engineVersion 단정 · README 1446/63
+- **O1 근거(Opus 실측, 부하 높은 로컬)**: endless-greedy 60145틱 681ms(프론트 plain Node 123.5ms) · 1만 틱당 비용이 58→210ms로 증가(Lv5 타워 15~16개) — 162000틱까지 버티는 판 외삽 약 4초로 워커 타임아웃 5초 근접(의심). O1 완료 판정(백엔드 (b) ≤ 2.5초)에 "최장 판 외삽"도 함께 측정
+- B1-d 리뷰 R2: 두 리뷰어 **확정 0** → 종료(import 한 줄로 합침). review-flow가 games 단위 10회 중 1회 1건 실패를 봤으나 출력 미보존 → 메인이 부하 26(load avg) 상태에서 **25회 연속 로그 보존 실행, 실패 0**(미재현, 원인 미확정 — 의심 후보: 타이밍 의존 `verify-worker-pool.spec`). 재발 시 로그 파일로 특정

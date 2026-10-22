@@ -64,7 +64,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`·`/tetris-battl
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
 | `feedback` | `/feedbacks` | 사용자 피드백 작성·내 피드백 조회, 운영자 피드백 채널 알림 |
-| `games` | `/games` | 게임 모음집 — 세션 발급(Redis, 게임별 엔진 레지스트리), 리플레이 재실행 검증 후 랭킹 등록(검증 확정 후 세션 소모 — 검증기 실패는 503 + 세션 유지), 보드·기간별 랭킹(`BOARD_KEY` — 테트리스 `default`), 보드 목록, 기록 요약(공유 미리보기용), 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
+| `games` | `/games` | 게임 모음집 — 세션 발급(Redis, 게임별 엔진 레지스트리), 리플레이 재실행 검증 후 랭킹 등록(검증 확정 후 세션 소모 — 검증기 실패는 503 + 세션 유지), 보드·기간별 랭킹(`BOARD_KEY` — 테트리스 `default`, 디펜스 무한 `endless-s{시즌}`·주간 `weekly-YYYY-wNN`), 보드 목록, 기록 요약(공유 미리보기용), 리플레이 재생. 엔진은 프론트 원본의 사본(`tetris-engine/`·`defense-engine/`, 직접 수정 금지 — 디펜스는 매니페스트 해시 spec이 강제). 디펜스 검증은 레플리카마다 worker thread 풀(`defense-verify.worker.ts`, 첫 제출 때 기동) |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
 | `tetris-battle` | `/tetris-battle` (REST) | 테트리스 2~4인 대전 — 방·로비·채팅·매치(`/tetris-battle` WS, 상태는 Redis Hash+Lua), 경기 후 리플레이 재검증·결과 저장(`TETRIS_BATTLE_*`), 로비 방 수·최근 경기 목록(REST). 대전 래퍼는 프론트 원본의 사본(`src/modules/tetris-battle/battle-engine/`, 직접 수정 금지) |
