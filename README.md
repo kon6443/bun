@@ -54,7 +54,7 @@
   ※ 에러는 HttpExceptionFilter가 도메인 에러 DTO 형식으로 통일
 ```
 
-WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{teamId}` 기준. 인증은 `handshake.auth.token` → Bearer 헤더 순으로 확인하며, 멀티 레플리카 브로드캐스트는 Redis Pub/Sub이 담당한다.
+WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`·`/tetris-battle`(테트리스 대전), room `team-{teamId}` 기준. 인증은 `handshake.auth.token` → Bearer 헤더 순으로 확인하며, 멀티 레플리카 브로드캐스트는 Redis Pub/Sub이 담당한다.
 
 ### 모듈 구성
 
@@ -67,6 +67,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`, room `team-{te
 | `games` | `/games` | 게임 모음집 — 세션 발급(Redis), 리플레이 재실행 검증 후 랭킹 등록, 기간별 랭킹, 기록 요약(공유 미리보기용), 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
+| `tetris-battle` | `/tetris-battle` (REST) | 테트리스 2~4인 대전 — 방·로비·채팅·매치(`/tetris-battle` WS, 상태는 Redis Hash+Lua), 경기 후 리플레이 재검증·결과 저장(`TETRIS_BATTLE_*`). 대전 래퍼는 프론트 원본의 사본(`src/modules/tetris-battle/battle-engine/`, 직접 수정 금지) |
 | `fishing` | — | FishingGateway (실시간 맵/위치) |
 | `scheduler` | — | Cron (태스크 자동 아카이브) |
 | `main` | `/`, `/health-check` | 루트, 헬스체크 (`@nestjs/terminus` DB ping) |
@@ -113,7 +114,7 @@ docker stop bun-redis && docker rm bun-redis
 
 - 접속 정보 기본값은 `localhost:6379`이므로(`src/common/adapters/redis-io.adapter.ts`) `.env`에 `REDIS_HOST`를 안 넣어도 로컬에서는 붙는다. `REDIS_PORT`는 검증 대상 필수 변수다.
 - ⚠️ 6379를 **다른 프로젝트의 Redis가 이미 쓰고 있으면** 그 Redis(비밀번호 있음)에 붙어 `NOAUTH Authentication required`가 난다 — `-p 6380:6379`로 띄우고 `.env`의 `REDIS_PORT=6380`. 확인: `printf 'PING\r\n' | nc -w 2 localhost 6380` → `+PONG`
-- 운영(`infra_redis`)은 `--appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru`로 뜬다 — 영속성·축출 정책까지 재현하려면 같은 옵션을 붙인다.
+- 운영(`infra_redis`)은 `--appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru`로 뜬다 — 영속성·축출 정책까지 재현하려면 같은 옵션을 붙인다.
 - Redis를 끈 상태로 앱을 띄우면 경고 로그만 남고 기동은 성공해야 한다. 이 동작 자체가 검증 항목이다.
 
 ### 환경 변수
@@ -159,7 +160,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-21 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **972/972**(47 스위트), E2E **164 통과 · 2 skip**(Redis 필요), build 통과.
+> `pnpm ci:all` 기준선(2026-10-22 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1267/1267**(55 스위트), E2E **203 통과 · 56 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
