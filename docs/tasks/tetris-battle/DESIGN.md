@@ -245,6 +245,17 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 - 백엔드: 변경 없음 예상(GET 경기·리플레이로 충분). OG 카드에 필요한 필드가 부족하면 그때 추가
 - 비목표: 내 대전 목록·전적, 대전 랭킹
 
+## 19. 대전 입구·최근 대전 목록 (P7) — D-025
+
+- 문제(사용자 2026-10-22): 대전 입구가 `/games/tetris`의 보조 버튼 하나뿐, 게임 목록·지난 기록 입구 없음
+- 프론트
+  - `/games` 테트리스 카드에 "친구와 대전" 버튼 + NEW 배지(디펜스 브랜치가 같은 목록에 카드를 추가하므로 최소 줄)
+  - `/games/tetris` 홈: "게임 시작"과 "친구와 대전"을 나란한 주요 버튼으로, 대전 버튼에 "지금 열린 방 N개"(0이면 "방 만들기") — 소켓 없이 REST로
+  - "최근 대전" 섹션(최근 5경기: 방 이름·인원·우승자·시각 → 기록 페이지) + 전체 목록 페이지 `/games/tetris/battle/matches`(더 보기 페이지네이션)
+- 백엔드(신규 REST, 인증 없음, 조회 스로틀 `THROTTLE_BATTLE_RESULT_READ`)
+  - `GET /api/v1/tetris-battle/lobby` → `{ waitingRooms, playingRooms }` — Redis 로비 ZSET·방 상태로 계산(로비 `listRooms`와 같은 정리 규칙), 짧은 캐시 가능
+  - `GET /api/v1/tetris-battle/matches?limit=&cursor=` → 최근 VERIFIED·비숨김 경기 요약 `{ items: [{ matchId, roomName, playerCount, endedAt, winnerName, players: [{ name, place }] }], nextCursor }` — `CRTD_AT DESC, MATCH_ID DESC` 커서(기존 인덱스 `IDX_TB_MATCHES_CRTD`), limit 1~20(기본 10). 스키마 변경 없음
+
 ## P. 구현 슬라이스 (기획 확정 후)
 
 | # | 레포 | 내용 | 검증 |
