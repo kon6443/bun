@@ -22,6 +22,15 @@ parentPort.on('message', ({ id, input }) => {
 });
 `;
 
+/** 조건이 참이 될 때까지 짧게 반복 확인 — 고정 대기 대신 써서 느린 기기·CI에서도 흔들리지 않게 한다 */
+const waitUntil = async (condition: () => boolean, timeoutMs = 5000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`${timeoutMs}ms 안에 조건이 충족되지 않음`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
+
 type Input = { ms: number; value: number; fail?: boolean; crash?: boolean; exit?: boolean; readyAgain?: boolean; fn?: () => void };
 
 /** ready를 보낸 직후 대기 중에 죽는 워커 — 잡히지 않은 비동기 예외 흉내 */
@@ -164,11 +173,10 @@ describe('VerifyWorkerPool', () => {
   it('뜨자마자(ready 뒤) 대기 중에 죽는 워커도 크래시로 세어 꺼야 함 — ready만으로는 카운트를 되돌리지 않는다', async () => {
     await makePool(1, 1, 2000, IDLE_DYING_WORKER);
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const createdWhenDisabled = created;
-    expect(createdWhenDisabled).toBe(3);
+    await waitUntil(() => created >= 3);
+    // 세 번째도 대기 중에 죽으면 자리가 꺼진다 — 그 뒤로는 더 띄우지 않는다(재시도 간격 60초)
     await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(created).toBe(createdWhenDisabled);
+    expect(created).toBe(3);
   });
 
   it('ready를 보내지 않는 워커는 ready 시간 상한으로 회수해 크래시로 세고, 대기 작업이 매달리지 않아야 함', async () => {
@@ -185,8 +193,7 @@ describe('VerifyWorkerPool', () => {
 
     await pool.run({ ms: 0, value: 1 }).catch(() => undefined);
     // 100·200ms 백오프 뒤 꺼지고, 300ms 뒤 다시 시도
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect(created).toBeGreaterThan(3);
+    await waitUntil(() => created > 3);
   });
 
   it('기동하자마자 계속 죽으면 3번 만에 자리를 끄고 이후 요청은 바로 거절해야 함 — 무한 재생성 금지', async () => {
@@ -198,13 +205,12 @@ describe('VerifyWorkerPool', () => {
     expect(await queued).toBeInstanceOf(VerifyWorkerError);
 
     // ready 전에 죽으므로 작업을 맡기지 않고 매번 크래시로 센다 → 3번째(100·200ms 백오프 뒤)에 자리가 꺼지고 대기 작업은 거절
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const createdWhenDisabled = created;
-    expect(createdWhenDisabled).toBe(3);
+    await waitUntil(() => created >= 3);
+    // 세 번째가 아직 살아 있으면 대기열에 들어갔다가 그 워커가 죽으며 자리가 꺼질 때 거절된다 — 어느 쪽이든 같은 오류
     await expect(pool.run({ ms: 0, value: 3 })).rejects.toThrow('검증 워커를 쓸 수 없습니다');
     // 꺼진 뒤에는 재시도 간격(기본 60초) 전까지 더 띄우지 않는다
     await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(created).toBe(createdWhenDisabled);
+    expect(created).toBe(3);
   });
 
   it('닫으면 대기 중 작업은 실패하고 이후 요청도 거절해야 함', async () => {
