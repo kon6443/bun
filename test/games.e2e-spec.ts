@@ -11,6 +11,7 @@ import { GAME_ENGINE_REGISTRY, GameEngine } from '../src/modules/games/game-engi
 import { tetrisGameEngine } from '../src/modules/games/tetris-game-engine';
 import { createDefenseGameEngine } from '../src/modules/games/defense-game-engine';
 import { verifyDefenseReplay } from '../src/modules/games/defense-verify';
+import { ENGINE_VERSION as DEFENSE_ENGINE_VERSION } from '../src/modules/games/defense-engine';
 import { weeklySeed } from '../src/modules/games/weekly-board';
 import golden from '../src/modules/games/tetris-engine/__fixtures__/golden-replays.json';
 import { GameScore } from '../src/entities/GameScore';
@@ -359,7 +360,7 @@ describe('E2E 게임', () => {
     const defenseVerified = {
       ok: true as const,
       score: 12_345_000,
-      detail: { wave: 12, progress: 345, kills: 300, livesLeft: 4, goldEarned: 5000, engineVersion: 1 },
+      detail: { wave: 12, progress: 345, kills: 300, livesLeft: 4, goldEarned: 5000, engineVersion: DEFENSE_ENGINE_VERSION },
     };
     const issueDefenseSession = async (board?: string) => {
       const res = await request(app.getHttpServer())
@@ -377,7 +378,8 @@ describe('E2E 게임', () => {
     const defenseBody = (sessionId: string, replay: Record<string, unknown> = {}) => ({
       sessionId,
       playerName: '수비왕',
-      replay: { engineVersion: 1, frames: 9000, inputs: [0, 0], ...replay },
+      // 엔진 버전은 사본 값을 따른다 — 하드코딩하면 엔진 동기화 때 세션 버전과 어긋나 409로 깨진다
+      replay: { engineVersion: DEFENSE_ENGINE_VERSION, frames: 9000, inputs: [0, 0], ...replay },
     });
     const submitDefense = (payload: object) =>
       request(app.getHttpServer()).post(e2e.url('/games/defense/scores')).send(payload);

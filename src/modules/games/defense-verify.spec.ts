@@ -18,6 +18,7 @@ describe('verifyDefenseReplay — 디펜스 엔진 결과 → 검증 결과', ()
     kills: 300,
     livesLeft: 4,
     goldEarned: 5000,
+    wavesStarted: 13,
     augments: [3, 8],
     endTick: 9000,
     stateHash: 'abcd1234',
@@ -90,23 +91,13 @@ describe('verifyDefenseReplay — 디펜스 엔진 결과 → 검증 결과', ()
     expect(verifyDefenseReplay(input)).toEqual({ ok: false, reason: 'ENGINE_ERROR' });
   });
 
-  it('웨이브를 시작하지 않은 판(클리어 0·처치 0·목숨 그대로)은 NOT_STARTED', () => {
-    simulate.mockReturnValue({
-      ...success,
-      score: 0,
-      wave: 0,
-      progress: 0,
-      kills: 0,
-      livesLeft: START_LIVES,
-    });
+  it('웨이브를 하나도 시작하지 않은 판(wavesStarted 0)은 NOT_STARTED', () => {
+    simulate.mockReturnValue({ ...success, score: 0, wave: 0, progress: 0, kills: 0, wavesStarted: 0 });
 
     expect(verifyDefenseReplay(input)).toEqual({ ok: false, reason: 'NOT_STARTED' });
   });
 
-  it.each([
-    ['처치가 있으면', { kills: 1 }],
-    ['목숨이 깎였으면', { livesLeft: START_LIVES - 1 }],
-  ])('클리어 0이어도 %s 시작한 판', (_name, overrides) => {
+  it('웨이브를 시작했으면 클리어·처치가 0이고 목숨이 그대로여도 등록한다(목숨 5 규칙 등으로 추정이 빗나가지 않게)', () => {
     simulate.mockReturnValue({
       ...success,
       score: 0,
@@ -114,7 +105,7 @@ describe('verifyDefenseReplay — 디펜스 엔진 결과 → 검증 결과', ()
       progress: 0,
       kills: 0,
       livesLeft: START_LIVES,
-      ...overrides,
+      wavesStarted: 1,
     });
 
     expect(verifyDefenseReplay(input)).toMatchObject({ ok: true, score: 0 });

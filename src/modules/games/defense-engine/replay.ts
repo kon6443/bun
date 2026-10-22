@@ -17,10 +17,10 @@ import {
   SEED_MAX,
   TARGET_MODE_COUNT,
 } from './constants';
-import { findStage } from './data/stages';
+import { resolveBoard } from './data/stages';
 import { type GameState, applyCommand, createGame, getStateHash, scoreOf, step } from './game';
 
-/** 헤더 mode·boardKey·seed는 서버 세션 값 — 클라이언트 제출값을 믿지 않는다(§E3). E1은 캠페인(boardKey = 스테이지 id)만 */
+/** 헤더 mode·boardKey·seed는 서버 세션 값 — 클라이언트 제출값을 믿지 않는다(§E3). 해석은 resolveBoard(무한·주간은 S1 전까지 INVALID_HEADER) */
 export type ReplayInput = {
   mode: string;
   boardKey: string;
@@ -47,15 +47,15 @@ export type ReplaySuccess = {
   kills: number;
   livesLeft: number;
   goldEarned: number;
+  /** 시작한 웨이브 수 — CALL_WAVE(1웨이브 시작·조기 호출)와 카운트다운 자동 시작을 모두 센다. 0이면 시작하지 않은 판 */
+  wavesStarted: number;
+  /** 고른 증강 카드 id (고른 순서) */
   augments: number[];
   endTick: number;
   stateHash: string;
 };
 
 export type ReplayResult = ReplaySuccess | { ok: false; reason: ReplayFailureReason };
-
-/** 지원 모드 — 무한·주간은 E2 이후 */
-const SUPPORTED_MODES: readonly string[] = ['campaign'];
 
 function isIntInRange(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
@@ -103,7 +103,7 @@ function isValidInputLog(inputs: readonly unknown[]): boolean {
  * input은 서버 DTO가 형식을 막은 뒤의 객체다(null 등은 호출 전에 거른다)
  */
 export function simulateReplay(input: ReplayInput): ReplayResult {
-  const stage = SUPPORTED_MODES.indexOf(input.mode) >= 0 ? findStage(input.boardKey) : null;
+  const stage = typeof input.mode === 'string' && typeof input.boardKey === 'string' ? resolveBoard(input.mode, input.boardKey) : null;
   if (!stage || !isIntInRange(input.seed, 0, SEED_MAX) || !isIntInRange(input.ticks, 1, Number.MAX_SAFE_INTEGER)) {
     return { ok: false, reason: 'INVALID_HEADER' };
   }
@@ -146,7 +146,8 @@ export function toReplaySuccess(state: GameState): ReplaySuccess {
     kills: state.kills,
     livesLeft: state.lives,
     goldEarned: state.goldEarned,
-    augments: [],
+    wavesStarted: state.wavesStarted,
+    augments: state.augments.slice(),
     endTick: state.endTick,
     stateHash: getStateHash(state),
   };

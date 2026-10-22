@@ -12,8 +12,8 @@ type GoldenCase = { name: string; input: ReplayInput; expected: Record<string, u
 describe('디펜스 엔진 사본 — 골든 리플레이', () => {
   const cases = golden as unknown as GoldenCase[];
 
-  it('엔진 버전이 1이어야 함 (바꾸면 세션·저장 리플레이와 호환이 깨진다)', () => {
-    expect(ENGINE_VERSION).toBe(1);
+  it('엔진 버전이 2여야 함 (바꾸면 세션·저장 리플레이와 호환이 깨진다 — E2 전투 전체, D-028)', () => {
+    expect(ENGINE_VERSION).toBe(2);
   });
 
   it('성공 케이스와 실패 사유 6종이 모두 있어야 함', () => {
