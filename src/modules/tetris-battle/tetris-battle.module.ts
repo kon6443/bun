@@ -7,6 +7,7 @@ import { TetrisBattlePlayer } from '../../entities/TetrisBattlePlayer';
 import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
 import { TetrisBattleResultController } from './tetris-battle-result.controller';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
+import { TetrisBattleBrowseService } from './tetris-battle-browse.service';
 import { TetrisBattleGateway } from './tetris-battle.gateway';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleWsGuard } from './tetris-battle-ws.guard';
@@ -27,6 +28,7 @@ import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filt
     TetrisBattleGateway,
     TetrisBattleRoomService,
     TetrisBattleResultService,
+    TetrisBattleBrowseService,
     TetrisBattleWsGuard,
     TetrisBattleWsExceptionFilter,
   ],

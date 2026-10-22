@@ -218,7 +218,11 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     await room.topOut(code, who(1).socketId, { matchId, frame: topOutFrame as number }, T0); // p1 탈락 → p2 우승·종료
 
     const saves: unknown[] = [];
-    const manager = { create: (_e: unknown, row: unknown) => row, save: async (row: unknown) => (saves.push(row), row) };
+    const manager = {
+      findOne: async () => null,
+      create: (_e: unknown, row: unknown) => row,
+      save: async (row: unknown) => (saves.push(row), row),
+    };
     const result = new TetrisBattleResultService(
       room,
       createMockRepository() as never,
@@ -245,7 +249,11 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     await room.leaveRoom(code, who(2).socketId, T0); // p2 기권 → p1 우승·종료 (p2는 예상 제출자 아님)
 
     const saves: unknown[] = [];
-    const manager = { create: (_e: unknown, row: unknown) => row, save: async (row: unknown) => (saves.push(row), row) };
+    const manager = {
+      findOne: async () => null,
+      create: (_e: unknown, row: unknown) => row,
+      save: async (row: unknown) => (saves.push(row), row),
+    };
     const result = new TetrisBattleResultService(
       room,
       createMockRepository() as never,
@@ -262,5 +270,24 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       result.submitReplay({ matchId, playerToken: tokens[1], replay, userId: null, now: T0 + 2_000 }),
     ).rejects.toMatchObject({ status: 410, code: 'TETRIS_BATTLE_SUBMISSION_CLOSED' });
     expect(saves.length).toBe(1 + 2 + 1);
+  });
+
+  it('로비 방 수 REST(D-025): 실제 로비 인덱스로 센다 — 대기 방 +1·경기 방 +1, 2초 캐시', async () => {
+    await client.del('tetris-battle:lobby-counts');
+    const before = await room.lobbyCounts(T0);
+    if (!before) throw new Error('Redis 준비 안 됨');
+
+    await room.createRoom({ name: '대기방', maxPlayers: 2, playerName: '대기' }, who(50), T0); // WAITING
+    await start(); // PLAYING
+    await client.del('tetris-battle:lobby-counts');
+    const after = await room.lobbyCounts(T0);
+    expect(after).toEqual({ waitingRooms: before.waitingRooms + 1, playingRooms: before.playingRooms + 1 });
+    const ttl = await client.pttl('tetris-battle:lobby-counts');
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(2_000);
+
+    // 캐시가 살아 있는 동안은 새 방이 생겨도 같은 숫자
+    await room.createRoom({ name: '또대기', maxPlayers: 2, playerName: '또' }, who(51), T0);
+    await expect(room.lobbyCounts(T0)).resolves.toEqual(after);
   });
 });

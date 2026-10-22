@@ -103,6 +103,13 @@ export const SURVIVOR_FRAME_SLACK = 300;
 export const THROTTLE_BATTLE_REPLAY_SUBMIT = { short: { ttl: 1000, limit: 2 }, long: { ttl: 60000, limit: 20 } };
 export const THROTTLE_BATTLE_RESULT_READ = { short: { ttl: 1000, limit: 3 }, long: { ttl: 60000, limit: 60 } };
 
+/** 로비 방 수 REST 캐시(ms, 레플리카 공통 Redis) — 홈 방문자마다 로비 전체를 읽지 않게. 2초 늦은 숫자는 문제없다(D-025) */
+export const LOBBY_COUNTS_CACHE_MS = 2_000;
+
+/** 최근 대전 목록 페이지 크기 (D-025) */
+export const MATCH_LIST_DEFAULT_LIMIT = 10;
+export const MATCH_LIST_MAX_LIMIT = 20;
+
 /** 매치 id 형식 — 서버가 발급한 12바이트 base64url */
 export const MATCH_ID_PATTERN = /^[A-Za-z0-9_-]{16}$/;
 

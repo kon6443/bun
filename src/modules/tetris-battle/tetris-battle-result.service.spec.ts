@@ -89,6 +89,7 @@ describe('TetrisBattleResultService', () => {
   let replayRepository: MockRepository<TetrisBattleReplay>;
   let saved: { entity: string; row: Record<string, unknown> }[];
   let transaction: jest.Mock;
+  let existingMatch: { matchId: string; crtdAt: Date } | null;
 
   const submit = (token = TOKEN(1), replay = replayDto(), now = T_END + 1_000, userId: number | null = null) =>
     service.submitReplay({ matchId: MATCH, playerToken: token, replay, userId, now });
@@ -126,7 +127,9 @@ describe('TetrisBattleResultService', () => {
     replayRepository = createMockRepository<TetrisBattleReplay>();
     userRepository = createMockRepository<User>();
     saved = [];
+    existingMatch = null;
     const manager = {
+      findOne: jest.fn(async () => existingMatch),
       create: (entity: { name: string }, row: Record<string, unknown>) => ({ __entity: entity.name, ...row }),
       save: async (row: Record<string, unknown> & { __entity: string }) => {
         const { __entity, ...rest } = row;
@@ -349,6 +352,15 @@ describe('TetrisBattleResultService', () => {
       ]);
       expect(byEntity('TetrisBattleReplay').map((r) => r.playerId).sort()).toEqual(['p1', 'p2']);
       expect(byEntity('TetrisBattleReplay')[0].replay).toBeInstanceOf(Buffer);
+    });
+
+    it('재저장(기존 경기 행이 있음)이면 CRTD_AT를 보존한다 — 최근 대전 목록 정렬 키 유지 (리뷰 N2)', async () => {
+      const original = new Date('2026-10-22T01:02:03.456Z');
+      existingMatch = { matchId: MATCH, crtdAt: original };
+      subs.p2 = p2Record('VERIFIED');
+      await submit();
+      expect(saved.find((s) => s.entity === 'TetrisBattleMatch')?.row.crtdAt).toEqual(original);
+      expect(saved.filter((s) => s.entity === 'TetrisBattleReplay').every((s) => (s.row.crtdAt as Date).getTime() === original.getTime())).toBe(true);
     });
 
     it('INVALID가 하나라도 있으면 경기 DISPUTED', async () => {
