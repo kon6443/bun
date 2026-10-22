@@ -290,4 +290,32 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     await room.createRoom({ name: '또대기', maxPlayers: 2, playerName: '또' }, who(51), T0);
     await expect(room.lobbyCounts(T0)).resolves.toEqual(after);
   });
+
+  it('후속 수정: 종료 → rematch(마감 전) → 같은 소켓 재입장으로 토큰 재발급 → 새 토큰으로 직전 경기 제출이 403이 아니다', async () => {
+    const { code, matchId } = await start();
+    await room.topOut(code, who(2).socketId, { matchId, frame: 10 }, T0); // p2 탈락 → 종료
+    await room.rematch(code, who(1).socketId, T0);
+    const rotated = await room.joinRoom({ code, playerName: '플2' }, who(2), T0 + 1); // 토큰 없이 같은 소켓 → 재발급
+
+    expect(await client.hget(matchKey(matchId), 'p:p2:tokenHash')).toBe(sha256(rotated.playerToken));
+
+    const manager = {
+      findOne: async () => null,
+      create: (_e: unknown, row: unknown) => row,
+      save: async (row: unknown) => row,
+    };
+    const result = new TetrisBattleResultService(
+      room,
+      createMockRepository() as never,
+      createMockRepository() as never,
+      createMockRepository() as never,
+      createMockRepository() as never,
+      { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+    );
+    const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
+    // 리플레이 내용은 이 경기와 무관해 INVALID지만, 인증(토큰)은 통과해야 한다
+    await expect(
+      result.submitReplay({ matchId, playerToken: rotated.playerToken, replay, userId: null, now: T0 + 2_000 }),
+    ).resolves.toEqual({ verdict: 'INVALID' });
+  });
 });

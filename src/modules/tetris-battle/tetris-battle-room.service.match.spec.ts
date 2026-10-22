@@ -612,6 +612,29 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
       expect(newHash).toBe(createHash('sha256').update(again.playerToken).digest('hex'));
     });
 
+    it('rematch로 비운 직전 매치(제출 마감 전)도 재발급 토큰 해시를 갱신한다 — 새 토큰으로 직전 경기 제출 가능', async () => {
+      const { code, matchId } = await started();
+      mock.patchRoom(code, (r) => (r.status = 'RESULT'));
+      await service.rematch(code, A.socketId, T0);
+      expect(mock.readRoom(code)?.match).toBeNull();
+      expect(mock.readRoom(code)?.previousMatch?.matchId).toBe(matchId);
+
+      const again = await service.joinRoom({ code, playerName: '참가0' }, B, T0 + 1);
+      const newHash = createHash('sha256').update(again.playerToken).digest('hex');
+      expect(store.setTokenHash).toHaveBeenCalledWith(expect.anything(), matchId, 'p2', newHash);
+    });
+
+    it('재대결 후 새 경기 중 재발급이면 현재 매치와 직전 매치 둘 다 갱신', async () => {
+      const { code, matchId: first } = await started();
+      mock.patchRoom(code, (r) => (r.status = 'RESULT'));
+      await service.rematch(code, A.socketId, T0);
+      await service.setReady(code, B.socketId, true, T0);
+      const second = (await service.startMatch(code, A.socketId, T0)).starting.matchId;
+
+      await service.joinRoom({ code, playerName: '참가0' }, B, T0 + 1);
+      expect(store.setTokenHash.mock.calls.map((c) => c[1]).sort()).toEqual([first, second].sort());
+    });
+
     it('매치가 없는 방(WAITING)에서의 토큰 재발급은 매치를 건드리지 않는다', async () => {
       const { code } = await readyRoom();
       await service.joinRoom({ code, playerName: '참가0' }, B, T0 + 1);
