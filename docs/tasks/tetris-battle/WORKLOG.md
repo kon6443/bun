@@ -191,3 +191,6 @@
 - 백(서브에이전트): `GET /api/v1/tetris-battle/lobby`(`{waitingRooms, playingRooms}`, `scanLobby` 분리·Redis 2초 공유 캐시) · `GET /api/v1/tetris-battle/matches?limit&cursor`(VERIFIED·비숨김, CRTD_AT DESC·MATCH_ID DESC 키셋, base64url 커서, 1위 없는 경기 제외 — winnerName 항상 문자열, 한 페이지가 limit보다 적을 수 있음). ci:core unit 1307 · E2E 225 · 6380 104/104
 - 프(`next-bun-bd`): `/games` 카드 "친구와 대전"+NEW(`page.tsx` +12) · 테트리스 홈 2열 주요 버튼 + "지금 열린 방 N개" + 최근 대전 5(`TetrisHome.tsx` +10/−6) · 전체 목록 `/games/tetris/battle/matches`(nextCursor로 더 보기, 422면 처음부터). test 705, 리뷰 R3 두 리뷰어 0
 - 백 리뷰 R1: review-flow 확정 0(CRTD_AT 실데이터 ms 정밀도 확인) · Opus 확정 1(위조 커서 t 범위 → 500) 의심 3(NLS 정렬 — **메인 `pnpm db:select` NLS_SORT·NLS_COMP = BINARY 확인, 해소** · P5 재저장 CRTD_AT 덮어쓰기 · lobbyCounts Redis 오류 500) → N1~N3 수정 지시
+- N1~N3 반영(반증 3/3). R2: review-flow **확정 0**(6380 104/104 · lint 0/6 · unit 1311 · tsc ✅) · Opus **확정 0**. **P7 백 종료**
+- 실서버(:3500 최신 dist 재시작): `GET …/matches?limit=3` 200 · 위조 커서(t=9e15) 422 · `GET …/lobby` 200. 프론트 :3000 홈 "최근 대전"·전체 목록이 실데이터로 표시(운영에서 사용자들이 진행한 2~4인전 포함 — 1차 배포 후 운영 대전·저장 정상 동작 방증)
+- 직전 사용자 문의 "최근 대전을 못 불러온다": :3500이 P7 이전 빌드라 `/matches` 404 → 재시작으로 해소
