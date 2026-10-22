@@ -230,3 +230,9 @@
 - 프론트(`next-bun-1b`, 미푸시): origin/main `19f4cf7` 위 6커밋(e152c6f 엔진 v1 · 323e5a5 렌더러 · dba17b6 E2 · 41cdcb6 S1 엔진+생성 데이터(합침) · 03b4d83 시뮬레이터·탐색 봇·병렬 · 51e727b 주간 seed 2→6) — 87110e1은 `--onto`로 제외, 커밋마다 단독 tsc·lint·test 통과(e152c6f는 작업 트리 `.next/types` 잔여물만 제외하면 0)
 - 주간 재생성(D-031): 허용 2070/9171쌍 · 다른 seed 재검증 대역 안 63%(직전 40%) · 영향 530~1410(직전 208~3275) · 매니페스트 `ee6d0fe6…` · ENGINE_VERSION 3 유지(미배포)
 - 백엔드 재동기화: 3파일(weeklyCombos·골든·매니페스트) · 단위 1446 · E2E 230·56 skip · 리뷰 두 리뷰어 확정 0 — 의심 해소: `pnpm db:select`로 GAME_REPLAYS 집계 → TETRIS v1 38건뿐(디펜스 0) · 프론트 디펜스 브랜치 원격 미존재(배포 이력 없음)
+
+## 2026-10-22 — F1a 수신 · 메인 검증 (build · Playwright S1 클리어)
+- 프론트 F1a(`next-bun-1b`, 미커밋, 엔진·매니페스트·골든 무변경): `/games` 카드 → `/games/defense` 허브(캠페인 지도 8·잠김·별) → `/games/defense/campaign/[s1~s8]`(난이도, 어려움은 보통 클리어 후) → `/games/defense/play/stage/[boardKey]`(s1·s1-easy·s1-hard, `?seed=` 고정) → 결과(별·다시·다음·패배 원인) · useDefensePlay·HUD·WaveBar·TowerRing(2탭·단축키·한글/Dvorak)·진행·다시보기 localStorage · 렌더러 타워 6·적 12종 · lint 0·typecheck·test 1088 · 리뷰 R4 두 리뷰어 0
+- 메인: 프론트 `next build` exit 0(play 10.8kB) · 운영 빌드(3000) Playwright `defense-f1a.mjs` **20/20**(모바일 390·데스크톱 1280): 허브 잠김 · 어려움 잠김 · 3× · 가이드 순서 타워 7기 · **S1 보통 클리어 victory·별 3·목숨 20** · 다음 → S2 · S2 해금 저장 · localStorage 진행·다시보기 · 어려움 열림 · 콘솔·페이지 오류 0. 스크린샷 `scratchpad/e2e/shots/defense-*.png`
+- 관찰(F1b 전달): 타워·적이 대부분 흰·회색 원이라 종류 구분이 약함(대포·궁수, 졸개·질주병) · 하단 BNB가 허브 목록 아래를 덮음(스크롤로 접근은 가능)
+- DESIGN §F10 경로 `play/stage/[stageId]` → `[boardKey]`(난이도 접미사 — 프론트 요청)

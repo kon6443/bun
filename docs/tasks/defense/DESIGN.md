@@ -755,7 +755,7 @@ export interface GameEngine {
 ### §F10. 기술 설계 (`next-bun-1b` 제안 2026-10-21 — 근거 파일:라인은 WORKLOG 같은 날 절)
 **라우트** (BNB 보임 / 숨김)
 - 보임: `/games/defense`(허브) · `/campaign`(지도·브리핑) · `/rankings?board=` · `/codex`(도감)
-- 숨김 `(fullscreen)/`: `play/stage/[stageId]` · `play/endless` · `play/weekly` · `replays/[scoreId]`(서버 기록) · `replays/local/[stageId]`(캠페인 로컬)
+- 숨김 `(fullscreen)/`: `play/stage/[boardKey]` · `play/endless` · `play/weekly` · `replays/[scoreId]`(서버 기록) · `replays/local/[stageId]`(캠페인 로컬)
 - `/games/defense/dev` 성능 측정 화면 — 운영 빌드에선 `notFound()`(D-020)
 - BNB 숨김 판정 `gamesPaths.ts`를 `/^\/games\/[^/]+\/(play|replays)(\/|$)/` + `/fishing`으로 일반화(I0)
 
