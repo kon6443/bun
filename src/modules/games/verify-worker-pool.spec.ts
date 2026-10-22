@@ -23,7 +23,8 @@ parentPort.on('message', ({ id, input }) => {
 `;
 
 /** 조건이 참이 될 때까지 짧게 반복 확인 — 고정 대기 대신 써서 느린 기기·CI에서도 흔들리지 않게 한다 */
-const waitUntil = async (condition: () => boolean, timeoutMs = 5000) => {
+// 상한은 jest 기본 테스트 시간(5초)보다 짧게 — 실패할 때 일반 timeout 대신 이 메시지가 보이게
+const waitUntil = async (condition: () => boolean, timeoutMs = 3000) => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
     if (Date.now() > deadline) throw new Error(`${timeoutMs}ms 안에 조건이 충족되지 않음`);
@@ -45,13 +46,18 @@ const BROKEN_WORKER = `throw new Error('load failed');`;
 describe('VerifyWorkerPool', () => {
   let pool: VerifyWorkerPool<Input, number>;
   let created: number;
+  /** 종료된 워커 수 — 크래시·terminate 모두 'exit'가 난다 */
+  let exits: number;
 
   const makePool = async (size: number, queueLimit: number, timeoutMs: number, code = TEST_WORKER, disabledRetryMs?: number) => {
     created = 0;
+    exits = 0;
     pool = new VerifyWorkerPool<Input, number>(
       () => {
         created++;
-        return new Worker(code, { eval: true });
+        const worker = new Worker(code, { eval: true });
+        worker.on('exit', () => exits++);
+        return worker;
       },
       { size, queueLimit, timeoutMs, disabledRetryMs },
     );
@@ -173,9 +179,10 @@ describe('VerifyWorkerPool', () => {
   it('뜨자마자(ready 뒤) 대기 중에 죽는 워커도 크래시로 세어 꺼야 함 — ready만으로는 카운트를 되돌리지 않는다', async () => {
     await makePool(1, 1, 2000, IDLE_DYING_WORKER);
 
-    await waitUntil(() => created >= 3);
-    // 세 번째도 대기 중에 죽으면 자리가 꺼진다 — 그 뒤로는 더 띄우지 않는다(재시도 간격 60초)
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // 세 번째 워커까지 기동·사망을 마칠 때까지 기다린다 — 기동이 느린 환경에서도 회귀(ready로 카운트 리셋 → 네 번째 생성)를 놓치지 않게
+    await waitUntil(() => exits >= 3);
+    // 자리가 꺼졌으면 재시도 간격(60초) 전까지 더 띄우지 않는다. 회귀라면 백오프(100·200ms) 안에 네 번째가 생긴다
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(created).toBe(3);
   });
 
