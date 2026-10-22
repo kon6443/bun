@@ -7,6 +7,7 @@ import { gzipSync } from 'node:zlib';
 import { DataSource } from 'typeorm';
 import { TetrisBattleResultController } from '../src/modules/tetris-battle/tetris-battle-result.controller';
 import { TetrisBattleResultService } from '../src/modules/tetris-battle/tetris-battle-result.service';
+import { TetrisBattleBrowseService, encodeMatchCursor } from '../src/modules/tetris-battle/tetris-battle-browse.service';
 import { TetrisBattleRoomService } from '../src/modules/tetris-battle/tetris-battle-room.service';
 import { MatchSnapshot, TetrisBattleMatchStore } from '../src/modules/tetris-battle/tetris-battle-match.store';
 import { BattleReplayInput, simulateBattleReplay } from '../src/modules/tetris-battle/battle-engine';
@@ -61,10 +62,12 @@ describe('E2E 테트리스 대전 결과', () => {
   let playerRepository: MockRepository<TetrisBattlePlayer>;
   let replayRepository: MockRepository<TetrisBattleReplay>;
   let saved: unknown[];
+  let lobbyCounts: jest.Mock;
 
   const submit = (body: unknown, matchId = MATCH) => request(app.getHttpServer()).post(e2e.url(`/tetris-battle/matches/${matchId}/replays`)).send(body as object);
 
   beforeEach(async () => {
+    lobbyCounts = jest.fn().mockResolvedValue({ waitingRooms: 3, playingRooms: 1 });
     subs = {};
     saved = [];
     const proto = TetrisBattleMatchStore.prototype;
@@ -96,6 +99,7 @@ describe('E2E 테트리스 대전 결과', () => {
     playerRepository = createMockRepository<TetrisBattlePlayer>();
     replayRepository = createMockRepository<TetrisBattleReplay>();
     const manager = {
+      findOne: async () => null,
       create: (_e: unknown, row: Record<string, unknown>) => row,
       save: async (row: unknown) => (saved.push(row), row),
     };
@@ -104,7 +108,8 @@ describe('E2E 테트리스 대전 결과', () => {
       controllers: [TetrisBattleResultController],
       providers: [
         TetrisBattleResultService,
-        { provide: TetrisBattleRoomService, useValue: { readyRedisClient: () => ({}) } },
+        TetrisBattleBrowseService,
+        { provide: TetrisBattleRoomService, useValue: { readyRedisClient: () => ({}), lobbyCounts } },
         { provide: getRepositoryToken(TetrisBattleMatch), useValue: matchRepository },
         { provide: getRepositoryToken(TetrisBattlePlayer), useValue: playerRepository },
         { provide: getRepositoryToken(TetrisBattleReplay), useValue: replayRepository },
@@ -178,6 +183,75 @@ describe('E2E 테트리스 대전 결과', () => {
     it('본문이 300kb를 넘으면 413 PAYLOAD_TOO_LARGE', async () => {
       const res = await submit({ playerToken: TOKEN_P1, replay: { ...SURVIVOR, inputs: new Array(160_000).fill(12) } }).expect(413);
       expect(res.body).toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    });
+  });
+
+  describe('대전 입구 (D-025)', () => {
+    const get = (path: string) => request(app.getHttpServer()).get(e2e.url(path));
+
+    it('GET /tetris-battle/lobby → 200 { waitingRooms, playingRooms }', async () => {
+      const res = await get('/tetris-battle/lobby').expect(200);
+      expect(res.body).toEqual({ code: 'SUCCESS', data: { waitingRooms: 3, playingRooms: 1 }, message: '' });
+    });
+
+    it('로비: Redis를 못 쓰면 503', async () => {
+      lobbyCounts.mockResolvedValueOnce(null);
+      expect((await get('/tetris-battle/lobby').expect(503)).body).toMatchObject({ code: 'TETRIS_BATTLE_UNAVAILABLE' });
+    });
+
+    it('GET /tetris-battle/matches?limit=1 → 200 목록 + nextCursor, 커서로 다음 페이지', async () => {
+      const row = (n: number) =>
+        ({ matchId: `m${n}`.padEnd(16, 'x'), roomName: `방${n}`, playerCount: 2, endedAt: new Date(Date.UTC(2026, 9, 22, 0, n)), crtdAt: new Date(Date.UTC(2026, 9, 22, 0, n)) }) as TetrisBattleMatch;
+      matchRepository.find.mockResolvedValueOnce([row(2), row(1)]);
+      playerRepository.find.mockResolvedValueOnce([
+        { matchId: row(2).matchId, name: '우승', place: 1 },
+        { matchId: row(2).matchId, name: '준우승', place: 2 },
+      ] as TetrisBattlePlayer[]);
+
+      const first = await get('/tetris-battle/matches?limit=1').expect(200);
+
+      expect(first.body).toEqual({
+        code: 'SUCCESS',
+        message: '',
+        data: {
+          items: [
+            {
+              matchId: row(2).matchId,
+              roomName: '방2',
+              playerCount: 2,
+              endedAt: '2026-10-22T00:02:00.000Z',
+              winnerName: '우승',
+              players: [
+                { name: '우승', place: 1 },
+                { name: '준우승', place: 2 },
+              ],
+            },
+          ],
+          nextCursor: expect.any(String),
+        },
+      });
+
+      matchRepository.find.mockResolvedValueOnce([row(1)]);
+      playerRepository.find.mockResolvedValueOnce([{ matchId: row(1).matchId, name: '이전 우승', place: 1 }] as TetrisBattlePlayer[]);
+      const second = await get(`/tetris-battle/matches?limit=1&cursor=${first.body.data.nextCursor}`).expect(200);
+      expect(second.body.data).toMatchObject({ items: [{ matchId: row(1).matchId }], nextCursor: null });
+    });
+
+    it.each([
+      ['limit 0', '/tetris-battle/matches?limit=0'],
+      ['limit 21', '/tetris-battle/matches?limit=21'],
+      ['limit 숫자 아님', '/tetris-battle/matches?limit=abc'],
+      ['cursor 위조', '/tetris-battle/matches?cursor=garbage'],
+      ['cursor의 matchId 형식 위반', `/tetris-battle/matches?cursor=${encodeMatchCursor({ t: 1, id: 'x' })}`],
+      ['알 수 없는 쿼리(forbidNonWhitelisted)', '/tetris-battle/matches?sort=asc'],
+    ])('%s → 422 VALIDATION_ERROR', async (_label, path) => {
+      expect((await get(path).expect(422)).body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    it('목록 라우트가 단건 조회 GET /matches/:matchId와 충돌하지 않는다', async () => {
+      matchRepository.findOne.mockResolvedValueOnce(null);
+      expect((await get(`/tetris-battle/matches/${MATCH}`).expect(404)).body).toMatchObject({ code: 'TETRIS_BATTLE_MATCH_NOT_FOUND' });
+      expect(matchRepository.find).not.toHaveBeenCalled();
     });
   });
 

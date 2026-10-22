@@ -180,3 +180,17 @@
 - 주의: 이 검증으로 상용 DB에 테스트 경기 1건(2행+리플레이 2행)이 남음 — 정리 여부 사용자 확인
 - Opus R2 **확정 0**(unit 295) — 닫은 뒤 저장 실패·`__saved` 실패·가드 만료 동시 저장·예약 필드 모두 문제 없음. 의심 1(낮음): 재대결 뒤 같은 소켓 토큰 없는 재입장으로 재발급되면 직전 경기 Hash 토큰 해시 미갱신 → 직전 경기 제출 403 — 후속으로 기록
 - **P5 종료**: R1 확정 8 → R2 두 리뷰어 0 · 실서버 end-to-end(제출 → VERIFIED → DB 저장 → 조회 API) 통과
+
+## 2026-10-22 — P6 대전 기록 재생·공유 (프론트, `feat-onam-tetris-battle-share`) · 메인 실서버 검증
+- 프론트 보고: 24파일 +1718/−9 — 경기 페이지 `(fullscreen)/battle/matches/[matchId]`(결과표·2~4판 동기 재생·배속·탐색·가비지·KO·"기록 없음") · OG route(group 밖) · 결과 화면 "기록 보기(새 탭)·공유"(GET match 3초 폴링 최대 75초) · 로비·방은 `(live)` route group으로 이동(소켓은 live만) · `_shared` 수정 0줄 · 디펜스 충돌 파일 0줄. lint 0 · typecheck 0 · test 689 · build ✅. 재생 정합: 골든 VERIFIED 13건 끝까지 재생 = simulateBattleReplay 결과. 리뷰 R3 두 리뷰어 0
+- 메인 실서버: 백(이 worktree `feat-onam-tetris-battle-share` dist, :3500, Redis 6380) + 프(:3000 dev) → Playwright 2탭(`scratchpad/live/flow-p6.js`): 대전 → 결과 "기록 저장됨" → "기록 보기(새 탭)·공유" 활성 → 경기 페이지(실연동 방 · 2인전 · 결과표 · 1위 "우승"/2위 "KO" 재생) → `…/og` 200. 스크린샷 `scratchpad/live/p6-viewer.png`. 콘솔 404 1건은 저장 전 GET match 폴링 응답(정상 흐름)
+- 미검증(실기): 카톡 인앱·iOS 홈 앱에서 새 탭 열 때 방 유지 · 실기기 2×2 성능
+- 상용 DB 테스트 경기 1건 추가(`IWq5cJJZVkE4BFmz`) — D-023 ②와 같이 둠
+
+## 2026-10-22 — P7 대전 입구·최근 대전 목록
+- 백(서브에이전트): `GET /api/v1/tetris-battle/lobby`(`{waitingRooms, playingRooms}`, `scanLobby` 분리·Redis 2초 공유 캐시) · `GET /api/v1/tetris-battle/matches?limit&cursor`(VERIFIED·비숨김, CRTD_AT DESC·MATCH_ID DESC 키셋, base64url 커서, 1위 없는 경기 제외 — winnerName 항상 문자열, 한 페이지가 limit보다 적을 수 있음). ci:core unit 1307 · E2E 225 · 6380 104/104
+- 프(`next-bun-bd`): `/games` 카드 "친구와 대전"+NEW(`page.tsx` +12) · 테트리스 홈 2열 주요 버튼 + "지금 열린 방 N개" + 최근 대전 5(`TetrisHome.tsx` +10/−6) · 전체 목록 `/games/tetris/battle/matches`(nextCursor로 더 보기, 422면 처음부터). test 705, 리뷰 R3 두 리뷰어 0
+- 백 리뷰 R1: review-flow 확정 0(CRTD_AT 실데이터 ms 정밀도 확인) · Opus 확정 1(위조 커서 t 범위 → 500) 의심 3(NLS 정렬 — **메인 `pnpm db:select` NLS_SORT·NLS_COMP = BINARY 확인, 해소** · P5 재저장 CRTD_AT 덮어쓰기 · lobbyCounts Redis 오류 500) → N1~N3 수정 지시
+- N1~N3 반영(반증 3/3). R2: review-flow **확정 0**(6380 104/104 · lint 0/6 · unit 1311 · tsc ✅) · Opus **확정 0**. **P7 백 종료**
+- 실서버(:3500 최신 dist 재시작): `GET …/matches?limit=3` 200 · 위조 커서(t=9e15) 422 · `GET …/lobby` 200. 프론트 :3000 홈 "최근 대전"·전체 목록이 실데이터로 표시(운영에서 사용자들이 진행한 2~4인전 포함 — 1차 배포 후 운영 대전·저장 정상 동작 방증)
+- 직전 사용자 문의 "최근 대전을 못 불러온다": :3500이 P7 이전 빌드라 `/matches` 404 → 재시작으로 해소

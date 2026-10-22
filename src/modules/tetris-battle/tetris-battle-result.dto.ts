@@ -1,9 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsDefined, IsIn, IsInt, IsObject, IsString, Matches, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsDefined,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 import { BATTLE_ENGINE_VERSION, MAX_BATTLE_FRAMES, MAX_GARBAGE_EVENTS } from './battle-engine';
 import { MAX_INPUT_LENGTH, SEED_MAX } from './battle-engine/engine';
+import { MATCH_LIST_DEFAULT_LIMIT, MATCH_LIST_MAX_LIMIT } from './tetris-battle.constants';
 
 // ==================== Request ====================
 
@@ -116,4 +131,53 @@ export class BattleReplayDetailDto {
 
 export class BattleReplayDetailResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: BattleReplayDetailDto }) data: BattleReplayDetailDto;
+}
+
+// ==================== 대전 입구 (D-025) ====================
+
+export class ListBattleMatchesQueryDto {
+  @ApiPropertyOptional({ description: `개수 (1~${MATCH_LIST_MAX_LIMIT}, 기본 ${MATCH_LIST_DEFAULT_LIMIT})`, example: MATCH_LIST_DEFAULT_LIMIT })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MATCH_LIST_MAX_LIMIT)
+  limit?: number;
+
+  @ApiPropertyOptional({ description: '직전 응답의 nextCursor (불투명 문자열 — 그대로 전달). 없으면 첫 페이지' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  cursor?: string;
+}
+
+export class BattleLobbyDto {
+  @ApiProperty({ description: '입장 가능한 대기 중 방 수', example: 3 }) waitingRooms: number;
+  @ApiProperty({ description: '경기 중·결과 화면인 방 수(입장 불가)', example: 1 }) playingRooms: number;
+}
+
+export class BattleLobbyResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: BattleLobbyDto }) data: BattleLobbyDto;
+}
+
+export class BattleMatchListPlayerDto {
+  @ApiProperty({ example: '테트리스왕' }) name: string;
+  @ApiProperty({ example: 1 }) place: number;
+}
+
+export class BattleMatchListItemDto {
+  @ApiProperty({ example: 'AbCdEfGhIjKlMnOp' }) matchId: string;
+  @ApiProperty({ example: '한판 해요' }) roomName: string;
+  @ApiProperty({ example: 3 }) playerCount: number;
+  @ApiProperty({ description: '경기 종료 (UTC ISO)' }) endedAt: Date;
+  @ApiProperty({ description: '1위 이름 — 항상 문자열(1위가 없는 경기는 목록에 나오지 않는다)', example: '테트리스왕' }) winnerName: string;
+  @ApiProperty({ type: [BattleMatchListPlayerDto], description: '순위 오름차순' }) players: BattleMatchListPlayerDto[];
+}
+
+export class BattleMatchListDto {
+  @ApiProperty({ type: [BattleMatchListItemDto], description: '최근 저장 순(CRTD_AT DESC, MATCH_ID DESC)' }) items: BattleMatchListItemDto[];
+  @ApiPropertyOptional({ description: '다음 페이지 커서 — 없으면 null(마지막 페이지)', nullable: true }) nextCursor: string | null;
+}
+
+export class BattleMatchListResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: BattleMatchListDto }) data: BattleMatchListDto;
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -20,12 +20,16 @@ import {
   TetrisBattleUnavailableErrorResponseDto,
 } from './tetris-battle-error.dto';
 import {
+  BattleLobbyResponseDto,
+  BattleMatchListResponseDto,
+  ListBattleMatchesQueryDto,
   BattleMatchResponseDto,
   BattleReplayDetailResponseDto,
   BattleReplaySubmittedResponseDto,
   SubmitBattleReplayDto,
 } from './tetris-battle-result.dto';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
+import { TetrisBattleBrowseService } from './tetris-battle-browse.service';
 
 const MATCH_ID_PARAM = { name: 'matchId', description: '경기 ID (matchStarting으로 받은 16자)', example: 'AbCdEfGhIjKlMnOp' };
 
@@ -37,7 +41,42 @@ const MATCH_ID_PARAM = { name: 'matchId', description: '경기 ID (matchStarting
 @ApiTags('tetris-battle')
 @Controller('tetris-battle')
 export class TetrisBattleResultController {
-  constructor(private readonly resultService: TetrisBattleResultService) {}
+  constructor(
+    private readonly resultService: TetrisBattleResultService,
+    private readonly browseService: TetrisBattleBrowseService,
+  ) {}
+
+  // ==================== 대전 입구 (D-025) ====================
+
+  @Get('lobby')
+  @Throttle(THROTTLE_BATTLE_RESULT_READ)
+  @ApiOperation({
+    summary: '대전 로비 방 수',
+    description: '테트리스 홈 "지금 열린 방 N개"용 — 소켓 없이. 레플리카 공통 2초 캐시(숫자가 최대 2초 늦을 수 있다)',
+  })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: BattleLobbyResponseDto })
+  @ApiThrottledResponse('요청 횟수 초과 (초당 3회 / 분당 60회)')
+  @ApiResponse({ status: 503, description: '대전 상태 저장소(Redis) 사용 불가', type: TetrisBattleUnavailableErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  async getLobby() {
+    const data = await this.browseService.getLobby();
+    return { code: 'SUCCESS', data, message: '' };
+  }
+
+  @Get('matches')
+  @Throttle(THROTTLE_BATTLE_RESULT_READ)
+  @ApiOperation({
+    summary: '최근 대전 목록',
+    description: '검증된(VERIFIED)·숨김 아닌 경기, 최근 저장 순. 다음 페이지는 응답의 nextCursor를 cursor로 그대로 보낸다',
+  })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: BattleMatchListResponseDto })
+  @ApiCommonValidationResponse()
+  @ApiThrottledResponse('요청 횟수 초과 (초당 3회 / 분당 60회)')
+  @ApiCommonInternalServerErrorResponse()
+  async listMatches(@Query() query: ListBattleMatchesQueryDto) {
+    const data = await this.browseService.listMatches(query);
+    return { code: 'SUCCESS', data, message: '' };
+  }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Post('matches/:matchId/replays')
