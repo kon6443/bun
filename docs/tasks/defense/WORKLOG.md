@@ -178,3 +178,20 @@
 - **통합 검증**(백엔드 브랜치 dist 3500·Redis 6380·운영 DB + 프론트 최종 커밋 `cacfca0` 운영 빌드 3000): 프론트 build exit 0 · 실API 회귀 22/23(로그인 생략) · 새 동작 — `/boards` · 세션 `boardKey: default, mode: null` · 테트리스 `board` 422 · `rankings` 보드 기본·`board=default&period=weekly` 200·`endless-s1`/`Bad_Key` 422 · 리플레이 `params {das,arr}`+최상위 das·arr · 요약 `boardKey` · 형식 혼합 422 · CORS `Expose-Headers: Retry-After` · 빨리 감기 422 `GAME_REPLAY_INVALID` → 같은 세션 409 `GAME_SESSION_INVALID`(1차는 세션 발급 스로틀 20/분에 걸려 65초 뒤 재실행) · Playwright 게임 **29/29** · 공유 **14/14** + 추가 **4/4** · `/og` 200 `image/png` · 운영 `/games/defense/dev` 404 · 개발 서버 측정 화면 하단(360·390px) "10초 측정" 버튼 하단 691px < BNB 상단 709~710px(겹침 없음)·오류 0
 - 최종: 단위 **1059/1059**(51) · E2E **176·2 skip** · lint 0 errors·경고 6 · build · stubs 0 · 검증 서버 종료(LISTEN 0)
 - 프론트(`next-bun-1b`): 브랜치 최종 리뷰 R1 두 리뷰어 0 → 커밋 3개 `87110e1`(I0-F1+F2 — 같은 테트리스 파일을 겹쳐 고쳐 합침)·`07035eb`(E1)·`cacfca0`(R1), 커밋마다 그 시점 트리로 lint·typecheck·test 단독 검증
+
+## 2026-10-22 — E2 지시 · B1-b 디펜스 레지스트리 연결 (사용자 "구현 남은 것 진행")
+- 프론트(`next-bun-1b`)에 E2 지시(범위·계약 고정: simulateReplay 시그니처·실패 사유 유지, 무한·주간 헤더 `{mode:'endless'|'weekly', boardKey, seed, ticks, inputs}`) → 질의 2건 답 = D-026(무한·주간 데이터는 S1 · 결과 `wavesStarted` 추가). 커밋은 사용자 승인 후로 정정 전달
+- 백엔드 B1-b(미커밋):
+  - `defense-game-engine.ts` — 보드(endless-s{시즌}·weekly-YYYY-wNN, 본문 없음 = 무한) · 주간 seed HMAC · 비밀값 없으면 weekly만 503 `GAME_WEEKLY_UNAVAILABLE`·/boards에서 빠짐 · 미래 주·없는 시즌 422 · params `{}`만 · 30틱·3배속·162,000틱·20,000·TTL 4시간
+  - `defense-verify.ts`(엔진 래핑 — 예외 = `ENGINE_ERROR` 확정 결과 · NOT_STARTED 추정, D-026에서 `wavesStarted`로 교체 예정) · `defense-verify.worker.ts`(풀 규약) · `defense-verify.service.ts`(첫 검증 때 풀 지연 생성 · `GAME_VERIFY_WORKERS` 1~8 · 종료 가드)
+  - 레지스트리 `isPeriodRanking`(주간은 period 무시 — getRankings·등록 직후 순위) · `topLevelReplayParams`(getReplay의 `TETRIS` 분기 제거) · `GAME_TYPES`에 DEFENSE · 모듈 factory 배선 · Swagger · README env
+- 리뷰 루프:
+| 라운드 | review-flow | Opus | 조치 |
+|---|---|---|---|
+| R1 | 0(의심 2: 서비스 테스트 공백·주간 리플레이 복제) | 0(의심 6: 주간 리플레이 복제·결정적 타임아웃 반복·배선 테스트 공백·종료 뒤 풀 재생성·NOT_STARTED 목숨 5 규칙·Swagger) | 서비스 spec(가짜 Worker)·모듈 spec·`destroyed` 가드·GameRanksDto 설명 · 복제·타임아웃은 DESIGN §B8 게이트(복제는 사용자 결정 대기) |
+| R2 | **0**(의심 1: Swagger 문구) | **0**(낮음 2: 모듈 spec이 셸 env에 깨짐·verify 배선 단정 없음) | 셋 다 반영(테스트·문구만) → **종료** |
+- 변이 확인: 종료 가드 제거·워커 상한 9·env 키 오타·verify 배선 교체 → 각각 실패 후 원복(sha 일치) · 셸에 `GAME_WEEKLY_SEED_SECRET=x`여도 모듈 spec 통과
+- 실제 워커(dist 빌드): `DefenseVerifyService` 워커 2개 기동 → 3건 왕복 20ms(`INVALID_HEADER` — S1 전 의도) → 정상 종료 (메인·리뷰어 각각 재현)
+- 검증: 단위 **1110/1110**(54) · E2E **190·2 skip**(+14 디펜스) 3회 중 2회 전부 통과, 1회 `file-share` 401 케이스 1건 실패(이번 변경 밖 모듈, 단독 5회 재실행 모두 통과 — 미재현) · 작성 직후 games E2E 첫 4회 중 3회에서 매번 다른 1~2건 실패(메시지 미보존), 이후 12+3회 연속 통과 — 미재현, 원인 미확정(동시 부하 의심) · lint 0 errors·경고 6 · build · stubs 0
+- 추가(사용자 결정 D-027): 진행 중 주간 리플레이 404 — `isReplayPublic` + 단위 6·E2E 1 · prettier를 games 전체에 잘못 돌려 무관 파일 9개 서식 변경 → 역패치로 HEAD 복원, 편집 파일 7개는 3-way 병합으로 편집 줄 외 서식 제거 · 단위 **1116/1116** · games E2E 58/58 · tsc
+- 개발 서버(사용자 구경용): 백엔드 worktree `nest start --watch` 3500(Redis 6380, 운영 DB 접속 — 사용자 지시) · 프론트 worktree `next dev` 3000. `.env`에 `GAME_WEEKLY_SEED_SECRET` 없음 → `/boards`는 무한만, weekly 세션 503(설계대로)

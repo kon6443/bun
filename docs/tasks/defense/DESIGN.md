@@ -617,7 +617,7 @@ export interface GameEngine {
 }
 ```
 - 구현(I0-B1·I0-B2, `src/modules/games/game-engine.registry.ts`)과 같다. `ReplayInput.boardKey`는 세션 값(보드 도입 전 세션은 `defaultBoardKey`)
-- **B1으로 넘김**(I0-B2 리뷰): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로 ③ (브랜치 최종 리뷰) **엔진이 던진 예외 = 재현 실패(`ok: false`, 세션 소모)**, 워커 인프라 오류(대기열·시간 초과·워커 크래시·워커 처리 실패)만 throw → 503 — 결정적 예외가 503 + 세션 유지로 무한 재시도되지 않게. **워커 답 규약**: 디펜스 워커 스크립트는 `simulateReplay` 결과와 엔진 예외를 잡아 항상 `{ id, ok: true, result: VerifiedReplay }`(재현 실패면 `result.ok === false`)로 답하고, `{ ok: false }`는 워커 자체 처리 실패에만 쓴다(`verify-worker-pool.ts` 머리 주석)
+- **B1으로 넘김**(I0-B2 리뷰 — **B1-b에서 구현**: ① `isPeriodRanking(boardKey)` ② `topLevelReplayParams` ③ `defense-verify.ts`·`defense-verify.worker.ts`): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로 ③ (브랜치 최종 리뷰) **엔진이 던진 예외 = 재현 실패(`ok: false`, 세션 소모)**, 워커 인프라 오류(대기열·시간 초과·워커 크래시·워커 처리 실패)만 throw → 503 — 결정적 예외가 503 + 세션 유지로 무한 재시도되지 않게. **워커 답 규약**: 디펜스 워커 스크립트는 `simulateReplay` 결과와 엔진 예외를 잡아 항상 `{ id, ok: true, result: VerifiedReplay }`(재현 실패면 `result.ok === false`)로 답하고, `{ ok: false }`는 워커 자체 처리 실패에만 쓴다(`verify-worker-pool.ts` 머리 주석)
 - `VerifiedReplay`·`detail: Record<string, number>`는 유지(디펜스 detail: `wave·progress·kills·livesLeft·goldEarned·engineVersion`, 증강·주간 규칙 ID는 재생 응답에서 엔진이 다시 계산)
 - 테트리스: `resolveSessionBoard`는 본문 없을 때 `default`만, `params`는 DTO 최상위 `das`·`arr`를 서비스가 옮겨 담는다
 
@@ -672,6 +672,7 @@ export interface GameEngine {
 - **머지 전 차단**: M1~M3 실행(담당자) · `GAME_WEEKLY_SEED_SECRET` 서버 반영(없으면 주간 비활성으로 배포는 가능 — 사용자 판단)
 - **배포 직후 조치**: 운영 Redis로 디펜스 세션 발급·제출 1회 · 워커 검증 시간 실측(WORKLOG) · 테트리스 제출·랭킹 회귀 1회
 - **후속**: 오래된 주간 보드 리플레이 보관 정책(용량 실측 후)
+- **(B1-b 리뷰 추가)** 머지 전 판단: B1-b만 배포하면 DEFENSE 세션·제출 API가 열리지만 S1 전 엔진은 무한·주간을 재현하지 못해 제출이 전부 422(세션 소모) — **S1 사본 동기화 후 함께 배포**가 기본 · 배포 직후: 결정적으로 5초를 넘는 리플레이는 503 + 세션 유지로 재시도가 반복된다(워커 점유) — §E5 (b) 백엔드 실측으로 상한 2초 이내 확인, 넘으면 같은 세션 타임아웃 반복 시 소모·422 도입 · ✅ 진행 중인 주간 보드의 리플레이는 보드 종료 전 404(D-027, 레지스트리 `isReplayPublic`) — 랭킹·기록 요약(입력 없음)은 그대로 공개
 
 ---
 
