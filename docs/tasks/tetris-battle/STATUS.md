@@ -1,6 +1,6 @@
 # 테트리스 멀티(대전) · 화면 연출 강화
 
-- **상태**: 🟡 P-V1·P0·P1·P2·P3·P5 구현·리뷰·실서버 검증 완료(미커밋) · P6(대전 기록 재생·공유)은 디펜스 머지 대기(D-010) · 백·프 커밋 완료(미푸시) — 푸시·머지 지시 대기 (2026-10-22)
+- **상태**: 🟡 P-V1·P0·P1·P2·P3·P5 구현·리뷰·실서버 검증 완료(미커밋) · P6(대전 기록 재생·공유)은 디펜스 머지 대기(D-010) · 1차 배포 완료(2026-10-22) — 백 bun#277→#278 · 프 next-bun#359→#360 main 머지·배포 성공. P6(재생·공유)은 디펜스 머지 후 (2026-10-22)
 - **최종수정**: 2026-10-22
 - **관련 문서**: DESIGN.md(설계 정본) · DECISIONS.md · WORKLOG.md(조사 근거 파일:라인) · `research/01-global-patterns.md`(세계 사례·패턴) · 선행 `../games/`(테트리스·랭킹·리플레이 정본)
 
@@ -30,7 +30,7 @@
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: worktree·브랜치(백·프) · 디펜스 협의(D-003) · 백엔드 기반 조사 · 프론트 조사(`next-bun-bd`) · 세계 사례 리서치 · DESIGN 초안(§0 가능성 판정)
 - **다음 할 일**:
-  1. 푸시·머지 지시 대기(배포 순서 백엔드 → 프론트, Redis 512MB는 infra 재배포)
+  1. 사용자: 운영 실기기 2~4대 대전·프레임 확인 · 2레플리카 원격 채널 전달 확인 · Caddy 정상 확인
   2. 디펜스 main 머지 후 P6(D-023) — 이 브랜치를 main 위로 리베이스
   2. 배포 직후 조치: Redis 512MB 반영(`infra` 재배포 또는 `CONFIG SET`, D-012)(사용자 "구현은 아직 하지마")
 
@@ -78,6 +78,11 @@
 ## 커밋 (2026-10-22, 미푸시)
 - 프(`next-bun`): `be87ae6` feat(games) 연출 강화 · `0e09220` feat(games) 대전 래퍼·골든 · `b068d10` feat(games) 친구 대전 UI·매치·리플레이 제출
 - 백: `a89a18b` chore(infra) Redis 512mb · `9e3f023` feat(tetris-battle) 래퍼 사본 · `e9b6a6a` feat(entities) 결과 테이블·마이그레이션(실행 완료) · `eb09a12` feat(tetris-battle) 대전 모듈 · `abe5ad2` docs(tetris-battle)
+
+## 배포 (2026-10-22)
+- 백: #277(feat→develop) · #278(develop→main, `c016557`) → Deploy NestJS ✅ 6m49s · Deploy Infra Stack ✅(Redis 512mb 반영 — **Caddy도 `caddy:latest` 새 다이제스트로 함께 교체됨**, registry 무변경) 
+- 프: #359(feat→develop) · #360(develop→main) → Deploy Next ✅ 4m0s
+- 후속: Caddy 이미지 버전 고정(infra yml 수정 시마다 latest로 따라 올라감)
 
 ## 운영 메모
 - 로컬 실서버: :3500 = 이 worktree `dist`(cwd defense worktree, `REDIS_PORT=6380`) — 디펜스 서버를 내리고 띄움(bun-62 통보). 테스트 끝나면 bun-62에 알린다
