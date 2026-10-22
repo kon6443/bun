@@ -1,10 +1,10 @@
 {
   "engineVersion": 3,
-  "sha256": "17eee826317f8c1755d29fa21b1f274e0ad3bcc2331d8e29f752a4ec212c7b19",
+  "sha256": "ee6d0fe6f80192b458852bac7dc67df2f233b25dc2856f19ac2469c08f6fcc2e",
   "files": [
     {
       "path": "__fixtures__/golden-replays.json",
-      "sha256": "9fd9759d28961f9571bfa501e0b60eb77dd194879775713ba50d78840dff71fd"
+      "sha256": "1415f0c33d4d3b8922369b68eccbb30476966ea5a7fd0293725958d2c2a71bdd"
     },
     {
       "path": "augment.ts",
@@ -52,7 +52,7 @@
     },
     {
       "path": "data/weeklyCombos.ts",
-      "sha256": "f08f078ce0dc92132cbbb4846a7f734a17d88c406fab4be0b5eef62f51fb13dd"
+      "sha256": "de84c4155c08e54e6b23708a5da45c6cfbbb2741f136d7e1f18978d8da2111b1"
     },
     {
       "path": "effects.ts",
