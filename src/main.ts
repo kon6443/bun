@@ -14,6 +14,7 @@ import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { TeamChatService } from './modules/team/team-chat.service';
 import { GameSessionService } from './modules/games/game-session.service';
+import { TetrisBattleRoomService } from './modules/tetris-battle/tetris-battle-room.service';
 import { ConfigService } from '@nestjs/config';
 import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
 import { Request, Response, NextFunction } from 'express';
@@ -91,6 +92,9 @@ async function bootstrap() {
     // Redis 클라이언트를 GameSessionService에 주입 (게임 세션 seed — 레플리카 간 공유·1회용)
     const gameSessionService = app.get(GameSessionService);
     gameSessionService.setRedisClient(redisAdapter.getPubClient());
+
+    // Redis 클라이언트를 TetrisBattleRoomService에 주입 (대전 방 상태 — 레플리카 간 공유, 원자 변경은 CAS Lua)
+    app.get(TetrisBattleRoomService).setRedisClient(redisAdapter.getPubClient());
 
     // HTTP 스로틀 저장소 전용 Redis 연결 (레플리카 간 카운터 공유 — 어댑터 클라이언트와 분리, 이유는 저장소 주석)
     app.get<RedisThrottlerStorage>(getStorageToken()).connect({

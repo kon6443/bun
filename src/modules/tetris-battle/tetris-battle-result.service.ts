@@ -1,0 +1,378 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { createHash, timingSafeEqual } from 'crypto';
+import type { Redis } from 'ioredis';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { toErrorDetail } from '../../common/utils/error.utils';
+import { TetrisBattleMatch } from '../../entities/TetrisBattleMatch';
+import { TetrisBattlePlayer, TetrisBattleVerdict } from '../../entities/TetrisBattlePlayer';
+import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
+import { User } from '../../entities/User';
+import { BATTLE_ENGINE_VERSION, BattleReplayInput } from './battle-engine';
+import { FRAMES_PER_SECOND } from '../games/tetris-engine';
+import {
+  GARBAGE_TAIL_GRACE_MS,
+  SURVIVOR_FRAME_SLACK,
+  MATCH_ID_PATTERN,
+  MATCH_START_DELAY_MS,
+  REPLAY_SUBMIT_DEADLINE_MS,
+} from './tetris-battle.constants';
+import {
+  TetrisBattleMatchNotEndedErrorResponseDto,
+  TetrisBattleMatchNotFoundErrorResponseDto,
+  TetrisBattlePlayerTokenInvalidErrorResponseDto,
+  TetrisBattleReplayAlreadySubmittedErrorResponseDto,
+  TetrisBattleReplayNotFoundErrorResponseDto,
+  TetrisBattleSubmissionClosedErrorResponseDto,
+  TetrisBattleUnavailableErrorResponseDto,
+} from './tetris-battle-error.dto';
+import { MatchPlayerSnapshot, MatchSnapshot, TetrisBattleMatchStore } from './tetris-battle-match.store';
+import { TetrisBattleRoomService } from './tetris-battle-room.service';
+import { BattleMatchDto, BattleReplayDetailDto, BattleReplayDto } from './tetris-battle-result.dto';
+import { VerificationContext, verifyBattleReplay } from './tetris-battle-verify';
+
+/** Redis 제출 기록 (DB 저장 전까지) */
+interface StoredSubmission {
+  verdict: 'VERIFIED' | 'INVALID';
+  reason: string | null;
+  /** 제출 요청의 로그인 사용자 (없으면 null → 방 입장 때 신원) */
+  userId: number | null;
+  battleEngineVersion: number;
+  /** gzip(JSON {seed, das, arr, frames, inputs, garbage}) base64 */
+  replay: string;
+}
+
+/** DB REPLAY 컬럼의 gzip 본문 — battleEngineVersion은 컬럼에 따로 둔다 */
+interface StoredReplayBody {
+  seed: number;
+  das: number;
+  arr: number;
+  frames: number;
+  inputs: number[];
+  garbage: number[];
+}
+
+const PLAYER_ID_PATTERN = /^p\d{1,6}$/;
+const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/**
+ * 테트리스 대전 경기 후 검증·결과 저장·조회 (docs/tasks/tetris-battle DESIGN §17, D-021)
+ *
+ * - 제출: playerToken(매치 시작 때 복사한 토큰 해시)으로 참가자 확인 → 리플레이 검증(tetris-battle-verify.ts) →
+ *   Redis에 1번만 기록(HSETNX) → 전원 제출이면 DB 저장
+ * - 저장: 전원 제출 또는 종료 후 60초 마감 뒤 첫 제출·조회 때 1번(Redis SET NX 가드 — 멀티 레플리카).
+ *   미제출은 MISSING. INVALID가 하나라도 있으면 경기 DISPUTED. 저장 실패면 가드를 풀어 다음 계기에 다시 시도한다
+ * - 조회: VERIFIED·숨김 아님만. 재생은 VERIFIED 참가자만
+ */
+@Injectable()
+export class TetrisBattleResultService {
+  private readonly logger = new Logger(TetrisBattleResultService.name);
+  private readonly matches = new TetrisBattleMatchStore();
+
+  constructor(
+    private readonly roomService: TetrisBattleRoomService,
+    @InjectRepository(TetrisBattleMatch)
+    private readonly matchRepository: Repository<TetrisBattleMatch>,
+    @InjectRepository(TetrisBattlePlayer)
+    private readonly playerRepository: Repository<TetrisBattlePlayer>,
+    @InjectRepository(TetrisBattleReplay)
+    private readonly replayRepository: Repository<TetrisBattleReplay>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+  ) {}
+
+  // ==================== 제출 ====================
+
+  async submitReplay({
+    matchId,
+    playerToken,
+    replay,
+    userId,
+    now = Date.now(),
+  }: {
+    matchId: string;
+    playerToken: string;
+    replay: BattleReplayDto;
+    userId: number | null;
+    now?: number;
+  }): Promise<{ verdict: 'VERIFIED' | 'INVALID' }> {
+    if (!MATCH_ID_PATTERN.test(matchId)) throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    const redis = this.requireRedis();
+
+    const snap = await this.matches.snapshot(redis, matchId);
+    if (!snap) {
+      // Redis 기록이 TTL로 사라졌다 — 이미 저장된 경기면 마감, 아니면 없는 경기
+      if (await this.matchRepository.findOne({ where: { matchId } })) throw new TetrisBattleSubmissionClosedErrorResponseDto();
+      throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    }
+    if (snap.status !== 'ENDED') throw new TetrisBattleMatchNotEndedErrorResponseDto();
+
+    const player = this.findPlayerByToken(snap, playerToken);
+    if (!player) throw new TetrisBattlePlayerTokenInvalidErrorResponseDto();
+
+    if (this.isPastDeadline(snap, now)) {
+      // 마감 뒤 첫 제출이 저장 계기가 된다(제출 자체는 받지 않는다)
+      await this.finalize(redis, snap);
+      throw new TetrisBattleSubmissionClosedErrorResponseDto();
+    }
+    // 시뮬레이션 전에 싸게 거른다 — 최종 1회 보장은 아래 HSETNX
+    if ((await this.matches.submissions(redis, matchId))[player.playerId]) {
+      throw new TetrisBattleReplayAlreadySubmittedErrorResponseDto();
+    }
+
+    const context = await this.verificationContext(redis, snap, player);
+    const result = verifyBattleReplay(replay as BattleReplayInput, context);
+    if (result.verdict === 'INVALID') {
+      this.logger.warn(`대전 리플레이 검증 실패: match=${matchId}, player=${player.playerId}, reason=${result.reason}`);
+    }
+
+    const body: StoredReplayBody = {
+      seed: replay.seed,
+      das: replay.das,
+      arr: replay.arr,
+      frames: replay.frames,
+      inputs: replay.inputs,
+      garbage: replay.garbage,
+    };
+    const record: StoredSubmission = {
+      verdict: result.verdict,
+      reason: result.verdict === 'INVALID' ? result.reason : null,
+      userId,
+      battleEngineVersion: replay.battleEngineVersion,
+      replay: gzipSync(JSON.stringify(body)).toString('base64'),
+    };
+    const claimed = await this.matches.claimSubmission(redis, matchId, player.playerId, JSON.stringify(record));
+    // 저장이 목록을 이미 확정했으면(전원 제출·마감) 이 제출은 저장되지 않는다 → 201 대신 410(리뷰 L2)
+    if (claimed === 'CLOSED') throw new TetrisBattleSubmissionClosedErrorResponseDto();
+    if (claimed === 'DUPLICATE') throw new TetrisBattleReplayAlreadySubmittedErrorResponseDto();
+
+    const submitted = await this.matches.submissions(redis, matchId);
+    if (this.expectedSubmitters(snap).every((p) => submitted[p.playerId])) await this.finalize(redis, snap);
+    return { verdict: result.verdict };
+  }
+
+  // ==================== 조회 ====================
+
+  async getMatch(matchId: string, now = Date.now()): Promise<BattleMatchDto> {
+    if (!MATCH_ID_PATTERN.test(matchId)) throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    await this.finalizeIfDue(matchId, now);
+
+    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0, status: 'VERIFIED' } });
+    if (!match) throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    const players = await this.playerRepository.find({ where: { matchId }, order: { place: 'ASC' } });
+    return {
+      matchId: match.matchId,
+      roomName: match.roomName,
+      playerCount: match.playerCount,
+      startedAt: match.startedAt,
+      endedAt: match.endedAt,
+      players: players.map((p) => ({
+        playerId: p.playerId,
+        name: p.name,
+        place: p.place,
+        kos: p.kos,
+        sent: p.sent,
+        received: p.received,
+        pieces: p.pieces,
+        maxCombo: p.maxCombo,
+        frames: p.frames,
+        koReason: p.koReason,
+        // 경기가 VERIFIED면 INVALID 참가자는 없다
+        verdict: p.verdict === 'VERIFIED' ? 'VERIFIED' : 'MISSING',
+      })),
+    };
+  }
+
+  async getReplay(matchId: string, playerId: string): Promise<BattleReplayDetailDto> {
+    if (!MATCH_ID_PATTERN.test(matchId)) throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    if (!PLAYER_ID_PATTERN.test(playerId)) throw new TetrisBattleReplayNotFoundErrorResponseDto();
+
+    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0, status: 'VERIFIED' } });
+    if (!match) throw new TetrisBattleMatchNotFoundErrorResponseDto();
+    const player = await this.playerRepository.findOne({ where: { matchId, playerId } });
+    if (!player || player.verdict !== 'VERIFIED') throw new TetrisBattleReplayNotFoundErrorResponseDto();
+    const row = await this.replayRepository.findOne({ where: { matchId, playerId } });
+    if (!row) throw new TetrisBattleReplayNotFoundErrorResponseDto();
+
+    const body = JSON.parse(gunzipSync(row.replay).toString('utf8')) as StoredReplayBody;
+    return { matchId, playerId, battleEngineVersion: row.battleEngineVersion, ...body };
+  }
+
+  // ==================== 내부 ====================
+
+  private requireRedis(): Redis {
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) throw new TetrisBattleUnavailableErrorResponseDto();
+    return redis;
+  }
+
+  /** 토큰 해시를 참가자 전원과 상수 시간 비교 */
+  private findPlayerByToken(snap: MatchSnapshot, playerToken: string): MatchPlayerSnapshot | null {
+    const candidate = Buffer.from(sha256Hex(playerToken), 'hex');
+    return (
+      snap.players.find((p) => {
+        if (!p.tokenHash) return false;
+        const stored = Buffer.from(p.tokenHash, 'hex');
+        return stored.length === candidate.length && timingSafeEqual(stored, candidate);
+      }) ?? null
+    );
+  }
+
+  /**
+   * 예상 제출자 = 로컬 판이 끝까지 있었던 참가자: 생존자 + topout 탈락자(D-022).
+   * 끊김·기권 탈락자는 제출하지 않는 것이 보통이라 기다리지 않는다(내면 받는다 — 마감 전이면)
+   */
+  private expectedSubmitters(snap: MatchSnapshot): MatchPlayerSnapshot[] {
+    return snap.players.filter((p) => p.alive || p.koReason === 'topout');
+  }
+
+  private isPastDeadline(snap: MatchSnapshot, now: number): boolean {
+    return snap.endedAt !== null && now > snap.endedAt + REPLAY_SUBMIT_DEADLINE_MS;
+  }
+
+  private async verificationContext(
+    redis: Redis,
+    snap: MatchSnapshot,
+    player: MatchPlayerSnapshot,
+  ): Promise<VerificationContext> {
+    // 생존자 frames 상한: 서버 시계(Redis TIME) 기준 경과 시간 — 없으면(옛 기록) 앱 시계로 대신한다
+    const elapsedMs =
+      snap.clockStart !== null && snap.endedClock !== null
+        ? snap.endedClock - snap.clockStart
+        : (snap.endedAt ?? snap.startedAt) - snap.startedAt - MATCH_START_DELAY_MS;
+    const [garbage, sentLog] = await Promise.all([
+      this.matches.garbageLog(redis, snap.matchId, player.playerId),
+      this.matches.sentLog(redis, snap.matchId, player.playerId),
+    ]);
+    // 막판 가비지 누락 허용 경계(D-022): 탈락자는 탈락 시각, 생존자는 종료 시각 − 1초(서버 Redis 시계)
+    const boundary = player.alive ? snap.endedClock : player.koClock;
+    return {
+      seed: snap.seed,
+      garbage,
+      requiredBefore: boundary === null ? null : boundary - GARBAGE_TAIL_GRACE_MS,
+      sentLog,
+      lastSeq: player.seq,
+      ko: player.alive || !player.koReason ? null : { reason: player.koReason, frame: player.frames ?? player.frame },
+      maxFrames: Math.floor((elapsedMs * FRAMES_PER_SECOND) / 1000) + SURVIVOR_FRAME_SLACK,
+    };
+  }
+
+  /** 조회 계기의 저장 — 마감이 지났으면. Redis를 못 쓰면 건너뛴다(조회는 DB만으로 된다) */
+  private async finalizeIfDue(matchId: string, now: number): Promise<void> {
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) return;
+    try {
+      const snap = await this.matches.snapshot(redis, matchId);
+      if (snap && snap.status === 'ENDED' && this.isPastDeadline(snap, now)) await this.finalize(redis, snap);
+    } catch (error) {
+      this.logger.warn(`조회 계기 저장 확인 실패: match=${matchId}`, toErrorDetail(error));
+    }
+  }
+
+  /**
+   * DB 저장 — 정확히 1번. 순서(리뷰 L2·L8):
+   *  1. 이미 저장 완료(__saved)면 끝
+   *  2. 저장 진행 가드(SET NX, 짧은 TTL) — 동시에 두 저장이 돌지 않게. 저장 중 프로세스가 죽어도 TTL 뒤 다음 계기가 다시 잡는다
+   *  3. 제출을 **닫고** 그 순간의 목록을 확정(Lua) — 이후 제출은 410. 그래서 201을 받은 제출은 반드시 이 저장에 포함된다
+   *  4. 트랜잭션 저장 → __saved 표시
+   * 실패하면 가드를 풀어 다음 제출·조회가 다시 시도한다(닫힘은 유지 — 같은 목록으로 다시 저장).
+   * 던지지 않는다: 제출 응답(검증 결과)은 저장 성공과 무관하다.
+   */
+  private async finalize(redis: Redis, snap: MatchSnapshot): Promise<void> {
+    if (await this.matches.isSaved(redis, snap.matchId)) return;
+    if (!(await this.matches.claimSave(redis, snap.matchId))) return;
+    try {
+      const raw = await this.matches.closeSubmissions(redis, snap.matchId, Date.now());
+      const subs = new Map(Object.entries(raw).map(([pid, json]) => [pid, JSON.parse(json) as StoredSubmission]));
+      try {
+        await this.saveRows(snap, subs, new Set());
+      } catch (error) {
+        // 그 사이 탈퇴한 사용자(FK 위반)면 그 USER_ID만 비우고 1번 더(리뷰 L6) — 탈퇴해도 경기 기록은 이름으로 남긴다
+        if (!String((error as Error)?.message ?? '').includes('ORA-02291')) throw error;
+        const missing = await this.missingUserIds(snap, subs);
+        if (missing.size === 0) throw error;
+        this.logger.warn(`대전 결과 저장: 없는 USER_ID ${[...missing].join(',')}를 비우고 재시도 — match=${snap.matchId}`);
+        await this.saveRows(snap, subs, missing);
+      }
+      await this.matches.markSaved(redis, snap.matchId);
+    } catch (error) {
+      this.logger.error(`대전 결과 저장 실패 — 다음 제출·조회 때 재시도: match=${snap.matchId}`, toErrorDetail(error));
+      await this.matches.releaseSave(redis, snap.matchId).catch(() => undefined);
+    }
+  }
+
+  private userIdOf(p: MatchPlayerSnapshot, subs: Map<string, StoredSubmission>): number | null {
+    return subs.get(p.playerId)?.userId ?? p.userId;
+  }
+
+  /** 행에 들어갈 USER_ID 중 USERS에 없는 것 */
+  private async missingUserIds(snap: MatchSnapshot, subs: Map<string, StoredSubmission>): Promise<Set<number>> {
+    const ids = [...new Set(snap.players.map((p) => this.userIdOf(p, subs)).filter((id): id is number => id !== null))];
+    if (ids.length === 0) return new Set();
+    const existing = await this.userRepository.find({ where: { userId: In(ids) }, select: { userId: true } });
+    const found = new Set(existing.map((u) => u.userId));
+    return new Set(ids.filter((id) => !found.has(id)));
+  }
+
+  private async saveRows(
+    snap: MatchSnapshot,
+    subs: Map<string, StoredSubmission>,
+    nullUserIds: Set<number>,
+  ): Promise<void> {
+    const verdictOf = (pid: string): TetrisBattleVerdict => subs.get(pid)?.verdict ?? 'MISSING';
+    const status = snap.players.some((p) => verdictOf(p.playerId) === 'INVALID') ? 'DISPUTED' : 'VERIFIED';
+    const crtdAt = new Date();
+
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      await manager.save(
+        manager.create(TetrisBattleMatch, {
+          matchId: snap.matchId,
+          roomName: snap.roomName,
+          seed: snap.seed,
+          playerCount: snap.players.length,
+          status,
+          startedAt: new Date(snap.startedAt),
+          endedAt: new Date(snap.endedAt ?? snap.startedAt),
+          isHidden: 0,
+          crtdAt,
+        }),
+      );
+      for (const p of snap.players) {
+        const userId = this.userIdOf(p, subs);
+        await manager.save(
+          manager.create(TetrisBattlePlayer, {
+            matchId: snap.matchId,
+            playerId: p.playerId,
+            name: p.name,
+            userId: userId !== null && nullUserIds.has(userId) ? null : userId,
+            place: p.place ?? snap.players.length,
+            kos: p.kos,
+            sent: p.sent,
+            received: p.received,
+            pieces: p.pieces,
+            maxCombo: p.maxCombo,
+            frames: p.frames ?? p.frame,
+            koReason: p.alive ? null : p.koReason,
+            verdict: verdictOf(p.playerId),
+          }),
+        );
+      }
+      for (const [playerId, sub] of subs) {
+        if (!snap.players.some((p) => p.playerId === playerId)) continue;
+        await manager.save(
+          manager.create(TetrisBattleReplay, {
+            matchId: snap.matchId,
+            playerId,
+            // 버전은 서버 상수 — 제출 DTO가 같은 값만 받는다(리뷰 L1)
+            battleEngineVersion: BATTLE_ENGINE_VERSION,
+            replay: Buffer.from(sub.replay, 'base64'),
+            crtdAt,
+          }),
+        );
+      }
+    });
+  }
+}
