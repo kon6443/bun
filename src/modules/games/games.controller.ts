@@ -41,7 +41,11 @@ import {
   GameVerifyBusyErrorResponseDto,
 } from './games-error.dto';
 
-const GAME_TYPE_PARAM = { name: 'gameType', description: '게임 이름 (소문자) — tetris', example: 'tetris' };
+const GAME_TYPE_PARAM = {
+  name: 'gameType',
+  description: '게임 이름 (소문자) — tetris · defense',
+  example: 'tetris',
+};
 
 /**
  * 게임 모음집 REST (docs/tasks/games DESIGN.md §2·§3·§7)
@@ -57,7 +61,11 @@ export class GamesController {
   @UseGuards(OptionalJwtAuthGuard)
   @Post(':gameType/sessions')
   @Throttle({ short: THROTTLE_GAME_SESSION_SHORT, long: THROTTLE_GAME_SESSION_LONG }) // 초당 2회, 분당 20회
-  @ApiOperation({ summary: '게임 세션 발급', description: '서버가 seed를 정한다. 점수 제출 시 sessionId를 1회 사용한다(유효 시간은 게임별 — TETRIS 2시간)' })
+  @ApiOperation({
+    summary: '게임 세션 발급',
+    description:
+      '서버가 seed를 정한다. 점수 제출 시 sessionId를 1회 사용한다(유효 시간은 게임별 — TETRIS 2시간 · DEFENSE 4시간). DEFENSE 주간 도전은 전원 같은 seed',
+  })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiBody({ type: CreateGameSessionDto, required: false })
   @ApiResponse({ status: 201, description: 'SUCCESS', type: GameSessionResponseDto })
@@ -65,7 +73,13 @@ export class GamesController {
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
   @ApiCommonValidationResponse()
   @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 20회)')
-  @ApiResponse({ status: 503, description: '세션 저장소(Redis) 사용 불가 — 플레이는 가능, 등록 불가', type: GameSessionUnavailableErrorResponseDto })
+  // 503은 두 코드 — Swagger는 상태코드당 응답 하나라 한 항목에 모두 적는다
+  @ApiResponse({
+    status: 503,
+    description:
+      'GAME_SESSION_UNAVAILABLE: 세션 저장소(Redis) 사용 불가 — 플레이는 가능, 등록 불가 · GAME_WEEKLY_UNAVAILABLE: DEFENSE 주간 도전을 열 수 없음(서버 설정) — 무한 모드는 정상',
+    type: GameSessionUnavailableErrorResponseDto,
+  })
   @ApiCommonInternalServerErrorResponse()
   async createSession(@Param('gameType') gameType: string, @Body() dto: CreateGameSessionDto, @CurrentUser() user?: User) {
     const data = await this.gamesService.createSession(gameType, user?.userId ?? null, dto.board);
@@ -123,7 +137,11 @@ export class GamesController {
   }
 
   @Get(':gameType/boards')
-  @ApiOperation({ summary: '랭킹 보드 목록', description: '현재·지난 랭킹 보드. TETRIS는 default 하나 (docs/tasks/defense DESIGN §B6)' })
+  @ApiOperation({
+    summary: '랭킹 보드 목록',
+    description:
+      '현재·지난 랭킹 보드. TETRIS는 default 하나 · DEFENSE는 무한 시즌(endless-s{N})과 이번 주·지난 주 주간 보드(weekly-YYYY-wNN, 서버 설정이 없으면 빠짐) (docs/tasks/defense DESIGN §B6)',
+  })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS', type: GameBoardListResponseDto })
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
@@ -165,12 +183,20 @@ export class GamesController {
 
   @Get(':gameType/scores/:scoreId/replay')
   @Throttle({ short: THROTTLE_GAME_REPLAY_SHORT, long: THROTTLE_GAME_REPLAY_LONG }) // 초당 2회, 분당 30회
-  @ApiOperation({ summary: '리플레이 재생 데이터', description: '누구나 조회. 같은 엔진 버전으로 seed + 입력 기록을 재생한다' })
+  @ApiOperation({
+    summary: '리플레이 재생 데이터',
+    description:
+      '누구나 조회. 같은 엔진 버전으로 seed + 입력 기록을 재생한다. DEFENSE 주간 보드는 그 주가 끝난 뒤 공개(전원 같은 seed라 입력 복제 방지 — 진행 중이면 404)',
+  })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiParam({ name: 'scoreId', description: '랭킹 기록 ID', type: Number })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: GameReplayResponseDto })
   @ApiResponse({ status: 400, description: 'scoreId가 숫자가 아님 (BAD_REQUEST)' })
-  @ApiResponse({ status: 404, description: 'GAME_NOT_FOUND · GAME_SCORE_NOT_FOUND(없음·숨김)', type: GameScoreNotFoundErrorResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'GAME_NOT_FOUND · GAME_SCORE_NOT_FOUND(없음·숨김·진행 중인 DEFENSE 주간 보드)',
+    type: GameScoreNotFoundErrorResponseDto,
+  })
   @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 30회)')
   @ApiCommonInternalServerErrorResponse()
   async getReplay(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number) {

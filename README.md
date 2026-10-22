@@ -123,7 +123,7 @@ docker stop bun-redis && docker rm bun-redis
 
 **검증 대상(필수)**: `ENV`, `EXPRESS_PORT`, `JWT_SECRET`, `LOG_LEVEL`, `NEXT_PUBLIC_DOMAIN`, `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `REDIS_PORT`
 
-**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음)
+**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음), `GAME_WEEKLY_SEED_SECRET`(디펜스 주간 도전 seed의 HMAC 키 — 없으면 주간 도전만 503, 무한 모드 정상), `GAME_VERIFY_WORKERS`(레플리카당 디펜스 검증 워커 수 1~8 — 없으면 1)
 
 > ⚠️ **LOCAL과 PROD가 동일한 Oracle DB를 공유한다.** 로컬에서 실행하는 쿼리가 곧 상용 데이터에 영향을 준다.
 

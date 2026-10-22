@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -8,6 +9,9 @@ import { GamesService } from '../src/modules/games/games.service';
 import { GameSessionService } from '../src/modules/games/game-session.service';
 import { GAME_ENGINE_REGISTRY, GameEngine } from '../src/modules/games/game-engine.registry';
 import { tetrisGameEngine } from '../src/modules/games/tetris-game-engine';
+import { createDefenseGameEngine } from '../src/modules/games/defense-game-engine';
+import { verifyDefenseReplay } from '../src/modules/games/defense-verify';
+import { weeklySeed } from '../src/modules/games/weekly-board';
 import golden from '../src/modules/games/tetris-engine/__fixtures__/golden-replays.json';
 import { GameScore } from '../src/entities/GameScore';
 import { GameReplay } from '../src/entities/GameReplay';
@@ -54,13 +58,23 @@ describe('E2E 게임', () => {
   let saved: Record<string, unknown>[];
   /** 레지스트리 — 테스트가 검증기를 바꿔 끼울 수 있게 매번 새 객체 */
   let engines: Record<string, GameEngine>;
+  /** ConfigService 대역의 값 — 테스트가 주간 비밀값을 빼 볼 수 있게 매번 새 객체 */
+  let env: Record<string, string | undefined>;
 
   beforeEach(async () => {
     redis = new FakeRedis();
     gameScoreRepository = createMockRepository<GameScore>();
     gameReplayRepository = createMockRepository<GameReplay>();
     saved = [];
-    engines = { TETRIS: tetrisGameEngine };
+    env = { GAME_IP_HASH_SECRET: 'e2e-secret', GAME_WEEKLY_SEED_SECRET: 'e2e-weekly' };
+    // 디펜스 검증은 워커 대신 같은 함수를 인프로세스로 — 운영 배선(GamesModule)과 같은 엔진 항목
+    engines = {
+      TETRIS: tetrisGameEngine,
+      DEFENSE: createDefenseGameEngine({
+        getWeeklySecret: () => env.GAME_WEEKLY_SEED_SECRET,
+        verify: input => Promise.resolve(verifyDefenseReplay(input)),
+      }),
+    };
     const manager = {
       create: (_entity: unknown, data: Record<string, unknown>) => data,
       save: (data: Record<string, unknown>) => {
@@ -80,7 +94,7 @@ describe('E2E 게임', () => {
         { provide: getRepositoryToken(GameReplay), useValue: gameReplayRepository },
         // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존 — 토큰이 없으면 쓰지 않는다
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
-        { provide: ConfigService, useValue: { get: (key: string) => ({ GAME_IP_HASH_SECRET: 'e2e-secret' })[key] } },
+        { provide: ConfigService, useValue: { get: (key: string) => env[key] } },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
@@ -335,5 +349,201 @@ describe('E2E 게임', () => {
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(404);
       expect(res.body.code).toBe('GAME_SCORE_NOT_FOUND');
     });
+  });
+
+  /**
+   * 디펜스 — 실제 레지스트리 항목(보드·세션·형식 규칙)을 태운다.
+   * 엔진 사본은 아직 캠페인만 재현하므로(무한·주간 데이터는 S1) 성공 경로는 검증기를 대역으로 바꿔 본다.
+   */
+  describe('DEFENSE', () => {
+    const defenseVerified = {
+      ok: true as const,
+      score: 12_345_000,
+      detail: { wave: 12, progress: 345, kills: 300, livesLeft: 4, goldEarned: 5000, engineVersion: 1 },
+    };
+    const issueDefenseSession = async (board?: string) => {
+      const res = await request(app.getHttpServer())
+        .post(e2e.url('/games/defense/sessions'))
+        .send(board === undefined ? {} : { board })
+        .expect(201);
+      const key = `game:session:${res.body.data.sessionId}`;
+      // 시간 검사를 넘기도록 1시간 전 발급으로 맞춘다
+      redis.store.set(
+        key,
+        JSON.stringify({ ...JSON.parse(redis.store.get(key)!), startedAt: Date.now() - 3_600_000 }),
+      );
+      return res.body.data as { sessionId: string; seed: number; boardKey: string; mode: string };
+    };
+    const defenseBody = (sessionId: string, replay: Record<string, unknown> = {}) => ({
+      sessionId,
+      playerName: '수비왕',
+      replay: { engineVersion: 1, frames: 9000, inputs: [0, 0], ...replay },
+    });
+    const submitDefense = (payload: object) =>
+      request(app.getHttpServer()).post(e2e.url('/games/defense/scores')).send(payload);
+
+    it('세션: 본문 없음·endless → 무한 보드, 무작위 seed, 4시간 TTL', async () => {
+      const res = await request(app.getHttpServer()).post(e2e.url('/games/defense/sessions')).expect(201);
+
+      expect(res.body.data).toEqual(
+        expect.objectContaining({ boardKey: 'endless-s1', mode: 'endless', seed: expect.any(Number) }),
+      );
+      const ttlMs = new Date(res.body.data.expiresAt as string).getTime() - Date.now();
+      expect(ttlMs).toBeGreaterThan(4 * 3600_000 - 60_000);
+      expect(ttlMs).toBeLessThanOrEqual(4 * 3600_000);
+    });
+
+    it('세션: weekly → 이번 주 보드, 누구에게나 같은 seed(주간 HMAC)', async () => {
+      const a = await issueDefenseSession('weekly');
+      const b = await issueDefenseSession('weekly');
+
+      expect(a.boardKey).toMatch(/^weekly-\d{4}-w\d{2}$/);
+      expect(a.mode).toBe('weekly');
+      expect(a.seed).toBe(weeklySeed('e2e-weekly', a.boardKey));
+      expect(b.seed).toBe(a.seed);
+    });
+
+    it('세션: 주간 비밀값이 없으면 weekly만 503 GAME_WEEKLY_UNAVAILABLE — 세션을 만들지 않는다', async () => {
+      env.GAME_WEEKLY_SEED_SECRET = undefined;
+
+      const res = await request(app.getHttpServer())
+        .post(e2e.url('/games/defense/sessions'))
+        .send({ board: 'weekly' })
+        .expect(503);
+      expect(res.body.code).toBe('GAME_WEEKLY_UNAVAILABLE');
+      expect(redis.store.size).toBe(0);
+      await request(app.getHttpServer())
+        .post(e2e.url('/games/defense/sessions'))
+        .send({ board: 'endless' })
+        .expect(201);
+    });
+
+    it('세션: 모르는 방식은 422 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .post(e2e.url('/games/defense/sessions'))
+        .send({ board: 'campaign' })
+        .expect(422);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('제출: 검증 성공이면 201 — 세션 보드로 저장, DURATION_MS는 30틱/초, 리플레이에 das·arr 없음', async () => {
+      engines.DEFENSE = { ...engines.DEFENSE, verify: () => Promise.resolve(defenseVerified) };
+      const session = await issueDefenseSession('weekly');
+
+      const res = await submitDefense(defenseBody(session.sessionId)).expect(201);
+
+      expect(res.body.data).toEqual(
+        expect.objectContaining({ score: 12_345_000, detail: defenseVerified.detail }),
+      );
+      const score = saved.find(row => 'score' in row)!;
+      expect(score).toEqual(
+        expect.objectContaining({ gameType: 'DEFENSE', boardKey: session.boardKey, durationMs: 300_000 }),
+      );
+      const replay = saved.find(row => 'replay' in row)!;
+      expect(replay).toEqual(expect.objectContaining({ gameType: 'DEFENSE', seed: session.seed }));
+    });
+
+    it.each([
+      ['테트리스 설정(das·arr)', { das: 10, arr: 2 }],
+      ['params에 키가 있음', { params: { speed: 3 } }],
+      ['판 상한 초과', { frames: 162_001 }],
+    ])('제출: %s → 422 VALIDATION_ERROR, 세션 미소모', async (_name, replay) => {
+      const session = await issueDefenseSession();
+
+      const res = await submitDefense(defenseBody(session.sessionId, replay)).expect(422);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(redis.store.has(`game:session:${session.sessionId}`)).toBe(true);
+    });
+
+    it('제출: 실제 엔진 재현 실패(무한 데이터는 S1 전이라 INVALID_HEADER)는 422 GAME_REPLAY_INVALID — 확정 결과라 세션 소모', async () => {
+      const session = await issueDefenseSession();
+
+      const res = await submitDefense(defenseBody(session.sessionId)).expect(422);
+      expect(res.body.code).toBe('GAME_REPLAY_INVALID');
+      expect(redis.store.has(`game:session:${session.sessionId}`)).toBe(false);
+      expect(saved).toHaveLength(0);
+    });
+
+    it('보드 목록: 무한 시즌 + 이번 주·지난 주', async () => {
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/defense/boards')).expect(200);
+
+      expect(
+        res.body.data.items.map((b: { boardKey: string; current: boolean }) => [
+          b.boardKey.replace(/\d{4}-w\d{2}$/, 'W'),
+          b.current,
+        ]),
+      ).toEqual([
+        ['endless-s1', true],
+        ['weekly-W', true],
+        ['weekly-W', false],
+      ]);
+    });
+
+    it('랭킹: 기본 보드는 현재 무한 시즌, 주간 보드는 period를 무시한다', async () => {
+      gameScoreRepository.find.mockResolvedValue([]);
+      const { items } = (await request(app.getHttpServer()).get(e2e.url('/games/defense/boards')).expect(200))
+        .body.data as { items: { boardKey: string }[] };
+
+      const endless = await request(app.getHttpServer())
+        .get(e2e.url('/games/defense/rankings?period=daily'))
+        .expect(200);
+      expect(endless.body.data.boardKey).toBe('endless-s1');
+      expect(endless.body.data.periodStart).not.toBeNull();
+
+      const weekly = await request(app.getHttpServer())
+        .get(e2e.url(`/games/defense/rankings?board=${items[1].boardKey}&period=daily`))
+        .expect(200);
+      expect(weekly.body.data).toEqual({ boardKey: items[1].boardKey, items: [], periodStart: null });
+      expect(gameScoreRepository.find).toHaveBeenLastCalledWith(
+        expect.objectContaining({ where: { gameType: 'DEFENSE', boardKey: items[1].boardKey, isHidden: 0 } }),
+      );
+    });
+
+    it('리플레이: 진행 중인 주간 보드 기록은 404, 지난 주·무한 보드는 공개', async () => {
+      const { items } = (await request(app.getHttpServer()).get(e2e.url('/games/defense/boards')).expect(200))
+        .body.data as { items: { boardKey: string }[] };
+      const row = (boardKey: string) =>
+        ({
+          scoreId: 41,
+          boardKey,
+          playerName: 'a',
+          score: 900,
+          detail: '{}',
+          durationMs: 1,
+          crtdAt: new Date(),
+        }) as GameScore;
+      gameReplayRepository.findOneBy.mockResolvedValue({
+        scoreId: 41,
+        gameType: 'DEFENSE',
+        engineVersion: 1,
+        seed: 5,
+        replay: gzipSync(JSON.stringify({ frames: 30, inputs: [] })),
+        crtdAt: new Date(),
+      } as GameReplay);
+
+      gameScoreRepository.findOne.mockResolvedValue(row(items[1].boardKey));
+      const current = await request(app.getHttpServer())
+        .get(e2e.url('/games/defense/scores/41/replay'))
+        .expect(404);
+      expect(current.body.code).toBe('GAME_SCORE_NOT_FOUND');
+
+      for (const boardKey of [items[2].boardKey, 'endless-s1']) {
+        gameScoreRepository.findOne.mockResolvedValue(row(boardKey));
+        const res = await request(app.getHttpServer())
+          .get(e2e.url('/games/defense/scores/41/replay'))
+          .expect(200);
+        expect(res.body.data).toEqual(expect.objectContaining({ boardKey, seed: 5, params: {}, frames: 30 }));
+        expect(res.body.data).not.toHaveProperty('das');
+      }
+    });
+
+    it.each([['board=default'], ['board=endless-s2'], ['board=weekly-2999-w01']])(
+      '랭킹: %s → 422',
+      async query => {
+        await request(app.getHttpServer())
+          .get(e2e.url(`/games/defense/rankings?${query}`))
+          .expect(422);
+      },
+    );
   });
 });

@@ -28,6 +28,13 @@ export const tetrisGameEngine: GameEngine = {
   isRankingBoard(boardKey) {
     return boardKey === TETRIS_BOARD_KEY;
   },
+  isPeriodRanking() {
+    return true;
+  },
+  isReplayPublic() {
+    return true;
+  },
+  topLevelReplayParams: TETRIS_PARAM_KEYS,
   listBoards() {
     return [{ boardKey: TETRIS_BOARD_KEY, mode: null, current: true, startsAt: null, endsAt: null }];
   },
