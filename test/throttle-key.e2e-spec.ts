@@ -50,7 +50,8 @@ describe('E2E 스로틀 키 (사용자·IP 단위)', () => {
     nestApp.use(cookieParser());
     nestApp.set('trust proxy', 1); // main.ts와 동일
     app = nestApp;
-    await app.init();
+    // 127.0.0.1에 직접 연다 — '::'로 열면 다른 프로세스가 127.0.0.1로 점유한 포트를 받을 수 있다(helpers/e2e-app.ts 주석)
+    await app.listen(0, '127.0.0.1');
   });
 
   afterEach(async () => {

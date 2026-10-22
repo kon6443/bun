@@ -96,7 +96,9 @@ export const createE2eApp = async ({
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
-  await app.init();
+  // 127.0.0.1에 직접 붙인다 — supertest가 대신 listen(0)하면 '::'(전 주소)에 열리는데, macOS는 다른 프로세스가 127.0.0.1로만
+  // 점유한 포트도 '::'로 내준다. 그러면 supertest의 127.0.0.1 요청이 그 프로세스(로컬 프록시 등)로 가 407·404가 간헐적으로 난다
+  await app.listen(0, '127.0.0.1');
 
   return {
     app,
