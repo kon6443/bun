@@ -144,6 +144,14 @@ export interface StoredRoom {
    * 여기에는 lock 경로가 매치 Hash를 읽지 않고도 Lua KEYS를 만들 수 있게 참가자 순서만 둔다. 없으면 null(옛 기록은 undefined)
    */
   match?: StoredMatchRef | null;
+  /**
+   * rematch로 비운 직전 매치. 그 경기의 리플레이 제출 마감(종료 후 60초)이 rematch 뒤에도 남아 있을 수 있어,
+   * 토큰 재발급 때 그 매치 Hash의 토큰 해시도 같이 갱신하려고 기억한다(후속 수정 — rematch 후 재발급 403).
+   * 하나만 둔다: 다음 rematch가 덮어쓴다. 보통은 그때 그 전 경기의 마감이 지났지만, 시작 직후 이탈로 끝난 짧은 경기가
+   * 60초 안에 두 번 이어지면 덮어쓴 경기의 재발급 갱신이 빠질 수 있다 — 토큰 없는 재입장까지 겹쳐야 하는 드문 경로라 수용(리뷰 의심).
+   * 마감이 지났어도 해롭지 않다 — 갱신은 매치 키가 있을 때만 쓰고 제출은 410으로 막힌다
+   */
+  previousMatch?: StoredMatchRef | null;
 }
 
 export interface StoredMatchRef {
@@ -460,9 +468,9 @@ export class TetrisBattleRoomService {
     await beforeCommit?.();
     const fresh = this.issueToken();
 
-    let rotatedInMatch: { matchId: string; playerId: string } | null = null;
+    let rotatedInMatches: { matchId: string; playerId: string }[] = [];
     const entered = await this.mutateRoom(redis, input.code, now, (room, before) => {
-      rotatedInMatch = null;
+      rotatedInMatches = [];
       if (tokenHash) {
         const player = room.players.find((p) => this.tokenMatches(p.tokenHash, tokenHash));
         if (!player) throw new TetrisBattleError('INVALID_PLAYER_TOKEN');
@@ -483,8 +491,9 @@ export class TetrisBattleRoomService {
       const self = room.players.find((p) => p.socketId === who.socketId);
       if (self) {
         self.tokenHash = fresh.tokenHash;
-        if (room.match?.playerIds.includes(self.playerId)) {
-          rotatedInMatch = { matchId: room.match.matchId, playerId: self.playerId };
+        // 현재 매치와 rematch로 비운 직전 매치(제출 마감 전일 수 있음) 둘 다
+        for (const ref of [room.match, room.previousMatch]) {
+          if (ref?.playerIds.includes(self.playerId)) rotatedInMatches.push({ matchId: ref.matchId, playerId: self.playerId });
         }
         return { result: this.enterResult(room, before, self.playerId, fresh.token, null) };
       }
@@ -503,8 +512,9 @@ export class TetrisBattleRoomService {
 
     // 경기 중·결과 화면에서 토큰을 재발급했으면 매치에 복사한 토큰 해시도 갱신한다 — 안 하면 새 토큰으로
     // 리플레이를 제출할 때 403이 된다(리뷰 L7). 매치 키가 있을 때만 쓴다(마감 뒤 제출은 어차피 410)
-    const rotated = rotatedInMatch as { matchId: string; playerId: string } | null;
-    if (rotated) await this.matches.setTokenHash(redis, rotated.matchId, rotated.playerId, fresh.tokenHash);
+    for (const rotated of rotatedInMatches as { matchId: string; playerId: string }[]) {
+      await this.matches.setTokenHash(redis, rotated.matchId, rotated.playerId, fresh.tokenHash);
+    }
     return entered;
   }
 
@@ -665,6 +675,7 @@ export class TetrisBattleRoomService {
       if (room.status === 'PLAYING') throw new TetrisBattleError('MATCH_ALREADY_STARTED');
       if (room.status !== 'RESULT') throw new TetrisBattleError('MATCH_NOT_FOUND');
       room.status = 'WAITING';
+      room.previousMatch = room.match ?? null; // 제출 마감 전 토큰 재발급 반영용(위 필드 주석)
       room.match = null;
       for (const p of room.players) p.ready = false;
       return { result: this.changeResult(room, before) };
