@@ -17,12 +17,16 @@ export class GameScore {
   @PrimaryGeneratedColumn({ name: 'SCORE_ID' })
   scoreId: number;
 
-  // DB CHECK: GAME_TYPES
+  // DB CHECK: GAME_TYPES — DB는 DEFENSE를 먼저 허용했다(migrations/*-AlterGameTypeCheckAddDefense.ts). 엔진을 레지스트리에 붙일 때 GAME_TYPES에도 추가
   @Column({ name: 'GAME_TYPE', type: 'varchar2', length: 20 })
   gameType: GameType;
 
   @Column({ name: 'SCORE', type: 'number' })
   score: number;
+
+  // 랭킹 보드 — 테트리스 'default', 디펜스 'endless-s{시즌}'·'weekly-{주차}'. DB CHECK: 소문자·숫자·하이픈 1~40자 (migrations/*-AddGameScoresBoardKey.ts)
+  @Column({ name: 'BOARD_KEY', type: 'varchar2', length: 40, default: 'default' })
+  boardKey: string;
 
   // 1~12자, 48바이트 이하
   @Column({ name: 'PLAYER_NAME', type: 'varchar2', length: 48 })

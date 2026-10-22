@@ -7,25 +7,41 @@ import { GameSessionService } from './game-session.service';
  */
 describe('GameSessionService', () => {
   let service: GameSessionService;
-  let redis: { status: string; set: jest.Mock; getdel: jest.Mock };
+  let redis: { status: string; set: jest.Mock; get: jest.Mock; getdel: jest.Mock };
 
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     service = new GameSessionService();
-    redis = { status: 'ready', set: jest.fn().mockResolvedValue('OK'), getdel: jest.fn() };
+    redis = { status: 'ready', set: jest.fn().mockResolvedValue('OK'), get: jest.fn(), getdel: jest.fn() };
     service.setRedisClient(redis as never);
   });
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('UUID 세션에 0~2^32−1 seed를 정하고 TTL 2시간으로 저장해야 함', async () => {
-    const { sessionId, session, expiresAt } = await service.createSession({ gameType: 'TETRIS', engineVersion: 1, userId: 7 });
+  it('UUID 세션에 0~2^32−1 seed를 정하고 엔진별 TTL로 저장해야 함', async () => {
+    const { sessionId, session, expiresAt } = await service.createSession({ gameType: 'TETRIS', boardKey: 'default', seed: null, engineVersion: 1, userId: 7, ttlSeconds: 7200 });
 
     expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(Number.isInteger(session.seed) && session.seed >= 0 && session.seed < 2 ** 32).toBe(true);
-    expect(session).toEqual(expect.objectContaining({ gameType: 'TETRIS', engineVersion: 1, userId: 7 }));
+    expect(session).toEqual(expect.objectContaining({ gameType: 'TETRIS', boardKey: 'default', engineVersion: 1, userId: 7 }));
     expect(redis.set).toHaveBeenCalledWith(`game:session:${sessionId}`, JSON.stringify(session), 'EX', 7200);
     expect(expiresAt.getTime()).toBe(session.startedAt + 7_200_000);
+  });
+
+  it('보드가 정한 seed가 있으면 무작위 대신 그 값을 써야 함 (주간 도전처럼 전원 동일)', async () => {
+    const { session } = await service.createSession({ gameType: 'TETRIS', boardKey: 'weekly-2026-w43', seed: 42, engineVersion: 1, userId: null, ttlSeconds: 14400 });
+
+    expect(session).toEqual(expect.objectContaining({ boardKey: 'weekly-2026-w43', seed: 42 }));
+    expect(redis.set).toHaveBeenCalledWith(expect.any(String), JSON.stringify(session), 'EX', 14400);
+  });
+
+  it('getSession은 GET으로 읽기만 해야 함 (검증 전 — 지우지 않는다) — 없으면 null', async () => {
+    redis.get.mockResolvedValueOnce(JSON.stringify({ gameType: 'TETRIS', seed: 1 })).mockResolvedValueOnce(null);
+
+    await expect(service.getSession('a')).resolves.toEqual({ gameType: 'TETRIS', seed: 1 });
+    await expect(service.getSession('a')).resolves.toBeNull();
+    expect(redis.get).toHaveBeenCalledWith('game:session:a');
+    expect(redis.getdel).not.toHaveBeenCalled();
   });
 
   it('consumeSession은 GETDEL로 꺼내야 함 (1회용) — 없으면 null', async () => {
@@ -42,19 +58,22 @@ describe('GameSessionService', () => {
   ])('%s이면 503 GAME_SESSION_UNAVAILABLE', async (_name, arrange) => {
     arrange();
 
-    await expect(service.createSession({ gameType: 'TETRIS', engineVersion: 1, userId: null })).rejects.toMatchObject({
+    await expect(service.createSession({ gameType: 'TETRIS', boardKey: 'default', seed: null, engineVersion: 1, userId: null, ttlSeconds: 7200 })).rejects.toMatchObject({
       code: 'GAME_SESSION_UNAVAILABLE',
       status: 503,
     });
+    await expect(service.getSession('a')).rejects.toMatchObject({ code: 'GAME_SESSION_UNAVAILABLE', status: 503 });
     await expect(service.consumeSession('a')).rejects.toMatchObject({ code: 'GAME_SESSION_UNAVAILABLE', status: 503 });
   });
 
   it('Redis 명령이 실패해도 503으로 바꿔야 함', async () => {
     redis.set.mockRejectedValue(new Error('NOAUTH'));
+    redis.get.mockRejectedValue(new Error('NOAUTH'));
 
-    await expect(service.createSession({ gameType: 'TETRIS', engineVersion: 1, userId: null })).rejects.toMatchObject({
+    await expect(service.createSession({ gameType: 'TETRIS', boardKey: 'default', seed: null, engineVersion: 1, userId: null, ttlSeconds: 7200 })).rejects.toMatchObject({
       code: 'GAME_SESSION_UNAVAILABLE',
       status: 503,
     });
+    await expect(service.getSession('a')).rejects.toMatchObject({ code: 'GAME_SESSION_UNAVAILABLE', status: 503 });
   });
 });
