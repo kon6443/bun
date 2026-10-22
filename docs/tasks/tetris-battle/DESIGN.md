@@ -232,6 +232,19 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 - `GET /api/v1/tetris-battle/matches/:matchId/replays/:playerId` → 리플레이(VERIFIED만)
 
 
+## 18. 대전 기록 재생·공유 (P6) — D-024
+
+- 전제: 디펜스 공용화(`_shared` — ShareMenu·replayLoader·kakao·ogFont·replayCard 등)가 main에 머지됨(bun #279·#280, next-bun #361·#362). 백엔드 조회 API(§17-3)는 1차 배포에 포함
+- 페이지 `/games/tetris/battle/matches/{matchId}`(비로그인 접근, 전체화면 경로):
+  - 상단: 방 이름·일시·결과표(순위·이름·KO·보낸/받은 줄·최대 콤보)
+  - 재생: 참가자 2~4판 동시 재생(모바일 세로 2×2, 2인은 좌우), 공통 프레임 축으로 동기(각 리플레이의 frame 0 = 각자 카운트다운 종료 — 같은 시작 시각 기준이라 근사 동기), 배속(0.5·1·2·4×)·탐색·처음부터. 판마다 가비지 도착·KO 표시. 리플레이가 없는 참가자(MISSING)는 "기록 없음" 판
+  - 재생은 `simulateBattleReplay`가 아니라 래퍼 `createBattle`+`stepBattle`+기록된 garbage를 프레임마다 주입(스냅샷 탐색은 기존 재생기 방식 재사용)
+  - 공유: `_shared` ShareMenu(카톡·링크 복사·기본 공유 시트) + OG 카드(방 이름·우승자·인원·KO) — 기존 리플레이 공유와 같은 구조
+  - 숨김·DISPUTED·미저장 경기는 404 안내("공개되지 않은 경기예요")
+- 진입점: 대전 결과 화면의 "기록 보기·공유" 버튼(제출 결과가 저장됨일 때 활성 — 저장 전이면 "저장 중" 대기 후 GET 200이면 활성)
+- 백엔드: 변경 없음 예상(GET 경기·리플레이로 충분). OG 카드에 필요한 필드가 부족하면 그때 추가
+- 비목표: 내 대전 목록·전적, 대전 랭킹
+
 ## P. 구현 슬라이스 (기획 확정 후)
 
 | # | 레포 | 내용 | 검증 |
