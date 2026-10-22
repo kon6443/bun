@@ -85,7 +85,7 @@
 ## 배포 (2026-10-22)
 - 백: #277(feat→develop) · #278(develop→main, `c016557`) → Deploy NestJS ✅ 6m49s · Deploy Infra Stack ✅(Redis 512mb 반영 — **Caddy도 `caddy:latest` 새 다이제스트로 함께 교체됨**, registry 무변경) 
 - 프: #359(feat→develop) · #360(develop→main) → Deploy Next ✅ 4m0s
-- 후속: Caddy 이미지 버전 고정(infra yml 수정 시마다 latest로 따라 올라감)
+- Caddy 버전 고정: 사용자 결정으로 하지 않음(2026-10-22)
 
 - 2차: 백 #281(feat→develop) · #282(develop→main) → Deploy NestJS ✅ 5m59s · 프 #363 · #364 → Deploy Next ✅. 인프라·스키마 변경 없음
 
@@ -93,7 +93,7 @@
 - 로컬 실서버: :3500 = 이 worktree `dist`(cwd defense worktree, `REDIS_PORT=6380`) — 디펜스 서버를 내리고 띄움(bun-62 통보). 테스트 끝나면 bun-62에 알린다
 
 ## 후속(낮음, 별건)
-- 재대결 직후 토큰 재발급 시 직전 경기 제출 403(P5 R2 의심) · 기권 토스트 문구 단계별 분리 · `\p{Cn}` 신규 이모지(Node ICU) · Redis 명령 무한 대기·XFF 신뢰 구성(D-015) · 2레플리카 원격 채널 전달 확인(배포 후, D-017)
+- 기권 토스트 문구 단계별 분리 · `\p{Cn}` 신규 이모지(Node ICU) · Redis 명령 무한 대기·XFF 신뢰 구성(D-015) · 2레플리카 전달은 운영 데이터로 확인됨(WORKLOG 후속 절)
 
 ## 위험 & 롤백
 - 신규 모듈·namespace·경로 추가 위주 — revert. 신규 테이블 3개(D-008) — 마이그레이션 실행은 머지 전 차단 게이트, 롤백은 `down()`
