@@ -32,16 +32,35 @@ export function killReward(kind: EnemyKind, hp: number, wave: number, rewardG: n
 /** 현재 dist에 맞게 구간·좌표를 옮긴다 — 앞으로만 간다 */
 export function placeOnPath(enemy: Enemy, path: MapPath): void {
   const lengths = path.segmentLengths;
-  while (enemy.segment < lengths.length - 1 && enemy.dist - enemy.segmentStart >= lengths[enemy.segment]) {
-    enemy.segmentStart += lengths[enemy.segment];
-    enemy.segment += 1;
+  const last = lengths.length - 1;
+  const dist = enemy.dist;
+  let segment = enemy.segment;
+  let start = enemy.segmentStart;
+  while (segment < last && dist - start >= lengths[segment]) {
+    start += lengths[segment];
+    segment += 1;
   }
-  const len = lengths[enemy.segment];
-  const d = Math.min(enemy.dist - enemy.segmentStart, len);
+  enemy.segment = segment;
+  enemy.segmentStart = start;
+  const len = lengths[segment];
+  const d = Math.min(dist - start, len);
   const p = path.points;
-  const i = enemy.segment * 2;
-  enemy.x = lerpCoord(p[i], p[i + 2], d, len);
-  enemy.y = lerpCoord(p[i + 1], p[i + 3], d, len);
+  const i = segment * 2;
+  const x0 = p[i];
+  const y0 = p[i + 1];
+  const x1 = p[i + 2];
+  const y1 = p[i + 3];
+  // 축 정렬 구간(길이 = 한 축 차이)이면 lerpCoord가 정확히 시작 ± d — 나눗셈 없이 같은 값(len > 0)
+  if (y0 === y1 && len > 0 && Math.abs(x1 - x0) === len) {
+    enemy.x = x0 <= x1 ? x0 + d : x0 - d;
+    enemy.y = y0;
+  } else if (x0 === x1 && len > 0 && Math.abs(y1 - y0) === len) {
+    enemy.x = x0;
+    enemy.y = y0 <= y1 ? y0 + d : y0 - d;
+  } else {
+    enemy.x = lerpCoord(x0, x1, d, len);
+    enemy.y = lerpCoord(y0, y1, d, len);
+  }
 }
 
 export type SpawnSpec = {

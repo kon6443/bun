@@ -40,7 +40,6 @@ import {
   type Tower,
   ZONE_KIND,
   economyStat,
-  enemyPath,
   enemySubject,
   towerSubject,
 } from './state';
@@ -210,9 +209,10 @@ function nearestOther(state: GameState, x: number, y: number, radius: number, hi
   let best: Enemy | null = null;
   let bestD2 = 0;
   for (const enemy of state.enemies) {
-    if (!canHit(enemy, hitsGround, hitsAir) || exclude.indexOf(enemy.id) >= 0) continue;
+    if (!canHit(enemy, hitsGround, hitsAir)) continue;
     const d2 = distanceSquared(x, y, enemy.x, enemy.y);
-    if (d2 > radiusSq) continue;
+    // 제외 목록 탐색은 반경 안일 때만(조건 순서만 바꿈 — 결과는 같다)
+    if (d2 > radiusSq || exclude.indexOf(enemy.id) >= 0) continue;
     if (!best || d2 < bestD2 || (d2 === bestD2 && enemy.pathTotal - enemy.dist < best.pathTotal - best.dist)) {
       best = enemy;
       bestD2 = d2;
@@ -291,8 +291,18 @@ export function enemyStep(enemy: Enemy, speed: number): number {
   return Math.floor((speed * Math.max(SLOW_FLOOR_PERMILLE, PERMILLE - enemy.slow)) / PERMILLE);
 }
 
+/** 능력이 있는 종류 — 4단계에서 살아 있는지 보고, 5단계는 능력 없는 적을 표를 읽지 않고 넘긴다(분열은 사망 때 처리라 5단계 일은 없지만 넉넉히 포함) */
+const HAS_ABILITY: readonly boolean[] = ENEMIES.map((e) => e.ability.kind !== ABILITY.NONE);
+
 /** 종류별 속도 표 — 효과는 틱 안에서 바뀌지 않으니 틱마다 종류 수만큼만 계산한다 (step 안에서만 쓰는 작업 표) */
 const speedByKind: number[] = [];
+
+/**
+ * 장판이 거는 상태효과·출처 — applyStatus는 값만 읽고 담아 두지 않는다(status.ts) → 적·장판마다 새로 만들지 않고 고쳐 쓴다(step 안 작업 객체)
+ * 출처 대상은 늘 대포·불(장판은 대포 분기만 만든다)
+ */
+const zoneSpec: StatusApply = { status: STATUS.BURN, value: 0, ticks: 0 };
+const zoneSource: StatusSource = { subject: towerSubject(TOWER_ID.CANNON, ELEMENT.FIRE), sourceKey: 0, plague: false, curseExplode: 0 };
 
 /** 장판 상태효과 — 장판 생성 순, 지상 적만 */
 function applyZones(state: GameState, enemy: Enemy): void {
@@ -300,29 +310,41 @@ function applyZones(state: GameState, enemy: Enemy): void {
   for (let z = 0; z < zones.length; z++) {
     const zone = zones[z];
     if (distanceSquared(zone.x, zone.y, enemy.x, enemy.y) > zone.radius * zone.radius) continue;
-    const spec: StatusApply =
-      zone.kind === ZONE_KIND.FIRE
-        ? { status: STATUS.BURN, value: zone.value, ticks: zone.statusTicks }
-        : { status: STATUS.SLOW, value: zone.value, ticks: zone.statusTicks };
-    const source: StatusSource = { subject: towerSubject(TOWER_ID.CANNON, ELEMENT.FIRE), sourceKey: zone.sourceKey, plague: false, curseExplode: 0 };
-    applyStatus(state, enemy, spec, source, null);
+    zoneSpec.status = zone.kind === ZONE_KIND.FIRE ? STATUS.BURN : STATUS.SLOW;
+    zoneSpec.value = zone.value;
+    zoneSpec.ticks = zone.statusTicks;
+    zoneSource.sourceKey = zone.sourceKey;
+    applyStatus(state, enemy, zoneSpec, zoneSource, null);
   }
 }
 
+/** updateAndMoveEnemies 결과 — 틱마다 고쳐 쓰는 작업 객체(step 안에서 바로 읽는다) */
+export type MoveResult = {
+  /** 경로 끝에 닿은 적이 있다 → 9단계 누수 검사 */
+  reachedEnd: boolean;
+  /** 능력이 있는 종류가 살아 있다 — 없으면 5단계를 건너뛴다 */
+  abilityAlive: boolean;
+};
+const moveResult: MoveResult = { reachedEnd: false, abilityAlive: false };
+
 /**
- * 3단계(상태효과 갱신 → 장판) + 4단계(이동)를 적마다(생성 순) 이어서 한다 — 경로 끝에 닿은 적이 있으면 true
+ * 3단계(상태효과 갱신 → 장판) + 4단계(이동)를 적마다(생성 순) 이어서 한다 — 결과는 MoveResult(재사용 객체)
  * 한 적의 상태효과·장판·이동은 다른 적에 영향을 주지 않아 "전원 3단계 → 전원 4단계"와 결과가 같다(루프 1회 — §E5 성능)
  * 불변 조건: 3단계에 다른 적을 건드리는 효과(지속 피해 사망 즉시 범위 효과·오라 등)를 넣으면 두 루프로 다시 나눈다
  * 장판 상태효과는 갱신 뒤에 걸어 같은 틱 이동에 반영되고, 장판 지속은 루프 뒤에 줄인다
  */
-export function updateAndMoveEnemies(state: GameState, stage: Stage, deaths: Enemy[], events: number[] | null): boolean {
+export function updateAndMoveEnemies(state: GameState, stage: Stage, deaths: Enemy[], events: number[] | null): MoveResult {
   for (let k = 0; k < ENEMIES.length; k++) speedByKind[k] = enemySpeed(state, k);
   const zones = state.zones;
   let reachedEnd = false;
+  let abilityAlive = false;
   const enemies = state.enemies;
+  const { groundPaths, airPaths } = stage.map;
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
     if (enemy.status !== ENEMY_STATUS.ALIVE) continue;
+    // 지속 피해로 이번에 죽는 적도 센다 — 5단계는 살아 있는 적만 보니 넉넉하게 잡아도 결과가 같다
+    if (HAS_ABILITY[enemy.kind]) abilityAlive = true;
     if (enemy.afflicted) {
       tickStatuses(state, enemy, deaths, events);
       if (enemy.status !== ENEMY_STATUS.ALIVE) continue;
@@ -331,7 +353,8 @@ export function updateAndMoveEnemies(state: GameState, stage: Stage, deaths: Ene
     const move = enemyStep(enemy, speedByKind[enemy.kind]);
     if (move === 0) continue;
     enemy.dist = Math.min(enemy.dist + move, enemy.pathTotal);
-    placeOnPath(enemy, enemyPath(stage, enemy.air, enemy.path));
+    // enemyPath와 같은 선택 — 적마다 맵 구조를 다시 풀지 않는다
+    placeOnPath(enemy, enemy.air && airPaths.length > 0 ? airPaths[Math.min(enemy.path, airPaths.length - 1)] : groundPaths[Math.min(enemy.path, groundPaths.length - 1)]);
     if (enemy.dist >= enemy.pathTotal) reachedEnd = true;
   }
   if (zones.length > 0) {
@@ -339,7 +362,9 @@ export function updateAndMoveEnemies(state: GameState, stage: Stage, deaths: Ene
     for (const zone of zones) if (--zone.ticksLeft > 0) zones[write++] = zone;
     zones.length = write;
   }
-  return reachedEnd;
+  moveResult.reachedEnd = reachedEnd;
+  moveResult.abilityAlive = abilityAlive;
+  return moveResult;
 }
 
 // ==================== 5단계: 적 능력 ====================
@@ -350,7 +375,7 @@ export function runAbilities(state: GameState, stage: Stage, events: number[] | 
   const count = enemies.length; // 이번 틱 소환된 적은 다음 틱부터
   for (let i = 0; i < count; i++) {
     const enemy = enemies[i];
-    if (enemy.status !== ENEMY_STATUS.ALIVE) continue;
+    if (!HAS_ABILITY[enemy.kind] || enemy.status !== ENEMY_STATUS.ALIVE) continue;
     const ability = ENEMIES[enemy.kind].ability;
     switch (ability.kind) {
       case ABILITY.SUMMON: {
@@ -605,11 +630,15 @@ function findTarget(state: GameState, projectile: Projectile): Enemy | null {
  */
 export function runProjectiles(state: GameState, firedThisTick: number, deaths: Enemy[], events: number[] | null): boolean {
   let finished = false;
-  const flying = state.projectiles.length - firedThisTick;
+  const projectiles = state.projectiles;
+  const enemies = state.enemies;
+  const flying = projectiles.length - firedThisTick;
   for (let i = 0; i < flying; i++) {
-    const projectile = state.projectiles[i];
+    const projectile = projectiles[i];
     if (projectile.status !== PROJECTILE_STATUS.FLYING) continue;
-    const target = findTarget(state, projectile);
+    // 힌트가 맞으면 바로(대부분) — 아니면 findTarget(힌트 재확인 후 이분 탐색)
+    const hinted = enemies[projectile.targetHint];
+    const target = hinted !== undefined && hinted.id === projectile.targetId ? hinted : findTarget(state, projectile);
     const targetAlive = target !== null && target.status === ENEMY_STATUS.ALIVE;
     if (target) {
       // 같은 틱에 먼저 죽은 표적도 틱 끝 정리 전까지 이번 틱 위치를 갖고 있다 — 범위탄은 거기서 터진다

@@ -152,8 +152,8 @@ export function applyStatus(state: GameState, enemy: Enemy, spec: StatusApply, s
  */
 export function tickStatuses(state: GameState, enemy: Enemy, deaths: Enemy[], events: number[] | null): void {
   if (!enemy.afflicted) return; // 상태효과가 없으면 할 일이 없다 (적마다 매 틱 부르는 경로)
-  // 생성 틱 포함 30번째 갱신마다 (생성 틱에도 3단계를 거친다)
-  if ((state.tick - enemy.spawnTick) % DOT_INTERVAL_TICKS === DOT_INTERVAL_TICKS - 1) {
+  // 생성 틱 포함 30번째 갱신마다 (생성 틱에도 3단계를 거친다) — 화상·중독이 없으면 줄 피해가 없어 주기 계산도 건너뛴다
+  if ((enemy.burnDps.length > 0 || enemy.poisonStacks > 0) && (state.tick - enemy.spawnTick) % DOT_INTERVAL_TICKS === DOT_INTERVAL_TICKS - 1) {
     let burn = 0;
     for (let i = 0; i < enemy.burnDps.length; i++) burn += enemy.burnDps[i];
     if (burn > 0) dealDamage(state, enemy, burn, DAMAGE.MAG, ELEMENT.FIRE, 0, deaths, events);
@@ -161,20 +161,25 @@ export function tickStatuses(state: GameState, enemy: Enemy, deaths: Enemy[], ev
   }
   if (enemy.slowTicks > 0 && --enemy.slowTicks === 0) enemy.slow = 0;
   if (enemy.stunTicks > 0) enemy.stunTicks -= 1;
-  if (enemy.burnSources.length > 0) {
-    let write = 0;
-    for (let i = 0; i < enemy.burnSources.length; i++) {
-      enemy.burnTicks[i] -= 1;
-      if (enemy.burnTicks[i] > 0) {
-        enemy.burnSources[write] = enemy.burnSources[i];
-        enemy.burnDps[write] = enemy.burnDps[i];
-        enemy.burnTicks[write] = enemy.burnTicks[i];
-        write++;
+  const burnTicks = enemy.burnTicks;
+  if (burnTicks.length > 0) {
+    // 줄이기만 하고, 끝난 출처가 있을 때만 당겨 채운다(대부분 틱은 끝나는 것이 없다)
+    let expired = false;
+    for (let i = 0; i < burnTicks.length; i++) if (--burnTicks[i] <= 0) expired = true;
+    if (expired) {
+      let write = 0;
+      for (let i = 0; i < burnTicks.length; i++) {
+        if (burnTicks[i] > 0) {
+          enemy.burnSources[write] = enemy.burnSources[i];
+          enemy.burnDps[write] = enemy.burnDps[i];
+          burnTicks[write] = burnTicks[i];
+          write++;
+        }
       }
+      enemy.burnSources.length = write;
+      enemy.burnDps.length = write;
+      burnTicks.length = write;
     }
-    enemy.burnSources.length = write;
-    enemy.burnDps.length = write;
-    enemy.burnTicks.length = write;
   }
   if (enemy.poisonTicks > 0 && --enemy.poisonTicks === 0) {
     enemy.poisonStacks = 0;

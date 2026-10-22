@@ -304,10 +304,11 @@ export function step(state: GameState, events: number[] | null = null): void {
   }
 
   // 3. 상태효과 (지속 피해·지속 감소) + 장판 → 4. 적 이동 — 적마다 이어서(결과는 단계별 순서와 같다, combat.ts)
-  const reachedEnd = updateAndMoveEnemies(state, stage, deathOrder, events);
+  const moved = updateAndMoveEnemies(state, stage, deathOrder, events);
+  const reachedEnd = moved.reachedEnd;
 
-  // 5. 적 능력
-  runAbilities(state, stage, events);
+  // 5. 적 능력 — 능력이 있는 적이 없으면 건너뛴다
+  if (moved.abilityAlive) runAbilities(state, stage, events);
 
   // 6. 타워: 쿨다운 → 표적 → 공격 → 궁극
   const fired = runTowers(state, deathOrder, events);
