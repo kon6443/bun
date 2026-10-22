@@ -256,6 +256,14 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
   - `GET /api/v1/tetris-battle/lobby` → `{ waitingRooms, playingRooms }` — Redis 로비 ZSET·방 상태로 계산(로비 `listRooms`와 같은 정리 규칙), 짧은 캐시 가능
   - `GET /api/v1/tetris-battle/matches?limit=&cursor=` → 최근 VERIFIED·비숨김 경기 요약 `{ items: [{ matchId, roomName, playerCount, endedAt, winnerName, players: [{ name, place }] }], nextCursor }` — `CRTD_AT DESC, MATCH_ID DESC` 커서(기존 인덱스 `IDX_TB_MATCHES_CRTD`), limit 1~20(기본 10). 스키마 변경 없음
 
+## 20. 연출 2차(네온·글로우) + 사운드 (P8) — D-026
+
+- 범위: 싱글·대전·재생기 공통(렌더러·이펙트 레이어). 엔진·리플레이·서버 무영향 원칙 유지(순도 테스트)
+- 시각(네온·글로우): 블록 발광·외곽 글로우, 고스트 네온 외곽선, 줄 삭제 섬광 + 충격파 링, 테트리스·T-스핀·B2B·퍼펙트 클리어 배너(글로우·스케일 인), 콤보 미터, 레벨업 버스트, 배경 별·입자 흐름(레벨에 따라 색조), 하드 드롭 빛줄기, 대전: 공격 궤적 글로우·가비지 상승 연출·KO 폭발·카운트다운 연출
+- 사운드: Web Audio 합성(파일·라이선스 없음) — 이동·회전·하드 드롭·고정·홀드·줄 삭제(1~4줄 음 다르게)·T-스핀·콤보(단계마다 음 상승)·B2B·레벨업·게임 오버, 대전: 공격 송신·가비지 수신 경고·KO·승리. 배경음악은 단순 루프(별도 토글)
+- 토글: **기본 꺼짐**. 테트리스 홈 설정(효과음·배경음악·볼륨) + 게임·대전 화면 상단 스피커 버튼(빠른 켜기/끄기). localStorage 저장, 오디오는 사용자 첫 조작 후에만 시작(iOS 자동재생 정책)
+- 성능·접근성: 기존 "연출 줄이기"(prefers-reduced-motion) 존중 — 줄이면 글로우·입자 축소, 파티클·글로우 상한, 저사양 감지 시 자동 축소. 실기기 fps 확인은 사용자
+
 ## P. 구현 슬라이스 (기획 확정 후)
 
 | # | 레포 | 내용 | 검증 |
