@@ -186,3 +186,8 @@
 - 메인 실서버: 백(이 worktree `feat-onam-tetris-battle-share` dist, :3500, Redis 6380) + 프(:3000 dev) → Playwright 2탭(`scratchpad/live/flow-p6.js`): 대전 → 결과 "기록 저장됨" → "기록 보기(새 탭)·공유" 활성 → 경기 페이지(실연동 방 · 2인전 · 결과표 · 1위 "우승"/2위 "KO" 재생) → `…/og` 200. 스크린샷 `scratchpad/live/p6-viewer.png`. 콘솔 404 1건은 저장 전 GET match 폴링 응답(정상 흐름)
 - 미검증(실기): 카톡 인앱·iOS 홈 앱에서 새 탭 열 때 방 유지 · 실기기 2×2 성능
 - 상용 DB 테스트 경기 1건 추가(`IWq5cJJZVkE4BFmz`) — D-023 ②와 같이 둠
+
+## 2026-10-22 — P7 대전 입구·최근 대전 목록
+- 백(서브에이전트): `GET /api/v1/tetris-battle/lobby`(`{waitingRooms, playingRooms}`, `scanLobby` 분리·Redis 2초 공유 캐시) · `GET /api/v1/tetris-battle/matches?limit&cursor`(VERIFIED·비숨김, CRTD_AT DESC·MATCH_ID DESC 키셋, base64url 커서, 1위 없는 경기 제외 — winnerName 항상 문자열, 한 페이지가 limit보다 적을 수 있음). ci:core unit 1307 · E2E 225 · 6380 104/104
+- 프(`next-bun-bd`): `/games` 카드 "친구와 대전"+NEW(`page.tsx` +12) · 테트리스 홈 2열 주요 버튼 + "지금 열린 방 N개" + 최근 대전 5(`TetrisHome.tsx` +10/−6) · 전체 목록 `/games/tetris/battle/matches`(nextCursor로 더 보기, 422면 처음부터). test 705, 리뷰 R3 두 리뷰어 0
+- 백 리뷰 R1: review-flow 확정 0(CRTD_AT 실데이터 ms 정밀도 확인) · Opus 확정 1(위조 커서 t 범위 → 500) 의심 3(NLS 정렬 — **메인 `pnpm db:select` NLS_SORT·NLS_COMP = BINARY 확인, 해소** · P5 재저장 CRTD_AT 덮어쓰기 · lobbyCounts Redis 오류 500) → N1~N3 수정 지시
