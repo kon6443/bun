@@ -38,7 +38,7 @@
 
 - 키 `game:session:{sessionId}` → `{ gameType, seed, engineVersion, startedAt(ms), userId|null }`, TTL 2시간
 - Redis 클라이언트는 기존 관례대로 `main.ts`에서 `setRedisClient(redisAdapter.getPubClient())`로 주입(`OnlineUserService`·`FishingOnlineService`와 같은 방식)
-- 제출 시 `GETDEL`로 꺼내 **1회만** 사용. Redis 장애로 세션을 못 만들면 플레이는 그대로 되고 랭킹 등록만 불가(프론트 안내)
+- 제출 시 **1회만** 사용 — 2026-10-21부터 검증 결과가 확정된 뒤 `GETDEL`(검증기 오류는 503 `GAME_VERIFY_BUSY` + 세션 유지). 정본은 `docs/tasks/defense/DESIGN.md` §B4. Redis 장애로 세션을 못 만들면 플레이는 그대로 되고 랭킹 등록만 불가(프론트 안내)
 - `seed`: 서버가 `crypto.randomInt(0, 2**32)`로 발급 — 클라이언트가 seed 값을 정할 수는 없다. 단 seed는 발급 즉시 응답에 실리고 쓰지 않은 세션은 버릴 수 있어(분당 20개), 유리한 seed를 골라 오프라인으로 입력을 만든 뒤 실시간 검사만 기다려 제출하는 봇은 막지 못한다 — D-005에서 수용한 위험(D-015)
 - **Redis 퇴출 위험**: 운영 Redis는 `maxmemory 128mb` + `allkeys-lru` — 메모리가 차면 진행 중 세션이 지워질 수 있고, 그 판의 제출은 409가 된다. 세션 키는 약 150B·TTL 2시간이라 수용(D-015). `redis_memory_used_bytes`가 상한에 가까워지면 재검토
 
@@ -74,7 +74,7 @@ replay: {
 - 일시정지는 프레임을 진행시키지 않으므로 기록에 없다
 
 ### 4-2. 서버 절차
-1. `GETDEL` 세션 → 없으면 409. `gameType`·`engineVersion` 일치 확인
+1. 세션 조회 → 없으면 409. `gameType`·`engineVersion` 일치 확인 (2026-10-21 순서 변경 — 형식 검사 → `GET` 세션 → 시간 검사 → 검증 → 확정 시 `GETDEL`, 정본 `docs/tasks/defense/DESIGN.md` §B4)
 2. 형식·상한 검사(DTO): `frames ≤ 216,000`(60분), `inputs.length ≤ 120,000`(동작 6만 개 — D-014), 정수·범위
 3. **시간 검사**: `frames / 60초 ≤ (지금 − startedAt) + 5초` — 빨리 감기 봇 차단
 4. 같은 엔진을 화면 없이 `seed` + `inputs`로 실행 → 게임 오버가 `frames`에서 실제로 일어났는지, 입력이 모두 유효한 프레임인지 확인 → 아니면 422 `GAME_REPLAY_INVALID`

@@ -67,6 +67,8 @@ async function bootstrap() {
         }
       },
       credentials: true,
+      // 503 GAME_VERIFY_BUSY의 재시도 대기(초) — 기본 노출 헤더가 아니라 교차 출처 브라우저가 읽으려면 명시해야 한다(docs/tasks/defense D-018)
+      exposedHeaders: ['Retry-After'],
     });
 
     // WebSocket Adapter 설정 - Redis Pub/Sub으로 멀티 레플리카 지원

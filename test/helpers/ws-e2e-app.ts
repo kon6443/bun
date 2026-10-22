@@ -8,7 +8,7 @@ import { io, Socket } from 'socket.io-client';
  *
  * HTTP E2E(`e2e-app.ts`)와 결정적으로 다른 점은 **실제로 포트를 연다**는 것이다.
  * supertest는 `app.getHttpServer()`에 직접 요청을 주입하지만, 소켓은 진짜 핸드셰이크가
- * 필요하므로 `listen(0)`으로 OS가 준 빈 포트에 붙는다.
+ * 필요하므로 `listen(0, '127.0.0.1')`으로 OS가 준 빈 포트에 붙는다.
  *
  * Redis는 쓰지 않는다 — `RedisIoAdapter`는 멀티 레플리카 브로드캐스트용이고,
  * 단일 프로세스 테스트에서는 Socket.IO 기본 어댑터로 충분하다. 덕분에 이 스펙도
@@ -89,7 +89,8 @@ export const createWsApp = async ({
 
   const app = moduleRef.createNestApplication({ logger: false });
   await app.init();
-  await app.listen(0);
+  // 클라이언트가 127.0.0.1로 붙으므로 같은 주소에 연다 — '::'로 열면 다른 프로세스가 127.0.0.1로 점유한 포트를 받을 수 있다(e2e-app.ts 주석)
+  await app.listen(0, '127.0.0.1');
 
   const { port } = app.getHttpServer().address() as AddressInfo;
   const sockets: Socket[] = [];

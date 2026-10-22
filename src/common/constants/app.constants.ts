@@ -44,15 +44,21 @@ export const FEEDBACK_LIST_MAX_LIMIT = 50;
 /** 게임 랭킹 표시 이름 최대 길이 (앞뒤 공백 제거 후) — 프론트와 같은 값 (docs/tasks/games DESIGN §3) */
 export const GAME_PLAYER_NAME_MAX_LENGTH = 12;
 
-/** 게임 세션(seed) 유효 시간 (초) — 이 안에 끝난 판만 등록할 수 있다 */
+/** 테트리스 세션(seed) 유효 시간 (초) — 이 안에 끝난 판만 등록할 수 있다. 게임별 값은 엔진 레지스트리 sessionTtlSeconds */
 export const GAME_SESSION_TTL_SECONDS = 2 * 60 * 60;
 
-/** 리플레이 상한 — 60분(60fps) · 입력 배열 길이(동작 6만 개 = 60분 기준 초당 16.7회) (DESIGN §4-2, D-014) */
+/**
+ * 리플레이 DTO 상한 — 모든 게임 중 최댓값(테트리스 60분·60fps, 입력 배열 길이 동작 6만 개) (games DESIGN §4-2, D-014).
+ * 게임별 상한은 엔진 레지스트리 maxFrames·maxInputLength로 서비스가 다시 검사한다(defense DESIGN §B2)
+ */
 export const GAME_REPLAY_MAX_FRAMES = 216_000;
 export const GAME_REPLAY_MAX_INPUT_LENGTH = 120_000;
 
 /** 리플레이 프레임 수와 서버 경과 시간 비교 여유 (밀리초) — 네트워크 지연 */
 export const GAME_REPLAY_TIME_TOLERANCE_MS = 5_000;
+
+/** 검증이 밀렸을 때(503 GAME_VERIFY_BUSY) 다시 시도까지 기다릴 시간 (초) — Retry-After 헤더 (defense DESIGN §B4) */
+export const GAME_VERIFY_RETRY_AFTER_SECONDS = 2;
 
 /** 랭킹 조회 기본·최대 개수 */
 export const GAME_RANKING_DEFAULT_LIMIT = 50;
