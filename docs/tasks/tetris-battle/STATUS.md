@@ -1,6 +1,6 @@
 # 테트리스 멀티(대전) · 화면 연출 강화
 
-- **상태**: 🟡 P-V1·P0·P1·P2·P3·P5 구현·리뷰·실서버 검증 완료(미커밋) · P6(대전 기록 재생·공유)은 디펜스 머지 대기(D-010) · 백 커밋 완료(미푸시)·프 커밋 진행 (2026-10-22)
+- **상태**: 🟡 P-V1·P0·P1·P2·P3·P5 구현·리뷰·실서버 검증 완료(미커밋) · P6(대전 기록 재생·공유)은 디펜스 머지 대기(D-010) · 백·프 커밋 완료(미푸시) — 푸시·머지 지시 대기 (2026-10-22)
 - **최종수정**: 2026-10-22
 - **관련 문서**: DESIGN.md(설계 정본) · DECISIONS.md · WORKLOG.md(조사 근거 파일:라인) · `research/01-global-patterns.md`(세계 사례·패턴) · 선행 `../games/`(테트리스·랭킹·리플레이 정본)
 
@@ -30,7 +30,7 @@
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: worktree·브랜치(백·프) · 디펜스 협의(D-003) · 백엔드 기반 조사 · 프론트 조사(`next-bun-bd`) · 세계 사례 리서치 · DESIGN 초안(§0 가능성 판정)
 - **다음 할 일**:
-  1. 프 커밋 보고 수신 → 푸시·머지 지시 대기(배포 순서 백엔드 → 프론트)
+  1. 푸시·머지 지시 대기(배포 순서 백엔드 → 프론트, Redis 512MB는 infra 재배포)
   2. 디펜스 main 머지 후 P6(D-023) — 이 브랜치를 main 위로 리베이스
   2. 배포 직후 조치: Redis 512MB 반영(`infra` 재배포 또는 `CONFIG SET`, D-012)(사용자 "구현은 아직 하지마")
 
@@ -75,8 +75,9 @@
 - 백·프 `pnpm ci:core` · 백 WS E2E(다중 클라이언트 대전) · 엔진·래퍼 골든(백·프 동일 결과)
 - Playwright 2탭 대전 · 실기기 2~4대
 
-## 커밋 (백, 2026-10-22, 미푸시)
-- `a89a18b` chore(infra) Redis 512mb · `9e3f023` feat(tetris-battle) 래퍼 사본 · `e9b6a6a` feat(entities) 결과 테이블·마이그레이션(실행 완료) · `eb09a12` feat(tetris-battle) 대전 모듈 · `abe5ad2` docs(tetris-battle)
+## 커밋 (2026-10-22, 미푸시)
+- 프(`next-bun`): `be87ae6` feat(games) 연출 강화 · `0e09220` feat(games) 대전 래퍼·골든 · `b068d10` feat(games) 친구 대전 UI·매치·리플레이 제출
+- 백: `a89a18b` chore(infra) Redis 512mb · `9e3f023` feat(tetris-battle) 래퍼 사본 · `e9b6a6a` feat(entities) 결과 테이블·마이그레이션(실행 완료) · `eb09a12` feat(tetris-battle) 대전 모듈 · `abe5ad2` docs(tetris-battle)
 
 ## 운영 메모
 - 로컬 실서버: :3500 = 이 worktree `dist`(cwd defense worktree, `REDIS_PORT=6380`) — 디펜스 서버를 내리고 띄움(bun-62 통보). 테스트 끝나면 bun-62에 알린다
