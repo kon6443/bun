@@ -324,9 +324,11 @@ export class TetrisBattleResultService {
   ): Promise<void> {
     const verdictOf = (pid: string): TetrisBattleVerdict => subs.get(pid)?.verdict ?? 'MISSING';
     const status = snap.players.some((p) => verdictOf(p.playerId) === 'INVALID') ? 'DISPUTED' : 'VERIFIED';
-    const crtdAt = new Date();
-
     await this.dataSource.transaction(async (manager: EntityManager) => {
+      // 재저장(앞선 시도가 일부 남은 경우 save는 UPDATE가 된다)이면 기존 CRTD_AT를 지킨다 — 최근 대전 목록의 정렬 키라
+      // 바뀌면 커서 페이지가 어긋난다(리뷰 N2). 처음이면 지금
+      const existing = await manager.findOne(TetrisBattleMatch, { where: { matchId: snap.matchId }, select: { matchId: true, crtdAt: true } });
+      const crtdAt = existing?.crtdAt ?? new Date();
       await manager.save(
         manager.create(TetrisBattleMatch, {
           matchId: snap.matchId,

@@ -8,6 +8,7 @@ import {
   LIVENESS_MIN_CONNECTED_MS,
   LIVENESS_PROBE_INTERVAL_MS,
   LOBBY_LIST_LIMIT,
+  LOBBY_COUNTS_CACHE_MS,
   LOBBY_SCAN_LIMIT,
   MATCH_START_DELAY_MS,
   PASSWORD_FAILURE_LIMIT,
@@ -57,6 +58,7 @@ const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen
  * |---|---|---|
  * | tetris-battle:room:{code} | Hash { v: 버전, json: StoredRoom } | ROOM_TTL_SECONDS, 쓰기마다 갱신 |
  * | tetris-battle:rooms | ZSET code → 생성 시각(ms) — 로비 인덱스 | ROOM_TTL_SECONDS, 쓰기마다 갱신 |
+ * | tetris-battle:lobby-counts | String JSON {waitingRooms, playingRooms} — 로비 방 수 REST 캐시(D-025) | LOBBY_COUNTS_CACHE_MS |
  * | tetris-battle:rl:{action}:{subject} | String 카운터 | 윈도(초) |
  * | tetris-battle:pwfail:{code}:{socketId} | String 카운터 | PASSWORD_FAILURE_LIMIT.windowSec |
  * | tetris-battle:pwfail-ip:{code}:{ip} | String 카운터 | PASSWORD_FAILURE_LIMIT_IP.windowSec |
@@ -66,6 +68,8 @@ const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen
  */
 const roomKey = (code: string) => `tetris-battle:room:${code}`;
 const LOBBY_INDEX_KEY = 'tetris-battle:rooms';
+/** 로비 방 수 캐시 (REST, D-025) — String JSON, TTL LOBBY_COUNTS_CACHE_MS */
+const LOBBY_COUNTS_CACHE_KEY = 'tetris-battle:lobby-counts';
 const rateLimitKey = (action: string, subject: string) => `tetris-battle:rl:${action}:${subject}`;
 const passwordFailKey = (code: string, socketId: string) => `tetris-battle:pwfail:${code}:${socketId}`;
 const passwordFailIpKey = (code: string, ip: string) => `tetris-battle:pwfail-ip:${code}:${ip}`;
@@ -274,6 +278,47 @@ export class TetrisBattleRoomService {
 
   async listRooms(now = Date.now()): Promise<RoomSummary[]> {
     const redis = this.requireRedis();
+    const summaries = await this.scanLobby(redis, now);
+
+    // 보여 줄 방의 유령 확인 — 응답을 늦추지 않게 기다리지 않는다(바뀌면 changeListener가 방송)
+    for (const summary of summaries.slice(0, LOBBY_LIST_LIMIT)) {
+      void this.reconcileLiveness(redis, summary.code, now);
+    }
+    return summaries.slice(0, LOBBY_LIST_LIMIT);
+  }
+
+  /**
+   * 로비 방 수 (REST — 테트리스 홈 "지금 열린 방 N개", D-025). 소켓 로비 목록과 같은 정리 규칙(scanLobby)으로 센다.
+   * - waitingRooms: WAITING(입장 가능) · playingRooms: PLAYING + RESULT(입장 불가 — 경기 중·결과 화면)
+   * - 홈 방문자마다 불리므로 레플리카 공통 Redis 캐시(LOBBY_COUNTS_CACHE_MS)를 둔다. 생존 확인(reconcile)은 하지 않는다(조회 비용)
+   * - 로비 인덱스 최근 LOBBY_SCAN_LIMIT(200)개만 본다 — 방이 그보다 많으면 적게 셀 수 있다(수용, 리뷰 N3)
+   * Redis를 못 쓰거나 명령이 실패하면(조회 중 끊김 등) null → 503(리뷰 N3, 500으로 새지 않게)
+   */
+  async lobbyCounts(now = Date.now()): Promise<{ waitingRooms: number; playingRooms: number } | null> {
+    const redis = this.readyRedisClient();
+    if (!redis) return null;
+    try {
+      const cached = await redis.get(LOBBY_COUNTS_CACHE_KEY);
+      if (cached) return JSON.parse(cached) as { waitingRooms: number; playingRooms: number };
+
+      const summaries = await this.scanLobby(redis, now);
+      const counts = {
+        waitingRooms: summaries.filter((r) => r.status === 'WAITING').length,
+        playingRooms: summaries.filter((r) => r.status !== 'WAITING').length,
+      };
+      await redis.set(LOBBY_COUNTS_CACHE_KEY, JSON.stringify(counts), 'PX', LOBBY_COUNTS_CACHE_MS);
+      return counts;
+    } catch (error) {
+      this.logger.warn(`로비 방 수 조회 실패 — 503: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * 로비 인덱스의 방을 읽어 정리 규칙을 적용한 요약(WAITING 우선, 같은 상태면 최근 생성 순, 상한 LOBBY_SCAN_LIMIT):
+   * TTL로 사라진 방은 빼고 인덱스에서 정리, 유예가 지난 끊긴 플레이어는 인원에서 빼고, 남은 사람이 없는 방은 뺀다
+   */
+  private async scanLobby(redis: Redis, now: number): Promise<RoomSummary[]> {
     const codes = await redis.zrevrange(LOBBY_INDEX_KEY, 0, LOBBY_SCAN_LIMIT - 1);
     if (codes.length === 0) return [];
 
@@ -294,11 +339,6 @@ export class TetrisBattleRoomService {
       if (room.players.length > 0) summaries.push(this.toSummary(room));
     });
 
-    // 보여 줄 방의 유령 확인 — 응답을 늦추지 않게 기다리지 않는다(바뀌면 changeListener가 방송)
-    for (const summary of summaries.slice(0, LOBBY_LIST_LIMIT)) {
-      void this.reconcileLiveness(redis, summary.code, now);
-    }
-
     if (vanished.length > 0) {
       // TTL로 사라진 방을 인덱스에서 정리 — 실패해도 다음 조회에서 다시 시도된다
       redis.zrem(LOBBY_INDEX_KEY, ...vanished).catch((error: unknown) => {
@@ -309,7 +349,6 @@ export class TetrisBattleRoomService {
     return summaries
       .map((summary, index) => ({ summary, index }))
       .sort((a, b) => STATUS_ORDER[a.summary.status] - STATUS_ORDER[b.summary.status] || a.index - b.index)
-      .slice(0, LOBBY_LIST_LIMIT)
       .map(({ summary }) => summary);
   }
 

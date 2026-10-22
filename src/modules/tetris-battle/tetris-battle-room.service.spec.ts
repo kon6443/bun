@@ -113,6 +113,45 @@ describe('TetrisBattleRoomService', () => {
     });
   });
 
+  describe('lobbyCounts (REST 방 수, D-025)', () => {
+    it('listRooms와 같은 정리 규칙으로 센다 — 대기(WAITING) / 입장 불가(PLAYING·RESULT), 사라진 방·유예 지난 빈 방 제외', async () => {
+      await create(A, { name: '대기1' }, T0);
+      await create(B, { name: '대기2' }, T0 + 1);
+      const playing = await create(C, { name: '경기' }, T0 + 2);
+      const result = await create(D, { name: '결과' }, T0 + 3);
+      mock.patchRoom(playing.room.code, (r) => (r.status = 'PLAYING'));
+      mock.patchRoom(result.room.code, (r) => (r.status = 'RESULT'));
+      const gone = await create({ socketId: 'sock-e', userId: null, ip: '10.0.0.5' }, { name: '사라짐' }, T0 + 4);
+      mock.hashes.delete(roomKey(gone.room.code));
+      const empty = await create({ socketId: 'sock-f', userId: null, ip: '10.0.0.6' }, { name: '빈방' }, T0 + 5);
+      await service.markDisconnected(empty.room.code, 'sock-f', T0);
+
+      await expect(service.lobbyCounts(T0 + DISCONNECT_GRACE_MS)).resolves.toEqual({ waitingRooms: 2, playingRooms: 2 });
+    });
+
+    it('2초 캐시(레플리카 공통 Redis) — 캐시가 있으면 로비를 다시 읽지 않는다', async () => {
+      await create(A, {}, T0);
+      await expect(service.lobbyCounts(T0)).resolves.toEqual({ waitingRooms: 1, playingRooms: 0 });
+      expect(mock.redis.set).toHaveBeenCalledWith('tetris-battle:lobby-counts', JSON.stringify({ waitingRooms: 1, playingRooms: 0 }), 'PX', 2_000);
+
+      await create(B, {}, T0);
+      mock.redis.zrevrange.mockClear();
+      await expect(service.lobbyCounts(T0)).resolves.toEqual({ waitingRooms: 1, playingRooms: 0 });
+      expect(mock.redis.zrevrange).not.toHaveBeenCalled();
+    });
+
+    it('Redis를 못 쓰면 null', async () => {
+      mock.state.status = 'reconnecting';
+      await expect(service.lobbyCounts(T0)).resolves.toBeNull();
+    });
+
+    it('조회 중 Redis 명령이 실패해도 던지지 않고 null(→ 503) (리뷰 N3)', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      mock.redis.zrevrange.mockRejectedValueOnce(new Error('Connection is closed.'));
+      await expect(service.lobbyCounts(T0)).resolves.toBeNull();
+    });
+  });
+
   describe('listRooms', () => {
     it('WAITING 방이 먼저, 같은 상태면 최근 생성 순', async () => {
       const old = await create(A, { name: '오래된 방' }, T0);
