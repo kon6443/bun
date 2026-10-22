@@ -180,3 +180,9 @@
 - 주의: 이 검증으로 상용 DB에 테스트 경기 1건(2행+리플레이 2행)이 남음 — 정리 여부 사용자 확인
 - Opus R2 **확정 0**(unit 295) — 닫은 뒤 저장 실패·`__saved` 실패·가드 만료 동시 저장·예약 필드 모두 문제 없음. 의심 1(낮음): 재대결 뒤 같은 소켓 토큰 없는 재입장으로 재발급되면 직전 경기 Hash 토큰 해시 미갱신 → 직전 경기 제출 403 — 후속으로 기록
 - **P5 종료**: R1 확정 8 → R2 두 리뷰어 0 · 실서버 end-to-end(제출 → VERIFIED → DB 저장 → 조회 API) 통과
+
+## 2026-10-22 — P6 대전 기록 재생·공유 (프론트, `feat-onam-tetris-battle-share`) · 메인 실서버 검증
+- 프론트 보고: 24파일 +1718/−9 — 경기 페이지 `(fullscreen)/battle/matches/[matchId]`(결과표·2~4판 동기 재생·배속·탐색·가비지·KO·"기록 없음") · OG route(group 밖) · 결과 화면 "기록 보기(새 탭)·공유"(GET match 3초 폴링 최대 75초) · 로비·방은 `(live)` route group으로 이동(소켓은 live만) · `_shared` 수정 0줄 · 디펜스 충돌 파일 0줄. lint 0 · typecheck 0 · test 689 · build ✅. 재생 정합: 골든 VERIFIED 13건 끝까지 재생 = simulateBattleReplay 결과. 리뷰 R3 두 리뷰어 0
+- 메인 실서버: 백(이 worktree `feat-onam-tetris-battle-share` dist, :3500, Redis 6380) + 프(:3000 dev) → Playwright 2탭(`scratchpad/live/flow-p6.js`): 대전 → 결과 "기록 저장됨" → "기록 보기(새 탭)·공유" 활성 → 경기 페이지(실연동 방 · 2인전 · 결과표 · 1위 "우승"/2위 "KO" 재생) → `…/og` 200. 스크린샷 `scratchpad/live/p6-viewer.png`. 콘솔 404 1건은 저장 전 GET match 폴링 응답(정상 흐름)
+- 미검증(실기): 카톡 인앱·iOS 홈 앱에서 새 탭 열 때 방 유지 · 실기기 2×2 성능
+- 상용 DB 테스트 경기 1건 추가(`IWq5cJJZVkE4BFmz`) — D-023 ②와 같이 둠
