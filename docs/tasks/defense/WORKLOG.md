@@ -171,3 +171,10 @@
 - R1 review-flow(Opus 서브에이전트, 스킬 절차): 코드 결함 0 · 문서 2(주간 seed "하위 32비트" ↔ 코드 앞 4바이트 · games DESIGN 세션 스키마에 boardKey·게임별 TTL 없음) · Info 1(동기 검증기의 결정적 예외도 503)
 - R1 Opus 독립(1차 API 시간 초과로 종료 → 재실행): 코드 결함 0 · 중간·추정 1(워커 풀이 `{ok:false}` 답과 크래시를 같은 오류로 — B1에서 재현 실패가 503 무한 재시도) · 낮음·추정 1(`search_condition_vc` 12.2+ — **해당 없음**: I0-B2 사전 조회에서 이 컬럼을 실제로 조회해 값 확인, 운영 19c, 마이그레이션 성공)
 - 반영: 문서 2건 · DESIGN §B2 B1 넘김 ③(엔진 예외 = 재현 실패, 인프라만 503) + **워커 답 규약**(재현 실패·엔진 예외는 `{ok:true, result:{ok:false}}`, `{ok:false}`는 워커 처리 실패 전용) · 워커 풀 머리 주석 — 로직 변경 없음
+- R2 review-flow 0(낮음 1: DESIGN `'weekly-YYYY-Www'` 대문자) / Opus 0(낮음 1: 워커 풀 테스트 픽스처 `ok:false`가 'bad replay' — 규약과 어긋남) → `76c1bd1`
+- R3 review-flow 0 + games 단위 15회 중 1회 실패(이름 미확보) / Opus 0 → 재현 시도: 워커 풀 6병렬×5회 30/30·games 15회 0실패 — 재현 안 됨. 의심 지점(고정 800·1200ms 대기 후 생성 수 단정)을 `waitUntil` 폴링으로 → `14084b6`
+- R4 review-flow 0 / Opus 0(낮음 2: 느린 환경에서 "ready로 카운트 리셋" 회귀를 놓칠 수 있음 · waitUntil 상한 = jest 기본 5초) → exit 수 기준 대기·상한 3초, 변이(ready에서 카운트 리셋) 3회 실패 확인 → `2339af8`
+- R5 review-flow 0 / Opus 0 → **종료**
+- **통합 검증**(백엔드 브랜치 dist 3500·Redis 6380·운영 DB + 프론트 최종 커밋 `cacfca0` 운영 빌드 3000): 프론트 build exit 0 · 실API 회귀 22/23(로그인 생략) · 새 동작 — `/boards` · 세션 `boardKey: default, mode: null` · 테트리스 `board` 422 · `rankings` 보드 기본·`board=default&period=weekly` 200·`endless-s1`/`Bad_Key` 422 · 리플레이 `params {das,arr}`+최상위 das·arr · 요약 `boardKey` · 형식 혼합 422 · CORS `Expose-Headers: Retry-After` · 빨리 감기 422 `GAME_REPLAY_INVALID` → 같은 세션 409 `GAME_SESSION_INVALID`(1차는 세션 발급 스로틀 20/분에 걸려 65초 뒤 재실행) · Playwright 게임 **29/29** · 공유 **14/14** + 추가 **4/4** · `/og` 200 `image/png` · 운영 `/games/defense/dev` 404 · 개발 서버 측정 화면 하단(360·390px) "10초 측정" 버튼 하단 691px < BNB 상단 709~710px(겹침 없음)·오류 0
+- 최종: 단위 **1059/1059**(51) · E2E **176·2 skip** · lint 0 errors·경고 6 · build · stubs 0 · 검증 서버 종료(LISTEN 0)
+- 프론트(`next-bun-1b`): 브랜치 최종 리뷰 R1 두 리뷰어 0 → 커밋 3개 `87110e1`(I0-F1+F2 — 같은 테트리스 파일을 겹쳐 고쳐 합침)·`07035eb`(E1)·`cacfca0`(R1), 커밋마다 그 시점 트리로 lint·typecheck·test 단독 검증
