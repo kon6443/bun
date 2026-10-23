@@ -19,15 +19,13 @@ import { GameSessionUnavailableErrorResponseDto } from './games-error.dto';
  */
 export interface GameSession {
   gameType: GameType;
-  /**
-   * 이 판이 등록될 랭킹 보드 — 발급 시 서버가 정하고 제출 때 그대로 쓴다(클라이언트가 보드를 바꿔 내지 못하게).
-   * 보드 도입 전에 발급된 세션에는 없다 — 제출 시 엔진 기본 보드로 본다
-   */
-  boardKey?: string;
+  /** 이 판이 등록될 랭킹 보드 — 발급 시 서버가 정하고 제출 때 그대로 쓴다(클라이언트가 보드를 바꿔 내지 못하게) */
+  boardKey: string;
   seed: number;
   engineVersion: number;
   /** 서버 발급 시각 (epoch ms) — 리플레이 프레임 수와 실제 경과 시간 비교 기준 */
   startedAt: number;
+  /** 발급 때 로그인 사용자(기록용) — 등록 귀속은 제출 시점 로그인 사용자다(세션은 토큰에 묶지 않는다) */
   userId: number | null;
 }
 
