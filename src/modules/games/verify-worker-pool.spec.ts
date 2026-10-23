@@ -211,7 +211,8 @@ describe('VerifyWorkerPool', () => {
     const first = pool.run({ ms: 0, value: 1 }).catch((e: unknown) => e);
     const queued = pool.run({ ms: 0, value: 2 }).catch((e: unknown) => e);
     expect(await first).toBeInstanceOf(VerifyWorkerError);
-    expect(await queued).toBeInstanceOf(VerifyWorkerError);
+    // 자리가 꺼지는 순간 대기 중이던 작업도 '꺼짐'으로 거절 — Retry-After를 길게 받는다(리뷰 Opus #2)
+    expect(await queued).toBeInstanceOf(VerifyUnavailableError);
 
     // ready 전에 죽으므로 작업을 맡기지 않고 매번 크래시로 센다 → 3번째(100·200ms 백오프 뒤)에 자리가 꺼지고 대기 작업은 거절
     await waitUntil(() => created >= 3);
