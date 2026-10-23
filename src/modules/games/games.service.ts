@@ -74,9 +74,16 @@ const verifyBusy = (reason: string, retryAfterSeconds: number) =>
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 1;
 
-/** 같은 리플레이 판정용 해시(D-003) — 게임·보드·seed·저장 본문. 본문 키 순서는 저장과 같은 생성 순서 */
-const hashReplay = (gameType: GameType, boardKey: string, seed: number, replay: StoredReplay): string =>
-  createHash('sha256').update(JSON.stringify({ gameType, boardKey, seed, replay })).digest('hex');
+/**
+ * 같은 리플레이 판정용 해시(D-003) — 게임·보드·seed·params·frames·inputs.
+ * params는 키를 정렬해 넣는다 — 클라이언트가 보낸 params의 키 순서만 바꿔 다른 해시를 만들지 못하게
+ */
+const hashReplay = (gameType: GameType, boardKey: string, seed: number, { frames, inputs, ...params }: StoredReplay): string => {
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map((key) => [key, params[key]]);
+  return createHash('sha256').update(JSON.stringify({ gameType, boardKey, seed, params: sortedParams, frames, inputs })).digest('hex');
+};
 
 /**
  * 게임 모음집 — 세션 발급 · 리플레이 검증 후 랭킹 등록 · 랭킹 · 리플레이 조회 (docs/tasks/games DESIGN.md)

@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
 import { Logger } from '@nestjs/common';
-import { VerifyQueueFullError, VerifyTimeoutError, VerifyWorkerError, VerifyWorkerPool } from './verify-worker-pool';
+import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError, VerifyWorkerError, VerifyWorkerPool } from './verify-worker-pool';
 
 /**
  * 검증 워커 풀 (docs/tasks/defense DESIGN §B5) — 실제 worker_threads로 돌린다.
@@ -216,7 +216,8 @@ describe('VerifyWorkerPool', () => {
     // ready 전에 죽으므로 작업을 맡기지 않고 매번 크래시로 센다 → 3번째(100·200ms 백오프 뒤)에 자리가 꺼지고 대기 작업은 거절
     await waitUntil(() => created >= 3);
     // 세 번째가 아직 살아 있으면 대기열에 들어갔다가 그 워커가 죽으며 자리가 꺼질 때 거절된다 — 어느 쪽이든 같은 오류
-    await expect(pool.run({ ms: 0, value: 3 })).rejects.toThrow('검증 워커를 쓸 수 없습니다');
+    // 꺼진 자리는 일시 밀림과 구분되는 오류 — 게임 서비스가 Retry-After를 길게 준다(games-polish BD-14)
+    await expect(pool.run({ ms: 0, value: 3 })).rejects.toBeInstanceOf(VerifyUnavailableError);
     // 꺼진 뒤에는 재시도 간격(기본 60초) 전까지 더 띄우지 않는다
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(created).toBe(3);

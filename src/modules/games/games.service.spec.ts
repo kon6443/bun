@@ -374,9 +374,14 @@ describe('GamesService', () => {
         expect(hashes[0]).toMatch(/^[0-9a-f]{64}$/);
         expect(hashes[1]).toBe(hashes[0]);
 
+        // params 키 순서만 바꿔도 같은 리플레이다
+        await submit({ ...dto(), replay: { ...dto().replay, das: undefined, arr: undefined, params: { arr: 2, das: 10 } } } as never);
+        const reordered = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[2];
+        expect(reordered).toBe(hashes[0]);
+
         gameSessionService.getSession.mockResolvedValue(session({ seed: 1 }));
         await submit();
-        const other = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[2];
+        const other = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[3];
         expect(other).not.toBe(hashes[0]);
       });
 
