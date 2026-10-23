@@ -43,6 +43,7 @@ export const garbageLogKey = (matchId: string, playerId: string) => `tetris-batt
 export const sentLogKey = (matchId: string, playerId: string) => `tetris-battle:match:${matchId}:sent:${playerId}`;
 export const submissionsKey = (matchId: string) => `tetris-battle:match:${matchId}:subs`;
 export const savedGuardKey = (matchId: string) => `tetris-battle:match:${matchId}:saved`;
+export const verifyingKey = (matchId: string, playerId: string) => `tetris-battle:match:${matchId}:verifying:${playerId}`;
 
 /** lock·KO 스크립트 공통 — KEYS[1] 매치 Hash, KEYS[2..] pids 순서의 가비지 로그. ARGV[1] now, ARGV[2] 끊김 유예, ARGV[3] TTL */
 const LUA_PRELUDE = `
@@ -165,9 +166,10 @@ local gid = 0
 if sent > 0 then
   target = nextTarget(pid)
   if target then
-    redis.call('HSET', M, pf(pid, 'cursor'), target)
     local cur = tonumber(g(pf(target, 'gid')) or '0')
     if cur < tonumber(ARGV[13]) then
+      -- 대상 순환 커서는 실제로 보냈을 때만 넘긴다 — 상한에 막혀 못 보낸 공격이 다음 대상 차례까지 건너뛰지 않게(tetris-audit BE-14)
+      redis.call('HSET', M, pf(pid, 'cursor'), target)
       gid = redis.call('HINCRBY', M, pf(target, 'gid'), 1)
       local log = KEYS[1 + idx(target)]
       redis.call('RPUSH', log, cjson.encode({ id = gid, lines = sent, hole = tonumber(ARGV[12]), from = pid, at = serverMs }))
@@ -241,13 +243,18 @@ const withoutReserved = (h: Record<string, string>) =>
 
 /** 저장 진행 가드 TTL(초) — 저장(트랜잭션 1번)이 이보다 오래 걸리지 않는다. 죽은 저장은 이 뒤에 다음 계기가 다시 잡는다(리뷰 L8) */
 export const SAVE_GUARD_TTL_SECONDS = 120;
+/** 검증 진행 가드 TTL(초) — 최악 시뮬레이션(수백 ms)보다 넉넉히. 프로세스가 죽어도 이 뒤 다시 제출할 수 있다 */
+export const VERIFY_GUARD_TTL_SECONDS = 30;
 
+/** ARGV[3] = '1'이면 비어 있을 때만 쓴다(깨우기의 회수용 — 더 새로운 끊김 시각을 낡은 값으로 덮지 않게, 리뷰 R3) */
 export const MATCH_SET_DISCONNECTED_SCRIPT = `
-if redis.call('HGET', KEYS[1], 'status') == 'PLAYING' then
-  redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-  return 1
+if redis.call('HGET', KEYS[1], 'status') ~= 'PLAYING' then return 0 end
+if ARGV[3] == '1' then
+  local cur = redis.call('HGET', KEYS[1], ARGV[1])
+  if cur and cur ~= '' then return 0 end
 end
-return 0
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+return 1
 `;
 
 export interface ScriptKo {
@@ -462,14 +469,21 @@ export class TetrisBattleMatchStore {
     return { ok: r.ok, code: r.code as KoScriptResult['code'], kos: parseKos(r.kos), ended: r.ended === true };
   }
 
-  /** 끊김 시각 기록(null = 다시 연결). 매치가 진행 중일 때만 쓴다 */
-  async setDisconnectedAt(redis: Redis, matchId: string, playerId: string, at: number | null): Promise<void> {
+  /** 끊김 시각 기록(null = 다시 연결). 매치가 진행 중일 때만 쓴다. onlyIfEmpty면 이미 기록이 있을 때 그대로 둔다 */
+  async setDisconnectedAt(
+    redis: Redis,
+    matchId: string,
+    playerId: string,
+    at: number | null,
+    { onlyIfEmpty = false }: { onlyIfEmpty?: boolean } = {},
+  ): Promise<void> {
     await redis.eval(
       MATCH_SET_DISCONNECTED_SCRIPT,
       1,
       matchKey(matchId),
       `p:${playerId}:discAt`,
       at === null ? '' : String(at),
+      onlyIfEmpty ? '1' : '0',
     );
   }
 
@@ -580,6 +594,23 @@ export class TetrisBattleMatchStore {
 
   async isSaved(redis: Redis, matchId: string): Promise<boolean> {
     return (await redis.hexists(submissionsKey(matchId), '__saved')) === 1;
+  }
+
+  /** 제출이 닫혔는지(저장이 목록을 확정함) — 닫혔으면 검증할 필요 없이 410 */
+  async isClosed(redis: Redis, matchId: string): Promise<boolean> {
+    return (await redis.hexists(submissionsKey(matchId), '__closed')) === 1;
+  }
+
+  /**
+   * 검증 진행 가드 — 같은 참가자의 제출을 동시에 여러 개 보내도 시뮬레이션은 하나만 돈다(tetris-audit BE-08).
+   * 최종 1회 보장은 여전히 claimSubmission(HSETNX). 검증이 끝나면 releaseVerification으로 푼다(실패해도 TTL로 풀림)
+   */
+  async claimVerification(redis: Redis, matchId: string, playerId: string): Promise<boolean> {
+    return (await redis.set(verifyingKey(matchId, playerId), '1', 'EX', VERIFY_GUARD_TTL_SECONDS, 'NX')) === 'OK';
+  }
+
+  async releaseVerification(redis: Redis, matchId: string, playerId: string): Promise<void> {
+    await redis.del(verifyingKey(matchId, playerId));
   }
 
   /** 저장 진행 가드 — 처음 잡은 쪽만 true (멀티 레플리카). 짧은 TTL */

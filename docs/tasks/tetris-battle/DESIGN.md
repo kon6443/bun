@@ -187,7 +187,7 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 | `rematch` | `{ code }` (방장, RESULT에서) | `{}` → WAITING, 전원 ready=false |
 | `lock` | `{ matchId, seq(=game.pieces), frame, sent, combo, b2b, tSpin, lines, pc, board, pending }` | `{ targetId }`(다음 대상) |
 | `topOut` | `{ matchId, frame }` | `{}` |
-| `chat` | `{ code, text }` (WAITING·RESULT만) | `{}` |
+| `chat` | `{ code, text }` (WAITING·RESULT, 경기 중에는 탈락자만 — tetris-audit D-016) | `{}` |
 | `emote` | `{ code, emoteId }` | `{}` |
 
 - `lock` 검증: `seq` 중복은 무시(재전송), `seq`·`frame` 단조 증가 아니면 거부
@@ -211,14 +211,22 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 - 이모트 id: `gg`·`nice`·`wow`·`laugh`·`cry`·`angry` · 채팅 이력 없음(입장 후 메시지만) · 방 TTL 2시간(변경마다 갱신) · 계약 정본 파일 `src/modules/tetris-battle/tetris-battle.events.ts`
 - 대전 리플레이 제출(P5)은 REST(본문 크기·재시도 단순) — 별도 절에서 확정
 
+### 16-a. 프로토콜 추가 (2026-10-23, `docs/tasks/tetris-audit-2026-10/` D-007·D-010~D-012)
+- 요청 필드: `createRoom`·`joinRoom`에 `tabId?`(탭 메모리 식별자, `[A-Za-z0-9-]{1,64}`) · `heartbeat?: boolean`(presencePing에 답하는 클라이언트)
+- 넘겨받기: `joinRoom`은 토큰 → 같은 소켓 → **같은 로그인 userId** 순으로 기존 자리를 찾는다. 방이 PLAYING이고 그 자리가 연결된 다른 소켓을 갖고 있으면 같은 `tabId`일 때만 넘겨받고, 아니면 `SEAT_IN_USE`
+- 클라이언트 → 서버: `kickPlayer { code, playerId }`(방장·WAITING/RESULT → `{}`) · `heartbeat { code }`(ack 없음)
+- 서버 → 클라이언트: `sessionReplaced { code }`(넘겨받힌 이전 소켓) · `kicked { code }`(강퇴된 소켓) · `presencePing`(4초, 페이로드 없음)
+- 에러 코드 추가: `SEAT_IN_USE` · `PLAYER_NOT_FOUND`
+- `chat`: 경기 중에도 탈락한 참가자는 보낼 수 있다(생존자는 `MATCH_ALREADY_STARTED`, D-016)
+
 ## 17. 경기 후 검증·결과 저장 (P5) — D-021
 
 ### 17-1. 흐름
 1. `matchEnded` 수신 후 각 플레이어(로컬 판이 있는 사람만, D-020)가 `POST /api/v1/tetris-battle/matches/:matchId/replays` 본문 `{ playerToken, replay }`(대전 리플레이 형식 §15) 제출. 인증은 방 입장 때 받은 `playerToken`(매치 시작 시 플레이어별 토큰 해시를 매치 Hash에 복사 — rematch·이탈 뒤에도 그 경기 기준으로 검증). 로그인 토큰은 선택(있으면 USER_ID 기록)
 2. 서버 검증(`simulateBattleReplay`): seed = 매치 seed · 리플레이 garbage 목록(id·lines·hole, 순서)이 서버 수신자별 가비지 로그와 일치(도착 frame은 클라이언트 값) · 시뮬 결과 `sent[]`가 서버가 받은 그 플레이어의 lock별 sent 기록과 일치(서버는 lock마다 `(seq, sent)` 로그를 남긴다) · 탈락자는 topOutFrame이 서버 기록 탈락 frame과 일치, 생존자는 frames ≤ 경과 시간×60+여유 · 엔진 거절 이유는 그대로 실패
-3. 판정: 제출자별 `VERIFIED` / `INVALID`, 미제출은 `MISSING`(새로고침 기권·끊김). 경기 상태 = 전원 VERIFIED 또는 MISSING뿐이면 `VERIFIED`, INVALID가 하나라도 있으면 `DISPUTED`(공유·재생 목록 제외)
+3. 판정: 제출자별 `VERIFIED` / `INVALID`, 미제출은 `MISSING`(새로고침 기권·끊김). 경기 상태 = 전원 VERIFIED 또는 MISSING뿐이면 `VERIFIED`, INVALID가 하나라도 있으면 `DISPUTED`(~~공유·재생 목록 제외~~ → 2026-10-23부터 공개, INVALID 참가자만 재생 제외 — tetris-audit D-004·D-008)
 4. 저장 시점: 모든 예상 제출자가 제출했거나, 종료 후 마감(60초)이 지난 뒤 첫 제출·조회 때. 한 번만 저장(Redis `SET NX` 가드 — 멀티 레플리카)
-5. 응답: `201 { code, data: { verdict }, message }` · 재제출 409 · 마감 후 410 · 토큰 불일치 403 · 본문 크기 초과 413(기존 300kb) · 검증 실패도 201 + verdict INVALID(재시도 무의미)
+5. 응답: `201 { code, data: { verdict }, message }` · 재제출 409 · 마감 후 410 · 토큰 불일치 403 · 본문 크기 초과 413(기존 300kb) · 검증 실패도 201 + verdict INVALID(재시도 무의미) · 같은 참가자의 제출을 검증하는 중에 겹친 요청 503(잠시 후 재시도, tetris-audit 리뷰 R1)
 
 ### 17-2. 스키마 (Oracle, 신규 마이그레이션 — 번호 `1792591422000` 이후, D-003)
 - `TETRIS_BATTLE_MATCHES`: `MATCH_ID varchar2(16) PK` · `ROOM_NAME nvarchar2(20)` · `SEED number` · `PLAYER_COUNT number(1)` · `STATUS varchar2(10) CHECK IN ('VERIFIED','DISPUTED')` · `STARTED_AT`·`ENDED_AT timestamp with time zone` · `CRTD_AT` · `IS_HIDDEN number(1) default 0`(운영자 숨김, 기존 GAME_SCORES와 같은 방식)
@@ -228,7 +236,7 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 - 실행은 담당자(머지 전 차단 게이트)
 
 ### 17-3. 조회(P6 전제, P5에서 API만)
-- `GET /api/v1/tetris-battle/matches/:matchId` → 경기·플레이어 요약(숨김·DISPUTED는 404)
+- `GET /api/v1/tetris-battle/matches/:matchId` → 경기·플레이어 요약(숨김은 404 · DISPUTED는 2026-10-23부터 200 + `disputed: true`, tetris-audit D-004)
 - `GET /api/v1/tetris-battle/matches/:matchId/replays/:playerId` → 리플레이(VERIFIED만)
 
 
@@ -240,7 +248,7 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
   - 재생: 참가자 2~4판 동시 재생(모바일 세로 2×2, 2인은 좌우), 공통 프레임 축으로 동기(각 리플레이의 frame 0 = 각자 카운트다운 종료 — 같은 시작 시각 기준이라 근사 동기), 배속(0.5·1·2·4×)·탐색·처음부터. 판마다 가비지 도착·KO 표시. 리플레이가 없는 참가자(MISSING)는 "기록 없음" 판
   - 재생은 `simulateBattleReplay`가 아니라 래퍼 `createBattle`+`stepBattle`+기록된 garbage를 프레임마다 주입(스냅샷 탐색은 기존 재생기 방식 재사용)
   - 공유: `_shared` ShareMenu(카톡·링크 복사·기본 공유 시트) + OG 카드(방 이름·우승자·인원·KO) — 기존 리플레이 공유와 같은 구조
-  - 숨김·DISPUTED·미저장 경기는 404 안내("공개되지 않은 경기예요")
+  - 숨김·미저장 경기는 404 안내(DISPUTED는 2026-10-23부터 공개 — tetris-audit D-004)("공개되지 않은 경기예요")
 - 진입점: 대전 결과 화면의 "기록 보기·공유" 버튼(제출 결과가 저장됨일 때 활성 — 저장 전이면 "저장 중" 대기 후 GET 200이면 활성)
 - 백엔드: 변경 없음 예상(GET 경기·리플레이로 충분). OG 카드에 필요한 필드가 부족하면 그때 추가
 - 비목표: 내 대전 목록·전적, 대전 랭킹
@@ -255,6 +263,14 @@ PLAYING ──생존자 1명──▶ RESULT ──재대결──▶ WAITING(�
 - 백엔드(신규 REST, 인증 없음, 조회 스로틀 `THROTTLE_BATTLE_RESULT_READ`)
   - `GET /api/v1/tetris-battle/lobby` → `{ waitingRooms, playingRooms }` — Redis 로비 ZSET·방 상태로 계산(로비 `listRooms`와 같은 정리 규칙), 짧은 캐시 가능
   - `GET /api/v1/tetris-battle/matches?limit=&cursor=` → 최근 VERIFIED·비숨김 경기 요약 `{ items: [{ matchId, roomName, playerCount, endedAt, winnerName, players: [{ name, place }] }], nextCursor }` — `CRTD_AT DESC, MATCH_ID DESC` 커서(기존 인덱스 `IDX_TB_MATCHES_CRTD`), limit 1~20(기본 10). 스키마 변경 없음
+
+## 20. 연출 2차(네온·글로우) + 사운드 (P8) — D-026
+
+- 범위: 싱글·대전·재생기 공통(렌더러·이펙트 레이어). 엔진·리플레이·서버 무영향 원칙 유지(순도 테스트)
+- 시각(네온·글로우): 블록 발광·외곽 글로우, 고스트 네온 외곽선, 줄 삭제 섬광 + 충격파 링, 테트리스·T-스핀·B2B·퍼펙트 클리어 배너(글로우·스케일 인), 콤보 미터, 레벨업 버스트, 배경 별·입자 흐름(레벨에 따라 색조), 하드 드롭 빛줄기, 대전: 공격 궤적 글로우·가비지 상승 연출·KO 폭발·카운트다운 연출
+- 사운드: Web Audio 합성(파일·라이선스 없음) — 이동·회전·하드 드롭·고정·홀드·줄 삭제(1~4줄 음 다르게)·T-스핀·콤보(단계마다 음 상승)·B2B·레벨업·게임 오버, 대전: 공격 송신·가비지 수신 경고·KO·승리. 배경음악은 단순 루프(별도 토글)
+- 토글: **기본 꺼짐**. 테트리스 홈 설정(효과음·배경음악·볼륨) + 게임·대전 화면 상단 스피커 버튼(빠른 켜기/끄기). localStorage 저장, 오디오는 사용자 첫 조작 후에만 시작(iOS 자동재생 정책)
+- 성능·접근성: 기존 "연출 줄이기"(prefers-reduced-motion) 존중 — 줄이면 글로우·입자 축소, 파티클·글로우 상한, 저사양 감지 시 자동 축소. 실기기 fps 확인은 사용자
 
 ## P. 구현 슬라이스 (기획 확정 후)
 

@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { TetrisBattleMatch } from '../../entities/TetrisBattleMatch';
 import { TetrisBattlePlayer } from '../../entities/TetrisBattlePlayer';
@@ -9,7 +9,7 @@ import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
 import { User } from '../../entities/User';
 import golden from './battle-engine/__fixtures__/golden-battle-replays.json';
 import { BattleReplayInput, simulateBattleReplay } from './battle-engine';
-import { REPLAY_SUBMIT_DEADLINE_MS } from './tetris-battle.constants';
+import { REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from './tetris-battle.constants';
 import { MatchSnapshot, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
@@ -17,6 +17,9 @@ import { TetrisBattleResultService } from './tetris-battle-result.service';
 const MATCH = 'AbCdEfGhIjKlMnOp';
 const T_END = 1_800_000_100_000;
 const TOKEN = (n: number) => `token-${n}`.padEnd(32, 'x');
+/** oracledb가 던지는 FK 위반 형태 — TypeORM QueryFailedError + driverError.errorNum (메시지 문자열로 판정하지 않는다, BE-13) */
+const fkViolation = () =>
+  new QueryFailedError('INSERT ...', [], Object.assign(new Error('ORA-02291: integrity constraint violated'), { errorNum: 2291 }));
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 
 type GoldenCase = { name: string; input: BattleReplayInput };
@@ -77,7 +80,10 @@ describe('TetrisBattleResultService', () => {
     | 'markSaved'
     | 'isSaved'
     | 'claimSave'
-    | 'releaseSave',
+    | 'releaseSave'
+    | 'isClosed'
+    | 'claimVerification'
+    | 'releaseVerification',
     jest.SpyInstance
   >;
   let subs: Record<string, string>;
@@ -90,6 +96,8 @@ describe('TetrisBattleResultService', () => {
   let saved: { entity: string; row: Record<string, unknown> }[];
   let transaction: jest.Mock;
   let existingMatch: { matchId: string; crtdAt: Date } | null;
+  let matchFinished: ((matchId: string) => void) | null;
+  let wakes: { task: () => Promise<void>; delayMs: number }[];
 
   const submit = (token = TOKEN(1), replay = replayDto(), now = T_END + 1_000, userId: number | null = null) =>
     service.submitReplay({ matchId: MATCH, playerToken: token, replay, userId, now });
@@ -120,6 +128,9 @@ describe('TetrisBattleResultService', () => {
       isSaved: jest.spyOn(proto, 'isSaved').mockResolvedValue(false),
       claimSave: jest.spyOn(proto, 'claimSave').mockResolvedValue(true),
       releaseSave: jest.spyOn(proto, 'releaseSave').mockResolvedValue(undefined),
+      isClosed: jest.spyOn(proto, 'isClosed').mockImplementation(async () => closed),
+      claimVerification: jest.spyOn(proto, 'claimVerification').mockResolvedValue(true),
+      releaseVerification: jest.spyOn(proto, 'releaseVerification').mockResolvedValue(undefined),
     };
 
     matchRepository = createMockRepository<TetrisBattleMatch>();
@@ -138,7 +149,13 @@ describe('TetrisBattleResultService', () => {
       },
     };
     transaction = jest.fn((run: (m: typeof manager) => unknown) => run(manager));
-    const roomService = { readyRedisClient: () => (redisReady ? ({} as never) : null) } as unknown as TetrisBattleRoomService;
+    matchFinished = null;
+    wakes = [];
+    const roomService = {
+      readyRedisClient: () => (redisReady ? ({} as never) : null),
+      setMatchFinishedListener: (listener: (matchId: string) => void) => (matchFinished = listener),
+      scheduleWake: (task: () => Promise<void>, delayMs: number) => wakes.push({ task, delayMs }),
+    } as unknown as TetrisBattleRoomService;
     service = new TetrisBattleResultService(
       roomService,
       matchRepository as never,
@@ -150,6 +167,20 @@ describe('TetrisBattleResultService', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('마감 깨우기 (tetris-audit D-009·BE-06)', () => {
+    it('매치가 끝나면 제출 마감 뒤로 저장 확인을 한 번 예약하고, 깨어나면 마감 지난 ENDED 매치를 저장한다', async () => {
+      matchFinished?.(MATCH);
+      expect(wakes).toEqual([{ task: expect.any(Function), delayMs: REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS }]);
+
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T_END + REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS);
+      await wakes[0].task();
+      now.mockRestore();
+
+      expect(store.claimSave).toHaveBeenCalled();
+      expect(transaction).toHaveBeenCalled();
+    });
+  });
 
   describe('제출 — 상태코드', () => {
     it('정직한 리플레이는 201 verdict VERIFIED, 제출 기록(gzip)을 남긴다', async () => {
@@ -233,6 +264,26 @@ describe('TetrisBattleResultService', () => {
       expect(store.claimSubmission).not.toHaveBeenCalled();
     });
 
+    it('같은 참가자의 검증이 이미 진행 중이면 503(잠시 후 재시도) — 시뮬레이션·기록 없이 (BE-08·리뷰 R1)', async () => {
+      store.claimVerification.mockResolvedValueOnce(false);
+      await expect(submit()).rejects.toMatchObject({ status: 503, code: 'TETRIS_BATTLE_UNAVAILABLE' });
+      expect(store.garbageLog).not.toHaveBeenCalled();
+      expect(store.claimSubmission).not.toHaveBeenCalled();
+      expect(store.releaseVerification).not.toHaveBeenCalled();
+    });
+
+    it('검증이 끝나면(성공·실패 모두) 검증 가드를 푼다', async () => {
+      store.claimSubmission.mockRejectedValueOnce(new Error('redis down'));
+      await expect(submit()).rejects.toThrow('redis down');
+      expect(store.releaseVerification).toHaveBeenCalledWith(expect.anything(), MATCH, 'p1');
+    });
+
+    it('제출이 이미 닫혔으면 시뮬레이션 전에 410', async () => {
+      closed = true;
+      await expect(submit()).rejects.toMatchObject({ status: 410 });
+      expect(store.claimVerification).not.toHaveBeenCalled();
+    });
+
     it('동시 제출 경합에서 HSETNX를 놓치면 409', async () => {
       store.claimSubmission.mockResolvedValueOnce('DUPLICATE');
       await expect(submit()).rejects.toMatchObject({ status: 409, code: 'TETRIS_BATTLE_REPLAY_ALREADY_SUBMITTED' });
@@ -293,7 +344,7 @@ describe('TetrisBattleResultService', () => {
     it('탈퇴한 사용자(FK 위반)면 그 USER_ID만 비우고 1번 더 저장한다 (리뷰 L6)', async () => {
       subs.p2 = JSON.stringify({ verdict: 'VERIFIED', reason: null, userId: 9, battleEngineVersion: 1, replay: gzipSync('{}').toString('base64') });
       transaction.mockImplementationOnce(async () => {
-        throw new Error('ORA-02291: integrity constraint (FK_TB_PLAYERS_USER) violated - parent key not found');
+        throw fkViolation();
       });
       userRepository.find.mockResolvedValueOnce([{ userId: 9 }] as User[]); // 42(p1)는 탈퇴, 9(p2)는 있음
 
@@ -394,26 +445,35 @@ describe('TetrisBattleResultService', () => {
       expect(transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('VERIFIED·숨김 아님만 조회하고, 참가자를 순위순으로 돌려준다', async () => {
+    it('숨김 아님이면 DISPUTED도 조회하고(검증 실패는 참가자 단위, D-004) 참가자를 순위순·판정 그대로 돌려준다', async () => {
       matchRepository.findOne.mockResolvedValueOnce({
-        matchId: MATCH, roomName: '한판', playerCount: 2, startedAt: new Date(0), endedAt: new Date(1),
+        matchId: MATCH, roomName: '한판', playerCount: 3, startedAt: new Date(0), endedAt: new Date(1), status: 'DISPUTED',
       } as TetrisBattleMatch);
       playerRepository.find.mockResolvedValueOnce([
         { playerId: 'p1', name: 'a', place: 1, kos: 1, sent: 3, received: 0, pieces: 9, maxCombo: 2, frames: 99, koReason: null, verdict: 'VERIFIED' },
         { playerId: 'p2', name: 'b', place: 2, kos: 0, sent: 0, received: 3, pieces: 5, maxCombo: 0, frames: 50, koReason: 'leave', verdict: 'MISSING' },
+        { playerId: 'p3', name: 'c', place: 3, kos: 0, sent: 0, received: 0, pieces: 2, maxCombo: 0, frames: 20, koReason: 'topout', verdict: 'INVALID' },
       ] as TetrisBattlePlayer[]);
 
       const data = await service.getMatch(MATCH, T_END);
 
-      expect(matchRepository.findOne).toHaveBeenCalledWith({ where: { matchId: MATCH, isHidden: 0, status: 'VERIFIED' } });
+      expect(matchRepository.findOne).toHaveBeenCalledWith({ where: { matchId: MATCH, isHidden: 0 } });
       expect(playerRepository.find).toHaveBeenCalledWith({ where: { matchId: MATCH }, order: { place: 'ASC' } });
+      expect(data.disputed).toBe(true);
       expect(data.players.map((p) => [p.playerId, p.verdict])).toEqual([
         ['p1', 'VERIFIED'],
         ['p2', 'MISSING'],
+        ['p3', 'INVALID'],
       ]);
     });
 
-    it('없음·숨김·DISPUTED(조건에 안 걸림)는 404', async () => {
+    it('INVALID 참가자의 리플레이는 404 (D-004)', async () => {
+      matchRepository.findOne.mockResolvedValue({ matchId: MATCH, status: 'DISPUTED' } as TetrisBattleMatch);
+      playerRepository.findOne.mockResolvedValueOnce({ verdict: 'INVALID' } as TetrisBattlePlayer);
+      await expect(service.getReplay(MATCH, 'p3')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('없음·숨김(조건에 안 걸림)은 404', async () => {
       matchRepository.findOne.mockResolvedValueOnce(null);
       await expect(service.getMatch(MATCH, T_END)).rejects.toMatchObject({ status: 404, code: 'TETRIS_BATTLE_MATCH_NOT_FOUND' });
     });

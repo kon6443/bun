@@ -19,13 +19,16 @@ export const TetrisBattleClientEvents = {
   LIST_ROOMS: 'listRooms',
   /** 방 생성 — 성공 시 만든 사람이 방장으로 입장, 로비 구독 해제 */
   CREATE_ROOM: 'createRoom',
-  /** 방 입장 — `playerToken`이 있으면 재연결(같은 playerId로 복귀) */
+  /**
+   * 방 입장 — `playerToken`이 있으면 재연결(같은 playerId로 복귀). 로그인 유저는 같은 userId의 자리가 있으면 그 자리로 복귀.
+   * 경기 중 아직 연결된 자리는 같은 탭(`tabId` 일치)만 넘겨받는다 — 아니면 `SEAT_IN_USE` (tetris-audit D-007)
+   */
   JOIN_ROOM: 'joinRoom',
   /** 방 나가기 */
   LEAVE_ROOM: 'leaveRoom',
   /** 준비 토글 (WAITING에서만) */
   SET_READY: 'setReady',
-  /** 텍스트 채팅 (WAITING·RESULT에서만) */
+  /** 텍스트 채팅 (WAITING·RESULT, 경기 중에는 탈락자만 — tetris-audit D-016) */
   CHAT: 'chat',
   /** 이모트 (프리셋 id만, 모든 상태) */
   EMOTE: 'emote',
@@ -37,6 +40,10 @@ export const TetrisBattleClientEvents = {
   LOCK: 'lock',
   /** 탑아웃 보고 */
   TOP_OUT: 'topOut',
+  /** 강퇴 (방장, WAITING·RESULT, 방장 아닌 참가자) — tetris-audit D-011 */
+  KICK_PLAYER: 'kickPlayer',
+  /** `presencePing`에 대한 응답 `{ code }` — ack 없음 (tetris-audit D-010·D-012) */
+  HEARTBEAT: 'heartbeat',
 } as const;
 
 /** 서버 → 클라이언트 */
@@ -67,6 +74,12 @@ export const TetrisBattleServerEvents = {
   PLAYER_KO: 'playerKO',
   /** 방 — `MatchEndedPayload` (방 상태 RESULT) */
   MATCH_ENDED: 'matchEnded',
+  /** 자리를 다른 소켓(다른 탭·기기)이 넘겨받았을 때 이전 소켓에만 — `SessionReplacedPayload` (tetris-audit D-007) */
+  SESSION_REPLACED: 'sessionReplaced',
+  /** 강퇴된 소켓에만 — `KickedPayload` (tetris-audit D-011) */
+  KICKED: 'kicked',
+  /** 서버 → 이 레플리카의 소켓, 4초마다(페이로드 없음) — 방 안이면 바로 `heartbeat`로 답한다 (tetris-audit D-012) */
+  PRESENCE_PING: 'presencePing',
 } as const;
 
 // ==================== 에러 코드 ====================
@@ -115,6 +128,11 @@ export const TetrisBattleErrorCodes = {
   // ----- P2 추가 -----
   /** 이미 탈락한 플레이어의 lock (탈락 후 늦게 도착한 보고) */
   PLAYER_NOT_ALIVE: 'PLAYER_NOT_ALIVE',
+  // ----- tetris-audit 추가 -----
+  /** 경기 중인 자리를 다른 탭·기기가 아직 쓰고 있어 넘겨받을 수 없음 (D-007) */
+  SEAT_IN_USE: 'SEAT_IN_USE',
+  /** 강퇴 대상이 이 방에 없거나 방장 자신 (D-011) */
+  PLAYER_NOT_FOUND: 'PLAYER_NOT_FOUND',
 } as const;
 
 export type TetrisBattleErrorCode = (typeof TetrisBattleErrorCodes)[keyof typeof TetrisBattleErrorCodes];
@@ -183,7 +201,7 @@ export interface LockAckData {
 }
 
 /**
- * 재연결 복구(joinRoom에 playerToken으로 들어왔고 방에 매치가 있을 때만) — DESIGN §16
+ * 재연결 복구(joinRoom이 기존 자리로 복귀 — playerToken 또는 같은 로그인 userId — 했고 방에 매치가 있을 때만) — DESIGN §16
  * - match.alive: 본인이 아직 생존인지(끊긴 사이 유예가 지나 KO됐으면 false) — v1 표에 없던 필드(P2 추가)
  * - missedGarbage: 본인이 받은 가비지 중 id > lastGarbageId (오래된 순)
  * - opponents: 본인 제외 플레이어의 최신 스냅샷(아직 lock이 없으면 빈 판)
@@ -195,6 +213,16 @@ export interface RejoinData {
 }
 
 // ==================== 서버 → 클라이언트 페이로드 ====================
+
+/** 이 소켓의 자리를 다른 소켓이 넘겨받음 — 이 소켓은 더 이상 그 방의 멤버가 아니다(복귀 재시도 금지) */
+export interface SessionReplacedPayload {
+  code: string;
+}
+
+/** 방장이 이 소켓을 내보냄 — 토큰도 무효(다시 들어오면 새 자리) */
+export interface KickedPayload {
+  code: string;
+}
 
 export interface RoomsChangedPayload {
   rooms: RoomSummary[];

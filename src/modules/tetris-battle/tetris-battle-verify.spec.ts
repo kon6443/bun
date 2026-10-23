@@ -30,6 +30,7 @@ const honestContext = (replay: BattleReplayInput): VerificationContext => {
     lastSeq: sim.pieces,
     ko: sim.topOutFrame === null ? null : { reason: 'topout', frame: sim.topOutFrame },
     maxFrames: sim.frames,
+    lateTopOutFrom: sim.topOutFrame === null ? sim.frames - 300 : null,
   };
 };
 
@@ -141,6 +142,30 @@ describe('verifyBattleReplay', () => {
       });
     });
 
+    it('동시 탑아웃: 생존자의 탈락이 lateTopOutFrom 이후면 받고, 그보다 이르면 SURVIVOR_TOPPED_OUT (tetris-audit D-006)', () => {
+      const replay = byName('garbage-top-out');
+      const topOutFrame = replay.frames;
+      const survivor = { ...honestContext(replay), ko: null, maxFrames: topOutFrame + 300 };
+      expect(verifyBattleReplay(replay, { ...survivor, lateTopOutFrom: topOutFrame })).toEqual({ verdict: 'VERIFIED' });
+      expect(verifyBattleReplay(replay, { ...survivor, lateTopOutFrom: topOutFrame + 1 })).toEqual({
+        verdict: 'INVALID',
+        reason: 'SURVIVOR_TOPPED_OUT',
+      });
+    });
+
+    it('프레임 대조는 시뮬레이션 전에 한다 — 상한을 넘거나 탈락 프레임이 다르면 엔진이 거절할 리플레이도 그 이유로 (BE-07)', () => {
+      const broken = { ...byName('survivor'), das: 999 }; // 엔진은 INVALID_HEADER로 거절할 헤더
+      const ctx = honestContext(byName('survivor'));
+      expect(verifyBattleReplay(broken, { ...ctx, maxFrames: broken.frames - 1 })).toEqual({
+        verdict: 'INVALID',
+        reason: 'FRAMES_EXCEED_ELAPSED',
+      });
+      expect(verifyBattleReplay(broken, { ...ctx, ko: { reason: 'topout', frame: broken.frames + 1 } })).toEqual({
+        verdict: 'INVALID',
+        reason: 'TOP_OUT_FRAME_MISMATCH',
+      });
+    });
+
     it('생존자의 frames가 경과 시간 상한을 넘으면 FRAMES_EXCEED_ELAPSED (같으면 통과)', () => {
       const replay = byName('survivor');
       const ctx = honestContext(replay);
@@ -163,6 +188,7 @@ describe('verifyBattleReplay', () => {
         lastSeq: 0,
         ko: null,
         maxFrames: 1_000_000,
+        lateTopOutFrom: null,
       };
       // 가비지 대조가 먼저라 서버 로그를 리플레이와 같게 맞춘다 — 엔진 거절 갈래만 보기 위해
       for (let i = 0; i + 3 < replay.garbage.length; i += 4) {

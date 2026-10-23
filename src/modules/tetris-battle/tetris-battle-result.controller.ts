@@ -67,7 +67,7 @@ export class TetrisBattleResultController {
   @Throttle(THROTTLE_BATTLE_RESULT_READ)
   @ApiOperation({
     summary: '최근 대전 목록',
-    description: '검증된(VERIFIED)·숨김 아닌 경기, 최근 저장 순. 다음 페이지는 응답의 nextCursor를 cursor로 그대로 보낸다',
+    description: '숨김 아닌 저장된 경기, 최근 저장 순. 검증 실패 참가자가 있으면 disputed=true(검증 실패는 참가자 단위). 다음 페이지는 응답의 nextCursor를 cursor로 그대로 보낸다',
   })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: BattleMatchListResponseDto })
   @ApiCommonValidationResponse()
@@ -102,7 +102,7 @@ export class TetrisBattleResultController {
   @ApiResponse({ status: 413, description: 'PAYLOAD_TOO_LARGE: 본문 300kb 초과' })
   @ApiCommonValidationResponse()
   @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 20회)')
-  @ApiResponse({ status: 503, description: '대전 상태 저장소(Redis) 사용 불가', type: TetrisBattleUnavailableErrorResponseDto })
+  @ApiResponse({ status: 503, description: '대전 상태 저장소(Redis) 사용 불가 · 같은 참가자의 제출을 검증하는 중(잠시 후 재시도)', type: TetrisBattleUnavailableErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
   async submitReplay(@Param('matchId') matchId: string, @Body() dto: SubmitBattleReplayDto, @CurrentUser() user?: User) {
     const data = await this.resultService.submitReplay({
@@ -116,10 +116,10 @@ export class TetrisBattleResultController {
 
   @Get('matches/:matchId')
   @Throttle(THROTTLE_BATTLE_RESULT_READ)
-  @ApiOperation({ summary: '대전 경기 결과', description: '검증된(VERIFIED) 경기만. 숨김·DISPUTED·저장 전은 404' })
+  @ApiOperation({ summary: '대전 경기 결과', description: '숨김 아닌 저장된 경기. 검증 실패 참가자는 verdict INVALID로 표시(경기는 공개). 숨김·저장 전은 404' })
   @ApiParam(MATCH_ID_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS (참가자 순위 오름차순)', type: BattleMatchResponseDto })
-  @ApiResponse({ status: 404, description: '없음·숨김·DISPUTED·아직 저장 전', type: TetrisBattleMatchNotFoundErrorResponseDto })
+  @ApiResponse({ status: 404, description: '없음·숨김·아직 저장 전', type: TetrisBattleMatchNotFoundErrorResponseDto })
   @ApiThrottledResponse('요청 횟수 초과 (초당 3회 / 분당 60회)')
   @ApiCommonInternalServerErrorResponse()
   async getMatch(@Param('matchId') matchId: string) {
@@ -129,13 +129,13 @@ export class TetrisBattleResultController {
 
   @Get('matches/:matchId/replays/:playerId')
   @Throttle(THROTTLE_BATTLE_RESULT_READ)
-  @ApiOperation({ summary: '대전 리플레이', description: '검증된 경기의 VERIFIED 참가자만. 같은 래퍼 버전으로 재생한다' })
+  @ApiOperation({ summary: '대전 리플레이', description: '저장된 경기의 VERIFIED 참가자만(MISSING·INVALID는 404). 같은 래퍼 버전으로 재생한다' })
   @ApiParam(MATCH_ID_PARAM)
   @ApiParam({ name: 'playerId', description: '참가자 ID (p1·p2…)', example: 'p1' })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: BattleReplayDetailResponseDto })
   @ApiResponse({
     status: 404,
-    description: 'TETRIS_BATTLE_MATCH_NOT_FOUND 경기 없음·숨김·DISPUTED · TETRIS_BATTLE_REPLAY_NOT_FOUND 미제출·미검증',
+    description: 'TETRIS_BATTLE_MATCH_NOT_FOUND 경기 없음·숨김 · TETRIS_BATTLE_REPLAY_NOT_FOUND 미제출·검증 실패',
     type: TetrisBattleReplayNotFoundErrorResponseDto,
   })
   @ApiThrottledResponse('요청 횟수 초과 (초당 3회 / 분당 60회)')

@@ -10,10 +10,10 @@ const id = (n: number) => `match${String(n).padStart(11, '0')}`; // 16자
 const T = (n: number) => new Date(Date.UTC(2026, 9, 22, 0, 0, n));
 const match = (n: number, crtdAt = T(n)): TetrisBattleMatch =>
   ({ matchId: id(n), roomName: `방${n}`, playerCount: 2, endedAt: T(n), crtdAt, status: 'VERIFIED', isHidden: 0 }) as TetrisBattleMatch;
-const BASE = { isHidden: 0, status: 'VERIFIED' };
+const BASE = { isHidden: 0 };
 
 /**
- * 최근 대전 목록(D-025) — 키셋 커서(CRTD_AT DESC, MATCH_ID DESC). 정렬·숨김/DISPUTED 제외는 쿼리 조건으로 걸리고,
+ * 최근 대전 목록(D-025) — 키셋 커서(CRTD_AT DESC, MATCH_ID DESC). 정렬·숨김 제외는 쿼리 조건으로 걸리고(DISPUTED는 포함 — tetris-audit D-004),
  * 여기서는 그 조건이 정확히 만들어지는지(=DB에 맡긴 부분)와 페이지 경계·커서 왕복·참가자 묶기·잘못된 커서를 본다.
  */
 describe('TetrisBattleBrowseService', () => {
@@ -54,8 +54,8 @@ describe('TetrisBattleBrowseService', () => {
       });
       expect(data).toEqual({
         items: [
-          { matchId: id(3), roomName: '방3', playerCount: 2, endedAt: T(3), winnerName: '나', players: [{ name: '나', place: 1 }, { name: '가', place: 2 }] },
-          { matchId: id(2), roomName: '방2', playerCount: 2, endedAt: T(2), winnerName: '다', players: [{ name: '다', place: 1 }, { name: '라', place: 2 }] },
+          { matchId: id(3), roomName: '방3', playerCount: 2, endedAt: T(3), disputed: false, winnerName: '나', players: [{ name: '나', place: 1 }, { name: '가', place: 2 }] },
+          { matchId: id(2), roomName: '방2', playerCount: 2, endedAt: T(2), disputed: false, winnerName: '다', players: [{ name: '다', place: 1 }, { name: '라', place: 2 }] },
         ],
         nextCursor: null, // limit보다 적게 왔다 → 마지막 페이지
       });

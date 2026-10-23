@@ -1,6 +1,7 @@
 import { ArgumentsHost, BadRequestException, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
 import { TetrisBattleGateway } from './tetris-battle.gateway';
+import { LOBBY_BROADCAST_DEBOUNCE_MS } from './tetris-battle.constants';
 import { TetrisBattleError } from './tetris-battle.errors';
 import { RoomState, TetrisBattleServerEvents } from './tetris-battle.events';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
@@ -109,7 +110,11 @@ describe('TetrisBattleGateway', () => {
     gateway.server = { to: serverTo, in: jest.fn(() => ({ socketsLeave })) } as unknown as Server;
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    gateway.onModuleDestroy();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
 
   describe('멤버십 거부 — 브로드캐스트 없음', () => {
     it.each([
@@ -141,6 +146,8 @@ describe('TetrisBattleGateway', () => {
   });
 
   describe('입장', () => {
+    beforeEach(() => jest.useFakeTimers());
+
     const entered = { room: ROOM, playerId: 'p1', playerToken: 'tok', replacedSocketId: null, lobbyChanged: true };
 
     it('createRoom 성공: 로비에서 빠지고 방 채널 입장, roomState·roomsChanged 브로드캐스트, ack에 토큰', async () => {
@@ -157,8 +164,19 @@ describe('TetrisBattleGateway', () => {
       expect(client.data.room).toEqual({ code: CODE, playerId: 'p1' });
       expect(serverTo).toHaveBeenCalledWith(CHANNEL);
       expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.ROOM_STATE, ROOM);
+      // 로비 방송은 LOBBY_BROADCAST_DEBOUNCE_MS 뒤 1번(BE-09)
+      await jest.advanceTimersByTimeAsync(LOBBY_BROADCAST_DEBOUNCE_MS);
       expect(serverTo).toHaveBeenCalledWith(LOBBY);
       expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.ROOMS_CHANGED, { rooms: [] });
+      expect(service.listRooms).toHaveBeenCalledWith(undefined, { reconcile: false });
+    });
+
+    it('방 변경이 몰려도 로비 방송은 묶어서 1번만 만든다 (BE-09)', async () => {
+      service.createRoom.mockResolvedValue(entered);
+      await gateway.handleCreateRoom(createClient(), { name: '방', maxPlayers: 4, playerName: '방장' });
+      await gateway.handleCreateRoom(createClient(), { name: '방', maxPlayers: 4, playerName: '방장' });
+      await jest.advanceTimersByTimeAsync(LOBBY_BROADCAST_DEBOUNCE_MS);
+      expect(service.listRooms).toHaveBeenCalledTimes(1);
     });
 
     it('createRoom 빈도 한도(소켓·IP)를 넘으면 RATE_LIMITED, 방을 만들지 않는다', async () => {
@@ -293,6 +311,23 @@ describe('TetrisBattleGateway', () => {
       expect(socketsLeave).toHaveBeenCalledWith([CHANNEL, `tetris-battle:player:${CODE}:p1`]);
       expect(serverTo).not.toHaveBeenCalledWith(LOBBY); // 로비 값 변화 없음
     });
+
+    it('넘겨받힌 이전 소켓에만 sessionReplaced를 보낸다 (tetris-audit D-007)', async () => {
+      service.joinRoom.mockImplementation(committing({ ...entered, replacedSocketId: 'sock-old', lobbyChanged: false }));
+
+      await gateway.handleJoinRoom(createClient(), { code: CODE, playerName: '나', playerToken: 't'.repeat(32) });
+
+      expect(serverTo).toHaveBeenCalledWith('sock-old');
+      expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.SESSION_REPLACED, { code: CODE });
+    });
+
+    it('넘겨받은 소켓이 없으면 sessionReplaced를 보내지 않는다', async () => {
+      service.joinRoom.mockImplementation(committing(entered));
+
+      await gateway.handleJoinRoom(createClient(), { code: CODE, playerName: '나' });
+
+      expect(roomEmit).not.toHaveBeenCalledWith(TetrisBattleServerEvents.SESSION_REPLACED, expect.anything());
+    });
   });
 
   it('listRooms: 목록을 돌려주고 로비 채널을 구독한다', async () => {
@@ -410,9 +445,10 @@ describe('TetrisBattleGateway', () => {
       gateway.server = { to: serverTo, in: inFn } as unknown as Server;
       const setProbe = jest.fn();
       const setListener = jest.fn();
-      Object.assign(service, { setLiveSocketProbe: setProbe, setChangeListener: setListener, setMatchListener: jest.fn() });
+      Object.assign(service, { setLiveSocketProbe: setProbe, setChangeListener: setListener, setMatchListener: jest.fn(), setSocketEvictor: jest.fn() });
 
       gateway.afterInit();
+      gateway.onModuleDestroy();
       const probe = setProbe.mock.calls[0][0] as (code: string) => Promise<Set<string>>;
 
       await expect(probe(CODE)).resolves.toEqual(new Set(['s1', 's2']));
@@ -431,8 +467,9 @@ describe('TetrisBattleGateway', () => {
       const fetchSockets = jest.fn(() => new Promise(() => undefined)); // 영원히 응답 없음
       gateway.server = { to: serverTo, in: jest.fn(() => ({ fetchSockets })) } as unknown as Server;
       const setProbe = jest.fn();
-      Object.assign(service, { setLiveSocketProbe: setProbe, setChangeListener: jest.fn(), setMatchListener: jest.fn() });
+      Object.assign(service, { setLiveSocketProbe: setProbe, setChangeListener: jest.fn(), setMatchListener: jest.fn(), setSocketEvictor: jest.fn() });
       gateway.afterInit();
+      gateway.onModuleDestroy();
       const probe = setProbe.mock.calls[0][0] as (code: string) => Promise<Set<string>>;
 
       const result = probe(CODE).then(
@@ -446,6 +483,75 @@ describe('TetrisBattleGateway', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  describe('하트비트 (tetris-audit D-010·D-012)', () => {
+    const init = () => {
+      const local = { emit: jest.fn() };
+      const disconnectSockets = jest.fn();
+      const inFn = jest.fn(() => ({ disconnectSockets }));
+      gateway.server = { to: serverTo, in: inFn, local } as unknown as Server;
+      const setEvictor = jest.fn();
+      Object.assign(service, { setLiveSocketProbe: jest.fn(), setChangeListener: jest.fn(), setMatchListener: jest.fn(), setSocketEvictor: setEvictor });
+      gateway.afterInit();
+      return { local, inFn, disconnectSockets, evict: setEvictor.mock.calls[0][0] as (ids: string[]) => void };
+    };
+
+    it(`이 레플리카의 소켓에만 ${4_000}ms마다 presencePing을 보내고, 종료 때 멈춘다`, () => {
+      jest.useFakeTimers();
+      try {
+        const { local } = init();
+        jest.advanceTimersByTime(4_000);
+        expect(local.emit).toHaveBeenCalledWith(TetrisBattleServerEvents.PRESENCE_PING);
+        gateway.onModuleDestroy();
+        local.emit.mockClear();
+        jest.advanceTimersByTime(8_000);
+        expect(local.emit).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('하트비트가 끊긴 소켓은 서버에서 끊는다(재연결·토큰 복귀를 유도)', () => {
+      const { evict, inFn, disconnectSockets } = init();
+      gateway.onModuleDestroy();
+      evict(['s1', 's2']);
+      expect(inFn).toHaveBeenCalledWith(['s1', 's2']);
+      expect(disconnectSockets).toHaveBeenCalledWith(false); // 이 namespace만(리뷰 R1)
+    });
+
+    it('heartbeat는 이 소켓이 들어가 있는 방일 때만 기록한다', async () => {
+      Object.assign(service, { recordHeartbeat: jest.fn().mockResolvedValue(undefined) });
+      const recordHeartbeat = (service as unknown as { recordHeartbeat: jest.Mock }).recordHeartbeat;
+
+      await gateway.handleHeartbeat(createClient({ authResolved: true, userId: null, room: { code: CODE, playerId: 'p2' } }), { code: CODE });
+      await gateway.handleHeartbeat(createClient({ authResolved: true, userId: null, room: { code: 'ZZZZZZ', playerId: 'p2' } }), { code: CODE });
+      await gateway.handleHeartbeat(createClient(), { code: CODE });
+
+      expect(recordHeartbeat.mock.calls).toEqual([[CODE, 'sock-a']]);
+    });
+  });
+
+  describe('강퇴 (tetris-audit D-011)', () => {
+    it('강퇴된 소켓을 채널에서 빼고 그 소켓에만 kicked를 보낸 뒤 방에 roomState', async () => {
+      Object.assign(service, {
+        kickPlayer: jest.fn().mockResolvedValue({ room: ROOM, lobbyChanged: true, kickedSocketId: 'sock-k' }),
+      });
+
+      await gateway.handleKickPlayer(createClient(), { code: CODE, playerId: 'p2' });
+
+      expect(gateway.server.in).toHaveBeenCalledWith('sock-k');
+      expect(socketsLeave).toHaveBeenCalledWith([CHANNEL, `tetris-battle:player:${CODE}:p2`]);
+      expect(serverTo).toHaveBeenCalledWith('sock-k');
+      expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.KICKED, { code: CODE });
+      expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.ROOM_STATE, ROOM);
+    });
+
+    it('끊긴 자리를 내보내면(소켓 없음) kicked 없이 방송만', async () => {
+      Object.assign(service, { kickPlayer: jest.fn().mockResolvedValue({ room: ROOM, lobbyChanged: true, kickedSocketId: null }) });
+      await gateway.handleKickPlayer(createClient(), { code: CODE, playerId: 'p2' });
+      expect(roomEmit).not.toHaveBeenCalledWith(TetrisBattleServerEvents.KICKED, expect.anything());
+    });
   });
 
   describe('disconnect', () => {

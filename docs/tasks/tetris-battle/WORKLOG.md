@@ -205,3 +205,10 @@
 - 수정: 24파일 +58/−53(클래스 수준), A 패턴 예방 5곳 포함(사용자 승인), z-index는 원인 제거(z-10 삭제 + 모달 6종 z-[60]). 디펜스 겹침 `_shared/RankingTable.tsx`·`ShareMenu.tsx` 각 1줄
 - 검증: 재측정 실제 넘침 0(남은 3종 오탐 — 사진·리뷰어 확인) · lint 0 · typecheck 0 · test 705 · build ✅ · 리뷰 R3 두 리뷰어 0. 메인 확인: 랭킹 375 후(점수·▶ 카드 안) · 팀 보드 320 후(긴 설명 줄바꿈) 스크린샷
 - 미확인: `/teams` 대시보드(서버 세션, 예방 수정만) · invite/accept · 낚시 본 게임 · iOS Safari 실기. 별건: 랭킹 '나' 배지가 긴 이름과 함께 말줄임
+
+## 2026-10-22 — P8 연출 2차(네온·글로우) + 합성 사운드 (프론트 `feat-onam-tetris-fx2`, D-026)
+- 시각: 네온 블록·캐시 글로우 스프라이트('lighter' 복사, 칸별 shadowBlur 없음)·고스트 네온·줄 삭제 섬광+충격파·TETRIS/T-SPIN/B2B/PERFECT CLEAR 배너·콤보 미터·레벨업 빛살·배경 별(상한 70, 프레임 해시)·하드 드롭 빛줄기 / 대전 공격 혜성·가비지 상승·KO 폭발·카운트다운. 연출 줄이기 연동, 저사양 자동 lite(그리기 간격 평균 25ms 초과)
+- 사운드: Web Audio 합성, **기본 꺼짐**(`tetris:sound` {sfx, music, volume}), 둘 다 꺼지면 AudioContext 미생성, 첫 조작 후 시작(iOS interrupted·재-suspend 대응), voice 상한 24·우선순위, 배경음악 4마디 루프(진행 중만). 토글: 테트리스 홈 설정(효과음·배경음악·볼륨) + 게임·대전 상단 스피커 버튼
+- 변경: 수정 15파일 +813/−62 · 신규 12파일 1539줄. `_shared` 0줄, TetrisHome +3/−1, 엔진·battle-engine·package.json 0
+- 검증: lint 0 · typecheck 0 · test 744 · build ✅ · 순도(연출·소리 on/off boardHash 동일) · 기본 꺼짐 고정 테스트(AudioContext 0회) · 리뷰 R3 두 리뷰어 0. 메인 확인: `tetris-390.png`(TETRIS 배너·금빛 충격파·조각) · `home-sound-390.png`(효과음·배경음악 꺼짐 기본 + 볼륨 + 안내)
+- 미검증(실기): fps(2×2 대전·저사양 Android 첫 90프레임) · 음색·음량 · iOS 터치 시작·빠른 토글·전화 수신 복귀
