@@ -70,6 +70,9 @@ export const GAME_VERIFY_TIMEOUT_LIMIT = 2;
 export const DEFENSE_VERIFY_QUEUE_LIMIT = 4;
 export const DEFENSE_VERIFY_TIMEOUT_MS = 5_000;
 
+/** 리플레이 조회 응답의 브라우저 캐시 (초) — 입력 기록은 불변, 순위·숨김 반영 지연을 이 안으로 묶는다 (games-polish BD-06) */
+export const GAME_REPLAY_CACHE_MAX_AGE_SECONDS = 60;
+
 /** 랭킹 조회 기본·최대 개수 */
 export const GAME_RANKING_DEFAULT_LIMIT = 50;
 export const GAME_RANKING_MAX_LIMIT = 100;

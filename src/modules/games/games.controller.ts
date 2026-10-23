@@ -17,7 +17,7 @@ import {
   THROTTLE_GAME_SESSION_LONG,
   THROTTLE_GAME_SESSION_SHORT,
 } from '../../common/constants/throttle.constants';
-import { GAME_VERIFY_RETRY_AFTER_SECONDS } from '../../common/constants/app.constants';
+import { GAME_REPLAY_CACHE_MAX_AGE_SECONDS, GAME_VERIFY_RETRY_AFTER_SECONDS } from '../../common/constants/app.constants';
 import { User } from '../../entities/User';
 import { AuthUnauthorizedErrorResponseDto } from '../auth/auth-error.dto';
 import { GamesService } from './games.service';
@@ -209,8 +209,15 @@ export class GamesController {
   })
   @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 30회)')
   @ApiCommonInternalServerErrorResponse()
-  async getReplay(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number) {
+  async getReplay(
+    @Param('gameType') gameType: string,
+    @Param('scoreId', ParseIntPipe) scoreId: number,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.gamesService.getReplay(gameType, scoreId);
+    // 입력 기록(큰 본문)은 등록 뒤 바뀌지 않는다 — 공유 링크·재방문의 반복 조회를 브라우저가 잠깐 재사용한다(games-polish BD-06).
+    // 성공 응답에만 단다(404는 주간 공개 전일 수 있어 캐시하지 않는다). 순위·숨김 반영이 최대 60초 늦을 수 있다
+    res.setHeader('Cache-Control', `public, max-age=${GAME_REPLAY_CACHE_MAX_AGE_SECONDS}`);
     return { code: 'SUCCESS', data, message: '' };
   }
 }
