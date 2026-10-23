@@ -165,3 +165,108 @@
 - 관찰(프론트 전달, 차단 아님): 측정 화면은 BNB가 하단 컨트롤 일부를 덮는다(측정 화면 전용) · 적 실루엣이 모두 흰색(종류별 형태·색은 E2·F)
 - **남은 것**: 사용자 실기기 측정(아이폰·저사양 안드로이드 — 프론트 보고의 절차 a~d) → 결과 JSON을 이 WORKLOG에
 - 검증 서버 종료(3000 LISTEN 0)
+
+## 2026-10-22 — 브랜치 최종 리뷰 (백엔드 `origin/main..HEAD`, 사용자 "리뷰 내가 하던대로 + API·Playwright")
+- 커밋 5개(`8b7c5ce` I0 · `0dcbf4d` 엔진 사본 · `d2be5ce` 주간 보드·워커 풀 · `3b95832` 문서 · `a066aaf` lessons) 후 브랜치 전체를 두 리뷰어로
+- R1 review-flow(Opus 서브에이전트, 스킬 절차): 코드 결함 0 · 문서 2(주간 seed "하위 32비트" ↔ 코드 앞 4바이트 · games DESIGN 세션 스키마에 boardKey·게임별 TTL 없음) · Info 1(동기 검증기의 결정적 예외도 503)
+- R1 Opus 독립(1차 API 시간 초과로 종료 → 재실행): 코드 결함 0 · 중간·추정 1(워커 풀이 `{ok:false}` 답과 크래시를 같은 오류로 — B1에서 재현 실패가 503 무한 재시도) · 낮음·추정 1(`search_condition_vc` 12.2+ — **해당 없음**: I0-B2 사전 조회에서 이 컬럼을 실제로 조회해 값 확인, 운영 19c, 마이그레이션 성공)
+- 반영: 문서 2건 · DESIGN §B2 B1 넘김 ③(엔진 예외 = 재현 실패, 인프라만 503) + **워커 답 규약**(재현 실패·엔진 예외는 `{ok:true, result:{ok:false}}`, `{ok:false}`는 워커 처리 실패 전용) · 워커 풀 머리 주석 — 로직 변경 없음
+- R2 review-flow 0(낮음 1: DESIGN `'weekly-YYYY-Www'` 대문자) / Opus 0(낮음 1: 워커 풀 테스트 픽스처 `ok:false`가 'bad replay' — 규약과 어긋남) → `76c1bd1`
+- R3 review-flow 0 + games 단위 15회 중 1회 실패(이름 미확보) / Opus 0 → 재현 시도: 워커 풀 6병렬×5회 30/30·games 15회 0실패 — 재현 안 됨. 의심 지점(고정 800·1200ms 대기 후 생성 수 단정)을 `waitUntil` 폴링으로 → `14084b6`
+- R4 review-flow 0 / Opus 0(낮음 2: 느린 환경에서 "ready로 카운트 리셋" 회귀를 놓칠 수 있음 · waitUntil 상한 = jest 기본 5초) → exit 수 기준 대기·상한 3초, 변이(ready에서 카운트 리셋) 3회 실패 확인 → `2339af8`
+- R5 review-flow 0 / Opus 0 → **종료**
+- **통합 검증**(백엔드 브랜치 dist 3500·Redis 6380·운영 DB + 프론트 최종 커밋 `cacfca0` 운영 빌드 3000): 프론트 build exit 0 · 실API 회귀 22/23(로그인 생략) · 새 동작 — `/boards` · 세션 `boardKey: default, mode: null` · 테트리스 `board` 422 · `rankings` 보드 기본·`board=default&period=weekly` 200·`endless-s1`/`Bad_Key` 422 · 리플레이 `params {das,arr}`+최상위 das·arr · 요약 `boardKey` · 형식 혼합 422 · CORS `Expose-Headers: Retry-After` · 빨리 감기 422 `GAME_REPLAY_INVALID` → 같은 세션 409 `GAME_SESSION_INVALID`(1차는 세션 발급 스로틀 20/분에 걸려 65초 뒤 재실행) · Playwright 게임 **29/29** · 공유 **14/14** + 추가 **4/4** · `/og` 200 `image/png` · 운영 `/games/defense/dev` 404 · 개발 서버 측정 화면 하단(360·390px) "10초 측정" 버튼 하단 691px < BNB 상단 709~710px(겹침 없음)·오류 0
+- 최종: 단위 **1059/1059**(51) · E2E **176·2 skip** · lint 0 errors·경고 6 · build · stubs 0 · 검증 서버 종료(LISTEN 0)
+- 프론트(`next-bun-1b`): 브랜치 최종 리뷰 R1 두 리뷰어 0 → 커밋 3개 `87110e1`(I0-F1+F2 — 같은 테트리스 파일을 겹쳐 고쳐 합침)·`07035eb`(E1)·`cacfca0`(R1), 커밋마다 그 시점 트리로 lint·typecheck·test 단독 검증
+
+## 2026-10-22 — E2 지시 · B1-b 디펜스 레지스트리 연결 (사용자 "구현 남은 것 진행")
+- 프론트(`next-bun-1b`)에 E2 지시(범위·계약 고정: simulateReplay 시그니처·실패 사유 유지, 무한·주간 헤더 `{mode:'endless'|'weekly', boardKey, seed, ticks, inputs}`) → 질의 2건 답 = D-026(무한·주간 데이터는 S1 · 결과 `wavesStarted` 추가). 커밋은 사용자 승인 후로 정정 전달
+- 백엔드 B1-b(미커밋):
+  - `defense-game-engine.ts` — 보드(endless-s{시즌}·weekly-YYYY-wNN, 본문 없음 = 무한) · 주간 seed HMAC · 비밀값 없으면 weekly만 503 `GAME_WEEKLY_UNAVAILABLE`·/boards에서 빠짐 · 미래 주·없는 시즌 422 · params `{}`만 · 30틱·3배속·162,000틱·20,000·TTL 4시간
+  - `defense-verify.ts`(엔진 래핑 — 예외 = `ENGINE_ERROR` 확정 결과 · NOT_STARTED 추정, D-026에서 `wavesStarted`로 교체 예정) · `defense-verify.worker.ts`(풀 규약) · `defense-verify.service.ts`(첫 검증 때 풀 지연 생성 · `GAME_VERIFY_WORKERS` 1~8 · 종료 가드)
+  - 레지스트리 `isPeriodRanking`(주간은 period 무시 — getRankings·등록 직후 순위) · `topLevelReplayParams`(getReplay의 `TETRIS` 분기 제거) · `GAME_TYPES`에 DEFENSE · 모듈 factory 배선 · Swagger · README env
+- 리뷰 루프:
+| 라운드 | review-flow | Opus | 조치 |
+|---|---|---|---|
+| R1 | 0(의심 2: 서비스 테스트 공백·주간 리플레이 복제) | 0(의심 6: 주간 리플레이 복제·결정적 타임아웃 반복·배선 테스트 공백·종료 뒤 풀 재생성·NOT_STARTED 목숨 5 규칙·Swagger) | 서비스 spec(가짜 Worker)·모듈 spec·`destroyed` 가드·GameRanksDto 설명 · 복제·타임아웃은 DESIGN §B8 게이트(복제는 사용자 결정 대기) |
+| R2 | **0**(의심 1: Swagger 문구) | **0**(낮음 2: 모듈 spec이 셸 env에 깨짐·verify 배선 단정 없음) | 셋 다 반영(테스트·문구만) → **종료** |
+- 변이 확인: 종료 가드 제거·워커 상한 9·env 키 오타·verify 배선 교체 → 각각 실패 후 원복(sha 일치) · 셸에 `GAME_WEEKLY_SEED_SECRET=x`여도 모듈 spec 통과
+- 실제 워커(dist 빌드): `DefenseVerifyService` 워커 2개 기동 → 3건 왕복 20ms(`INVALID_HEADER` — S1 전 의도) → 정상 종료 (메인·리뷰어 각각 재현)
+- 검증: 단위 **1110/1110**(54) · E2E **190·2 skip**(+14 디펜스) 3회 중 2회 전부 통과, 1회 `file-share` 401 케이스 1건 실패(이번 변경 밖 모듈, 단독 5회 재실행 모두 통과 — 미재현) · 작성 직후 games E2E 첫 4회 중 3회에서 매번 다른 1~2건 실패(메시지 미보존), 이후 12+3회 연속 통과 — 미재현, 원인 미확정(동시 부하 의심) · lint 0 errors·경고 6 · build · stubs 0
+- 추가(사용자 결정 D-027): 진행 중 주간 리플레이 404 — `isReplayPublic` + 단위 6·E2E 1 · prettier를 games 전체에 잘못 돌려 무관 파일 9개 서식 변경 → 역패치로 HEAD 복원, 편집 파일 7개는 3-way 병합으로 편집 줄 외 서식 제거 · 단위 **1116/1116** · games E2E 58/58 · tsc
+- 개발 서버(사용자 구경용): 백엔드 worktree `nest start --watch` 3500(Redis 6380, 운영 DB 접속 — 사용자 지시) · 프론트 worktree `next dev` 3000. `.env`에 `GAME_WEEKLY_SEED_SECRET` 없음 → `/boards`는 무한만, weekly 세션 503(설계대로)
+
+## 2026-10-22 — E2 수신 · 백엔드 사본 동기화(B1-c) · D-028
+- 프론트 E2(`next-bun-1b`, 미커밋 — S1 착수 전 상태 보존: 프론트 세션 scratchpad `e2-snapshot/`(tracked.patch·untracked.tar·status·base `cacfca0`)): 타워 6·적 11·상태효과 6·효과 엔진·증강 24·주간 규칙 15·다중 경로·조기 호출·판매 환급 · ENGINE_VERSION **2** · 매니페스트 `515271f3…` · 골든 **42**(성공 16·실패 26, 사유 6종) · `wavesStarted` 추가 · lint 0·typecheck·test 786(defense 257) · 리뷰 10회차 두 리뷰어 0 · perf (a) 3.2~3.3ms (b) 2.11~2.28s(계약 2.0 초과) → D-028
+- 동기화: 프론트 엔진 폴더(`*.test.ts`·숨김 제외)·매니페스트를 S1 편집 전에 복사 → 백엔드 매니페스트 spec 통과(전체 해시 일치) · 골든 42 백엔드 재현 통과 · golden spec 엔진 버전 단정 2로 · `defense-verify.ts` NOT_STARTED = `wavesStarted === 0`(목숨 5 규칙 등 추정 오판 제거, 테스트 2)
+- 백엔드 Node 실측(dist, 부하 4~5, 중앙값/7회): E2 최장 판 4,495틱 **4.10ms** · Lv5 판 4,115틱 4.51ms · 판 상한 162,000틱(웨이브 미시작) 16.0ms — (a) 계약 ≤300ms 여유. (b)는 프론트 하네스(engine-dev) 수치 사용
+- B1-c 리뷰 R1: review-flow 확정 1·경미 2 / Opus 확정 1·의심 2 — **같은 확정**: 디펜스 E2E 제출 본문이 `engineVersion: 1` 하드코딩 → 엔진 2에서 409(동기화 후 E2E 미실행 — 메인 누락) → 사본 `ENGINE_VERSION` import로 · 서식 1줄·`START_LIVES` 복원 · 의심: 타임아웃 503 반복(O1 완료 판정에 "백엔드 (b) ≤ 타임아웃 절반" 추가) · 서버 경로 NOT_STARTED 실제 엔진 테스트 없음(S1 동기화 때 무한 보드 대기 판으로 추가 — 후속) · Opus 실측: 입력 20,000·162,000틱 최악 19ms, 골든 3회 연속 결정성 일치
+- B1-c 반영 후 검증: 단위 games 240/240 · 전체 E2E **191 통과·2 skip**(sandbox 밖) · E2E 제출 버전을 옛 값 1로 되돌리면 2건 실패 확인 후 원복 · lint 0 errors·경고 6 · tsc · R2 두 리뷰어 **확정 0** → 종료
+- 커밋(사용자 승인): 백 `39e1f43`(B1-c)·`bc7983b`(문서) · 프 `638b9da`(E2 — 보존 스냅샷으로 S1과 분리, 임시 인덱스+commit-tree, 커밋 트리 단독 검증: 매니페스트·골든 sha 일치·tsc·eslint 0·vitest 786)
+- `GAME_WEEKLY_SEED_SECRET`: 사용자가 생성해 로컬 worktree `.env`·운영 fs-01 `.env`에 같은 값으로 추가(해시 비교로 일치 확인, 값은 기록하지 않음) · 백엔드 개발 서버 재기동 → `/boards`에 `weekly-2026-w43`(current)·`w42` 노출, weekly 세션 SUCCESS
+
+## 2026-10-22 — 공용화 분리 PR (D-030)
+- 백 `feat-onam-games-common`(base origin/main `c016557`): `c23543a`(=8b7c5ce) · `4306bfb`(=e5e607c, lessons 충돌 — 이번 항목만) · `bec681f` README · `1868baa`(=3b95832 디펜스 설계 문서, CLAUDE.md 라우팅 대전·디펜스 두 줄 유지) — 단위 1290 · E2E 215·56 skip ×3 · lint 0 · build · 리뷰 두 리뷰어 확정 0(낮음: 미사용 주간 에러 DTO·Swagger DEFENSE 문구 → 리베이스 충돌 회피로 PR 본문 명시)
+- 리뷰 의심 "세션 발급 본문 검증 신설" → 프론트 확인: main `882a8b0`·`87110e1` 모두 본문·Content-Type 없음(`gameService.ts:96-99`), strict 스키마 없음, BUSY 자동 재시도 1회 → 해소
+- 프 `feat-onam-games-common`(base `882a8b0`): `6a81e10`(=87110e1, 충돌: gamesPaths·ReplayPlayer·대전 playerName import 3) · `0dfc96a` 주석 — test 644 · 리뷰 2라운드 0
+- 통합(두 브랜치 dist·운영 빌드, 운영 DB): 실API 22/23(로그인 생략) · boards·session boardKey·tetris board 422·defense 404·replay params·rankings board·CORS · Playwright 게임 29/29·공유 14/14+4/4 · OG 200 · 대전 페이지 200 · 서버 종료
+- 푸시(사용자) → PR: 백 https://github.com/kon6443/bun/pull/279 · 프 https://github.com/kon6443/next-bun/pull/361 (base develop) — 머지는 사용자 승인 대기
+
+## 2026-10-22 — 백엔드 디펜스 브랜치 리베이스 (사용자 승인)
+- 공용화 PR #279·#361 머지 후(origin/main `a96f8d2`) `feat-onam-defense`를 origin/main 위로 리베이스. 미커밋 문서는 임시 WIP 커밋으로 묶었다가 리베이스 후 `reset --soft`로 다시 미커밋 상태로 복원(stash 미사용)
+- 자동 제외: `8b7c5ce`(= main `c23543a`) · 충돌 해결: README(main 쪽 유지 후 마지막에 디펜스 서술·env·기준선 재반영 — 미커밋) · CLAUDE.md(main 쪽 = 대전·디펜스 두 줄 — `3b95832`는 빈 커밋이 되어 skip) · lessons.md(두 항목 모두 유지, `e5e607c`는 빈 줄 1줄만 남음)
+- 커밋 14개(디펜스 전용) · HEAD `90f9017` · 검증: tsc · lint 0 errors(경고 6) · 스텁 0 · 단위 **1424/1424**(62) · E2E **230·56 skip** ×2 · build(워커 js 포함)
+- 프론트 디펜스 브랜치 리베이스는 S1 커밋 후(작업 트리에 S1 미커밋 변경)
+
+## 2026-10-22 — S1 완료 수신 · 백엔드 사본 동기화(B1-d)
+- 프론트 S1(R1~R10, 마지막 두 라운드 두 리뷰어 0): 캠페인 8·무한 endless-s1·주간 weekly-YYYY-wNN 데이터 · 생성기·시뮬레이터(병렬 child_process 워커, 순차와 바이트 동일) · 탐색 봇 B8·H3·무교란 계보 고정 · 용 25 단독 규칙 · ENGINE_VERSION 3 · 매니페스트 `17eee826…` · 골든 52(`9fd9759d…`) · lint 0·typecheck·test 877 · 병렬 실측: 기준 봇 21판 2.48배, 주간 4.10배, 주간 전체 85분→7.9분, 웨이브 생성 37분→26분(탐색 봇 2배 무거워진 상태)
+- 진행 경과: (B) 37/30 ✗ → 진단(탐색 봇 5 seed 표본 오차 · 웨이브 25 용 뽑기 운으로 실력 무관 즉사 5/21) → (A) 탐색 봇 보강·용 단독 규칙 → 2029‰ 38✗/45 → (A2) 2740‰ 33✓/43✓
+- 백엔드 동기화(미커밋): 엔진 폴더·매니페스트 복사 → 매니페스트 spec 통과 · 골든 52 재현 · golden spec 버전 3 · 신규 `defense-verify.engine.spec.ts`(골든 무한·주간 판 서버 경로 재현 + 대기만 한 무한·주간 판 실제 엔진 NOT_STARTED) · 실제 워커(dist) 무한·주간 골든 5판 점수 일치, 3~189ms(첫 판은 워커 기동 포함) · 단위 **1445/1445** · E2E 230·56 skip
+- B1-d 리뷰 R1: review-flow 코드 확정 0(문서 확정 1 — README 기준선이 새 spec 추가 전 값) · Opus 확정 0 — 보드 키 해석 2000~2100년 5271개 전부 엔진 해석 OK·주간 판은 boardKey+seed만으로 결정·판 시작 생성 무한 0.08ms/주간 0.57ms·결정성 골든 2회 일치. 후속 반영: 서버 시즌 상수↔엔진 `ENDLESS_BOARD_KEYS`·`isWeeklyBoardKey` 결합 테스트(시즌만 2로 바꾸면 실패 확인 후 원복) · 엔진 spec detail에 engineVersion 단정 · README 1446/63
+- **O1 근거(Opus 실측, 부하 높은 로컬)**: endless-greedy 60145틱 681ms(프론트 plain Node 123.5ms) · 1만 틱당 비용이 58→210ms로 증가(Lv5 타워 15~16개) — 162000틱까지 버티는 판 외삽 약 4초로 워커 타임아웃 5초 근접(의심). O1 완료 판정(백엔드 (b) ≤ 2.5초)에 "최장 판 외삽"도 함께 측정
+- B1-d 리뷰 R2: 두 리뷰어 **확정 0** → 종료(import 한 줄로 합침). review-flow가 games 단위 10회 중 1회 1건 실패를 봤으나 출력 미보존 → 메인이 부하 26(load avg) 상태에서 **25회 연속 로그 보존 실행, 실패 0**(미재현, 원인 미확정 — 의심 후보: 타이밍 의존 `verify-worker-pool.spec`). 재발 시 로그 파일로 특정
+
+## 2026-10-22 — 프론트 S1 커밋·주간 seed 6·리베이스 · 백엔드 재동기화(B1-e)
+- 프론트(`next-bun-1b`, 미푸시): origin/main `19f4cf7` 위 6커밋(e152c6f 엔진 v1 · 323e5a5 렌더러 · dba17b6 E2 · 41cdcb6 S1 엔진+생성 데이터(합침) · 03b4d83 시뮬레이터·탐색 봇·병렬 · 51e727b 주간 seed 2→6) — 87110e1은 `--onto`로 제외, 커밋마다 단독 tsc·lint·test 통과(e152c6f는 작업 트리 `.next/types` 잔여물만 제외하면 0)
+- 주간 재생성(D-031): 허용 2070/9171쌍 · 다른 seed 재검증 대역 안 63%(직전 40%) · 영향 530~1410(직전 208~3275) · 매니페스트 `ee6d0fe6…` · ENGINE_VERSION 3 유지(미배포)
+- 백엔드 재동기화: 3파일(weeklyCombos·골든·매니페스트) · 단위 1446 · E2E 230·56 skip · 리뷰 두 리뷰어 확정 0 — 의심 해소: `pnpm db:select`로 GAME_REPLAYS 집계 → TETRIS v1 38건뿐(디펜스 0) · 프론트 디펜스 브랜치 원격 미존재(배포 이력 없음)
+
+## 2026-10-22 — F1a 수신 · 메인 검증 (build · Playwright S1 클리어)
+- 프론트 F1a(`next-bun-1b`, 미커밋, 엔진·매니페스트·골든 무변경): `/games` 카드 → `/games/defense` 허브(캠페인 지도 8·잠김·별) → `/games/defense/campaign/[s1~s8]`(난이도, 어려움은 보통 클리어 후) → `/games/defense/play/stage/[boardKey]`(s1·s1-easy·s1-hard, `?seed=` 고정) → 결과(별·다시·다음·패배 원인) · useDefensePlay·HUD·WaveBar·TowerRing(2탭·단축키·한글/Dvorak)·진행·다시보기 localStorage · 렌더러 타워 6·적 12종 · lint 0·typecheck·test 1088 · 리뷰 R4 두 리뷰어 0
+- 메인: 프론트 `next build` exit 0(play 10.8kB) · 운영 빌드(3000) Playwright `defense-f1a.mjs` **20/20**(모바일 390·데스크톱 1280): 허브 잠김 · 어려움 잠김 · 3× · 가이드 순서 타워 7기 · **S1 보통 클리어 victory·별 3·목숨 20** · 다음 → S2 · S2 해금 저장 · localStorage 진행·다시보기 · 어려움 열림 · 콘솔·페이지 오류 0. 스크린샷 `scratchpad/e2e/shots/defense-*.png`
+- 관찰(F1b 전달): 타워·적이 대부분 흰·회색 원이라 종류 구분이 약함(대포·궁수, 졸개·질주병) · 하단 BNB가 허브 목록 아래를 덮음(스크롤로 접근은 가능)
+- DESIGN §F10 경로 `play/stage/[stageId]` → `[boardKey]`(난이도 접미사 — 프론트 요청)
+
+## 2026-10-22 — F1b 수신 · 메인 검증 → 수정 요청
+- 프론트 F1b(미커밋, 엔진 무변경): 종류 구분(타워 6색·적 모양·테두리·표식) · 허브 BNB 여백 · 튜토리얼·브리핑·도감 · 효과음(기본 꺼짐·HUD 토글·켤 때만 AudioContext) · 설정 · 이어하기 · 나가기 확인 · 문양·쿨다운 고리·보스 막대·연출 · lint 0·typecheck·test 1123 · 리뷰 R3 두 리뷰어 0
+- 메인: build exit 0 · Playwright `defense-f1b.mjs` **15/15**(허브 맨 아래 카드가 BNB 위 · 튜토리얼 0→1→2→종료·tutorialDone · 효과음 기본 off·AudioContext 0 → 켜면 생성 · 나가기 확인 중 일시정지 · 허브 이어하기 → 같은 웨이브·골드로 일시정지 복원 · 설정 기본 배속 3 → 다음 판 3× · 도감 data-known · 오류 0) · S1 클리어 회귀 `defense-f1a.mjs` **20/20**
+- **스크린샷 검토로 수정 요청 3건**(테스트는 통과했지만 화면에서 보인 결함): ① 390px HUD 「웨이브 n / N」 두 줄로 깨짐(효과음 버튼 추가 후) ② 적이 전부 흰 원 — 모양·테두리·표식이 실제 렌더에 안 나옴(렌더러 단위 테스트 통과와 불일치 → 실제 렌더 경로 회귀 테스트 요청) ③ 튜토리얼 배너가 왼쪽 위 슬롯을 덮음
+- 수정 후 재검증: build exit 0 · HUD 「W n/N」 320·360·390px 모두 한 줄(수치 칸 높이 = 줄 높이, 잘림 없음) · 튜토리얼 0단계 말풍선이 아래 띠로(강조 슬롯·0번 슬롯 안 덮음) · 웨이브 3 장면에서 질주병이 분홍 마름모 + 어두운 윤곽선(2px 이상)으로 졸개(흰 원)와 구분 · Playwright F1b **15/15** · S1 클리어 **20/20**
+- 메인 오판 기록: ② "적이 전부 흰 원 = 렌더 경로 결함"은 틀렸다 — 찍은 두 장면(웨이브 1·5)이 졸개만 나오는 웨이브였다(설계값). 실제 결함은 윤곽선 1.3px로 거의 안 보인 것뿐. 스크린샷으로 결함을 판정할 때는 그 장면의 적 구성(웨이브 미리보기·데이터)부터 확인
+
+## 2026-10-22 — O1 수신 · 백엔드 사본 동기화(B1-f) · 실측
+- 프론트 O1(미커밋→승인): combat·game·spawn·status 최적화, ENGINE_VERSION 3 유지, 매니페스트 `e5564b03…`(골든 해시 불변) · 결과 동일: 골든 52 · 무작위 봇 1500판 · 시뮬레이터 봇 840판(캠페인 8×3·무한·주간 3주, 최장 77,459틱) 차이 0 · plain Node (b) 2031→1690ms(−16.8%), E2 2236→1896ms · 리뷰: review-front 0 + (정정 후 추가) Opus must-fix 0
+- 백엔드 실측(백엔드 tsc ES2020 컴파일 하네스 `scratchpad/be-perf/`, 부하 3~6): (b) **1.76~1.90초** · E2 **2.06~2.18초** · 실제 최장 판(60,145틱) 115~119ms · 162,000틱 외삽 **311~321ms** — O1 판정(백엔드 ≤ 2.5초) 충족, 배포 전 차단 해제. 실제 워커(dist) 무한·주간 골든 5판 일치 2~186ms(첫 판 기동 포함)
+- 측정 함정: `tsx`로 바로 실행하면 약 2.7배 부풀어 (b) 4.8초로 보임 — 계약 판정은 컴파일 JS(서버와 같은 경로) 기준
+- 단위 1446 · E2E 230·56 skip · 리뷰: review-flow 확정 0(재실측 수치 범위 확장 권고 반영) · Opus 확정 0 — 최적화 전·후 사본 1000판(약 210만 틱) 매 틱 명령 반환·이벤트·상태 해시 비교 불일치 0, 판 도중 예외 주입 후 같은 프로세스에서 골든 52 재현 일치(워커 연속 검증 오염 없음). Opus 시간 수치(700ms대)는 tsx 실행이라 계약 판정에 쓰지 않음
+- 사용자 결정: 배포는 F2·F3·V 후 한 번에(캠페인 선배포 안 함)
+
+## 2026-10-23 — F2 수신 · 메인 실API 검증 → 커밋 승인 · F3 착수
+- 프론트 F2(F2a 플레이 일반화·증강 UI·주간 규칙 줄 / F2b 세션·등록·만료 띠·대기 제출 / F2c 랭킹 탭·허브 카드): lint 0·typecheck·test 1176 · 묶음 리뷰(사용자 지시 — 속도): review-front R1 should 7 → R3 0 · Opus R1 should 6 → R3 0
+- 메인(백엔드 HEAD e15d6e2 dist 3500 + 프론트 운영 빌드 3000, 운영 DB): `defense-f2.mjs` + 재확인 `defense-f2-rank.mjs` — S4 전 잠김·랭킹 열림 · 무한·주간 세션 201 · 주간 규칙 2개 · 게임 오버 → **등록 201**(scoreId 46 endless-s1 · 47 weekly-2026-w43, 서버 재검증 detail `{wave:1,progress:0,kills:0,livesLeft:0,goldEarned,engineVersion:3}`) · 랭킹 링크 board · 탭·강조 행 · 무한 기간 탭 있음/주간 없음 · ▶ 비활성 사유 2종 · API 진행 중 주간 리플레이 404·무한 200 · 오류 0 (첫 실행 강조 행 2건 FAIL은 데이터 로딩 전 확인 — 스크립트 타이밍, 재확인 4/4)
+- 회귀: 테트리스 games-ui 28/29(카드 수 기대값 구식 — 디펜스 카드 추가) · 공유 14/14+4/4 · 디펜스 F1b 15/15 · S1 클리어 20/20
+- 사용자 확인 대기: 운영 DB 테스트 기록 46·47 숨김(담당자 SQL 실행) · 점수 표기 "웨이브 n · 진척 p%"로(권장 — F3에 포함)
+
+## 2026-10-23 — F3 수신 · 메인 검증
+- 프론트 F3(미커밋, engine 무변경): F3a 점수 표기 "웨이브 n · 진척 p%"(결과·랭킹·허브·대기·공유·메타·OG, 테트리스 불변) · F3b 엔진 버전 표(§E6 구조)·replayRunner(사전 패스·스냅샷·탐색) · F3c 재생기(재생·배속 0.5~4×·웨이브 눈금·명령 목록·슬롯 강조·키보드)·`replays/[scoreId]`·`replays/local/[stageId]` · F3d 공유·OG·▶ 활성 · lint 0·typecheck·test 1196 · 묶음 리뷰 review-front R1 should 9 → R3 0 · Opus R1 should 3 → R3 0
+- 메인: build exit 0 · `defense-f3.mjs` 16항목 중 15 PASS + 1건은 스크립트 결함(기록 46의 명령이 모두 CALL_WAVE라 강조 요소가 없는데 속성 읽기가 30초 기본 대기로 기다리는 동안 재생이 끝까지 감 — 실제 이동은 0:06→0:00 확인) — 랭킹 점수 표기·원점수 없음 · 진행 중 주간 ▶ 비활성 · 재생 자동·4×·시간 진행 · 웨이브 눈금 3 · 명령 3 → 탭 시 해당 틱 · 끝까지 탐색 → 정지 · 공유 문구 · 메타(title·og:image·noindex) · OG 200 image/png(600s) · 없는 기록 OG 200 · 47(진행 중 주간) 안내 · 로컬 저장본 없음 안내 · 오류 0
+- 캠페인 로컬 다시보기(S1 클리어 직후, 모바일·데스크톱): 재생 3:22 · 명령 16(건설 포함) · 건설 명령 탭 → 슬롯 5 강조 — `defense-f1a.mjs` LOCAL_REPLAY 26/26
+- 회귀: 테트리스 games-ui 29/29(카드 3개 기대값 갱신) · 공유 14/14+4/4 · 테트리스 OG 200 · 디펜스 F2 랭킹 4/4 · F1b 15/15
+- 후속(프론트 제안·메인 권장): 공유 카드·메타에 보드 표기("무한 시즌 1 · 1위" / "W43 주간 · 1위") — 요약 API에 boardKey·보드 안 순위가 이미 있음
+
+## 2026-10-23 — V: 백엔드 리베이스(7e747e5) · 최종 리뷰 · D-032
+- main이 테트리스 대전 2차(#281~#284)로 17커밋(병합 제외 13) 앞서 리베이스(이 브랜치 22커밋) — 겹친 파일은 README 기준선 1줄(main 쪽 유지 후 이 브랜치 실측으로 재기입). 미커밋 없음 상태에서 진행, 22커밋 그대로(해시 변경 — STATUS 커밋 절은 이 이력을 가리키도록 정리)
+- 검증(리베이스 후): tsc · lint 0 errors·경고 6 · 스텁 0 · 단위 **1469/1469**(64) · E2E **240·58 skip** ×2 · build(워커 js 포함) — D-032 수정 후 단위 1470
+- 최종 리뷰: review-flow 코드 확정 0(문서 확정 1 — STATUS가 리베이스 전 해시·base를 적음 → 정리) · Opus **확정 1(머지 전 차단)** — 주간 리플레이가 주 전환 즉시 공개되어 마지막 순간 세션으로 복제 가능 → D-032 수정 + 경계 spec(수정 전 코드로 실패 확인) · Opus 의심: 결정적 5초 초과 시 503 반복(배포 직후 로그 모니터링) · 오프라인 최적 입력 탐색(설계상 수용) · 대기 작업 최대 ~25초 응답(후속)
+- Opus 실측: dist 워커로 무한·주간 골든 5판 점수 일치 5~234ms · 동시 6건 → 진행 1·대기 4·거절 1(설계대로)
+- V R2: Opus 확정 0(경계 실측 w43·2026-w53→2027-w01·2025-w52→2026-w01·2027-w01 모두 +4h에서만 공개) · review-flow 코드 확정 0(문서 2건 — 커밋 수 표기·최종수정 날짜 → 수정) · Swagger replay 설명을 "주 종료 4시간 뒤 공개"로(낮음) · 남은 게이트: 배포 직후 5초 초과 경고 로그 모니터링 · 후속: 대기 작업 응답 지연·오래된 주간 리플레이 보관 정책

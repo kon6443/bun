@@ -60,6 +60,10 @@ export const GAME_REPLAY_TIME_TOLERANCE_MS = 5_000;
 /** 검증이 밀렸을 때(503 GAME_VERIFY_BUSY) 다시 시도까지 기다릴 시간 (초) — Retry-After 헤더 (defense DESIGN §B4) */
 export const GAME_VERIFY_RETRY_AFTER_SECONDS = 2;
 
+/** 디펜스 검증 워커 — 레플리카당 대기 작업 상한·작업 1건 시간 상한 (defense DESIGN §B5·§E5) */
+export const DEFENSE_VERIFY_QUEUE_LIMIT = 4;
+export const DEFENSE_VERIFY_TIMEOUT_MS = 5_000;
+
 /** 랭킹 조회 기본·최대 개수 */
 export const GAME_RANKING_DEFAULT_LIMIT = 50;
 export const GAME_RANKING_MAX_LIMIT = 100;

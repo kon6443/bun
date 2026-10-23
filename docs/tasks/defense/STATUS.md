@@ -1,14 +1,15 @@
 # 디펜스 게임 (게임 모음집 2번째 게임)
 
-- **상태**: 🟡 진행 중 — I0·I0-B2·E1·R1·B1-a 완료, 커밋 중 · 실기기 측정 대기 (2026-10-22)
-- **최종수정**: 2026-10-22
+- **상태**: 🟡 배포 준비(V) — 구현 E1~F3 완료 · 공용화는 main 머지(#279·#361) · 백엔드 브랜치 origin/main `7e747e5` 위 리베이스, 최종 리뷰 확정 1(주간 리플레이 공개 시점, D-032) 수정 · 미푸시 · 실기기 측정 대기 (2026-10-23)
+- **최종수정**: 2026-10-23
 - **관련 문서**: DECISIONS.md(결정·근거) · WORKLOG.md(조사·검증 기록) · `research/`(디펜스 게임 리서치 01~04) · DESIGN.md(설계 정본 — §L 레벨링 초안) · 선행 작업 `docs/tasks/games/`(테트리스·랭킹·리플레이 정본)
 
 ## 세션·브랜치
 | 역할 | 세션 | worktree | 브랜치 (base) |
 |---|---|---|---|
-| 메인·백엔드·문서 관리 | 메인(bun) | `bun/.claude/worktrees/defense` | `feat-onam-defense` (`origin/main` `ce438d0` — D-022로 `65e1e03`에서 FF) |
-| 프론트 | `next-bun-1b` | `next-bun/.claude/worktrees/defense` | `feat-onam-defense` (`origin/main` `d189ae6` — D-022로 `f2e66ff`에서 FF) |
+| 메인·백엔드·문서 관리 | 메인(bun) | `bun/.claude/worktrees/defense` | `feat-onam-defense` (base `origin/main` `7e747e5` — 2026-10-23 리베이스, 이력은 WORKLOG) |
+| 프론트 | `next-bun-1b` | `next-bun/.claude/worktrees/defense` | `feat-onam-defense` (base `origin/main` `19f4cf7` — 2026-10-22 리베이스) |
+- 병행 작업(2026-10-22 협의): 테트리스 멀티 — 백 `bun/.claude/worktrees/tetris-battle`(세션 `bun-47`)·프 `next-bun-bd`, 브랜치 `feat-onam-tetris-battle`. 신규 모듈·namespace로 분리, `src/modules/games/`·E2E 헬퍼 수정 회피, 테트리스 엔진 수정은 착수 전 재협의
 - 이 폴더는 메인만 수정한다. 프론트 세션은 보고·질문을 메인에 보내고, 메인이 사용자에게 묻는다.
 - 로컬 브랜치(main·develop 등)는 건드리지 않는다(D-002).
 
@@ -28,21 +29,14 @@
 - 완료: 백엔드 worktree · 기존 게임 구조 파악(WORKLOG 착수 절) · 태스크 문서 생성 · 프론트 worktree·조사(WORKLOG 프론트 조사 절)
 - 완료: 리서치 01~04 + 종합 `research/00-synthesis.md`(문서 간 충돌 정리·권장 골격)
 - **다음 할 일**:
-  1. 커밋(사용자 "R1까지 끝나고 정리") — 아래 커밋 계획 B-1~B-5(메인)·F-1~F-4(`next-bun-1b`). 푸시·머지는 별도 지시
-  2. **사용자 실기기 측정**(아이폰·저사양 안드로이드, `/games/defense/dev` — 절차는 WORKLOG R1 절·프론트 보고) → 결과 JSON → WORKLOG
-  3. 다음 슬라이스 E2(전투 전체 — 다중 경로 선두 = 출구까지 남은 거리, D-025) → S1 ∥ B1 나머지
+  1. F1a·F1b 완료(메인 검증 Playwright 20/20·15/15, 스크린샷 3건 수정) — F1b 커밋(사용자 승인)
+  2. O1 완료(백엔드 (b) 1.76~1.90초 ≤ 2.5 — 배포 전 차단 해제) · F2 착수(무한·주간·등록·랭킹 실API) · 배포는 F2·F3·V 후 한 번에(사용자)
+  3. F2·F3 완료(메인 실API·Playwright 검증) — F3 커밋 + 보드 표기 후속 → **V**(백·프 브랜치 최종 리뷰·ci:all·실API·Playwright 전체) → 배포 PR(백엔드 → 프론트) · 실기기 측정(사용자) · 운영 DB 테스트 기록 46·47 숨김(담당자)
 
-## 커밋 계획 (R1 완료 후 사용자 지시로 — 사용자 "R1까지 끝나고 정리")
-| # | 레포 | 커밋(가칭) | 파일 |
-|---|---|---|---|
-| B-1 | 백 | `feat(games): 게임 공통 엔진 레지스트리·검증 후 세션 소모·랭킹 보드` (I0-B1·I0-B2 — 같은 파일을 함께 고쳐 한 커밋) | `src/modules/games/*`(기존 파일 수정) · `src/entities/GameScore.ts` · `src/common/constants/app.constants.ts` · `src/main.ts` · `test/games.e2e-spec.ts` · `migrations/17925914200~22000-*.ts` · `docs/tasks/games/DESIGN.md` |
-| B-2 | 백 | `feat(games): 디펜스 엔진 사본과 동기화 검사` (B1-a) | `src/modules/games/defense-engine/` · `defense-engine-manifest.json` · `defense-engine.{manifest,golden}.spec.ts` · `.gitattributes` · `.prettierignore` · `eslint.config.mjs` |
-| B-3 | 백 | `feat(games): 주간 보드 계산과 리플레이 검증 워커 풀` (B1-a) | `weekly-board.ts`(+spec) · `verify-worker-pool.ts`(+spec) · `README.md`(games 설명·기준선 단위 1059·E2E 176) |
-| B-4 | 백 | `docs(defense): 디펜스 게임 리서치·설계·태스크 문서와 라우팅` | `docs/tasks/defense/` · `CLAUDE.md` |
-| B-5 | 백 | `docs(lessons): 변이 검사와 병렬 리뷰어의 작업 트리 충돌` | `docs/lessons.md` |
-| F-1~4 | 프 | I0-F1 · I0-F2 · E1 · R1 (`next-bun-1b`가 각각) | 프론트 보고 기준 |
-- 본문: B-1에 API 계약 변경(503 `GAME_VERIFY_BUSY` 신규 · 응답 `boardKey`·`mode`·`params` 추가 · `das`·`arr` 선택 · 시간 초과도 세션 소모 · `GET /boards` 신규 · `rankings?board=`) + 프론트 대응(I0-F 완료) + 마이그레이션 실행 완료(2026-10-21) 명시
-- 푸시·머지는 별도 지시. 배포 순서 백엔드 → 프론트
+## 커밋 (미푸시)
+- 백엔드: `git log origin/main..feat-onam-defense`(디펜스 전용 — 공용화 커밋은 main `c23543a`로 머지됨). 커밋별 기록·해시 변천은 WORKLOG(리베이스 2회: 2026-10-22 `a96f8d2` 위, 2026-10-23 `7e747e5` 위)
+- 프론트: `next-bun-1b` 보고 기준(E1 `e152c6f` ~ F3·후속) — WORKLOG 각 날짜 절
+- 배포 순서: 백엔드 PR → 프론트 PR, 각각 develop → main(사용자 승인)
 
 ## 진행 체크리스트
 - [x] S0 — worktree(백)·기존 구조 파악·태스크 문서

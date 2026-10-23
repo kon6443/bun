@@ -238,7 +238,8 @@ export class GamesService {
     if (!engine.isRankingBoard(boardKey, new Date())) {
       throw new ApiValidationErrorResponseDto('지원하지 않는 랭킹 보드입니다.');
     }
-    const periodStart = rankingPeriodStart(query.period ?? 'all');
+    // 기간 필터를 쓰지 않는 보드(디펜스 주간)는 period를 무시한다
+    const periodStart = engine.isPeriodRanking(boardKey) ? rankingPeriodStart(query.period ?? 'all') : null;
     const rows = await this.gameScoreRepository.find({
       select: RANKING_ITEM_SELECT,
       where: { gameType, boardKey, isHidden: 0, ...(periodStart && { crtdAt: MoreThanOrEqual(periodStart) }) },
@@ -261,23 +262,28 @@ export class GamesService {
     return this.toRankingItem(score, await this.rankOf(gameType, score, null));
   }
 
-  /** 리플레이 재생 데이터 — 누구나 조회, 숨김 기록은 404 (D-011) */
+  /** 리플레이 재생 데이터 — 누구나 조회, 숨김 기록·아직 공개하지 않는 보드(디펜스 진행 중 주간)의 기록은 404 (D-011) */
   async getReplay(gameTypeParam: string, scoreId: number): Promise<GameReplayDetailDto> {
     const gameType = this.toGameType(gameTypeParam);
     const score = await this.findVisibleScore(gameType, scoreId);
+    if (!this.engines[gameType].isReplayPublic(score.boardKey, new Date())) {
+      throw new GameScoreNotFoundErrorResponseDto();
+    }
     const replay = await this.gameReplayRepository.findOneBy({ scoreId, gameType });
     if (!replay) {
       throw new GameScoreNotFoundErrorResponseDto();
     }
 
-    const { frames, inputs, ...params } = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
+    const { frames, inputs, ...stored } = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
+    const params = stored as Record<string, number>;
+    const topLevel = Object.fromEntries(this.engines[gameType].topLevelReplayParams.map((key) => [key, params[key]]));
     return {
       ...this.toRankingItem(score, await this.rankOf(gameType, score, null)),
       engineVersion: replay.engineVersion,
       seed: replay.seed,
-      // 테트리스 계약 — das·arr는 최상위에도 둔다(games DESIGN §3)
-      ...(gameType === 'TETRIS' && { das: params.das as number, arr: params.arr as number }),
-      params: params as Record<string, number>,
+      // 게임별 기존 계약 필드(테트리스 das·arr)는 최상위에도 둔다
+      ...topLevel,
+      params,
       frames,
       inputs,
     };
@@ -295,9 +301,19 @@ export class GamesService {
     return score;
   }
 
-  /** 등록 직후 보드 안 기간별 순위 — 기록이 그 기간에 속하므로 세 기간 모두 순위가 있다 */
+  /**
+   * 등록 직후 보드 안 기간별 순위 — 기록이 그 기간에 속하므로 세 기간 모두 순위가 있다.
+   * 기간 필터를 쓰지 않는 보드(디펜스 주간)는 getRankings처럼 보드 전체 순위 하나를 세 기간에 같이 싣는다
+   */
   private async computeRanks(gameType: GameType, target: RankTarget, crtdAt: Date) {
     const ranks = {} as Record<RankingPeriod, number>;
+    if (!this.engines[gameType].isPeriodRanking(target.boardKey)) {
+      const rank = await this.rankOf(gameType, target, null);
+      for (const period of RANKING_PERIODS) {
+        ranks[period] = rank;
+      }
+      return ranks;
+    }
     for (const period of RANKING_PERIODS) {
       ranks[period] = await this.rankOf(gameType, target, rankingPeriodStart(period, crtdAt));
     }
