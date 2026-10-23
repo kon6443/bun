@@ -3,13 +3,13 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import type { Redis } from 'ioredis';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { TetrisBattleMatch } from '../../entities/TetrisBattleMatch';
 import { TetrisBattlePlayer, TetrisBattleVerdict } from '../../entities/TetrisBattlePlayer';
 import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
 import { User } from '../../entities/User';
-import { BATTLE_ENGINE_VERSION, BattleReplayInput } from './battle-engine';
+import { BATTLE_ENGINE_VERSION } from './battle-engine';
 import { FRAMES_PER_SECOND } from '../games/tetris-engine';
 import {
   GARBAGE_TAIL_GRACE_MS,
@@ -17,6 +17,7 @@ import {
   MATCH_ID_PATTERN,
   MATCH_START_DELAY_MS,
   REPLAY_SUBMIT_DEADLINE_MS,
+  WAKE_MARGIN_MS,
 } from './tetris-battle.constants';
 import {
   TetrisBattleMatchNotEndedErrorResponseDto,
@@ -61,10 +62,14 @@ const sha256Hex = (value: string) => createHash('sha256').update(value).digest('
  *
  * - 제출: playerToken(매치 시작 때 복사한 토큰 해시)으로 참가자 확인 → 리플레이 검증(tetris-battle-verify.ts) →
  *   Redis에 1번만 기록(HSETNX) → 전원 제출이면 DB 저장
- * - 저장: 전원 제출 또는 종료 후 60초 마감 뒤 첫 제출·조회 때 1번(Redis SET NX 가드 — 멀티 레플리카).
- *   미제출은 MISSING. INVALID가 하나라도 있으면 경기 DISPUTED. 저장 실패면 가드를 풀어 다음 계기에 다시 시도한다
- * - 조회: VERIFIED·숨김 아님만. 재생은 VERIFIED 참가자만
+ * - 저장: 전원 제출 또는 종료 후 60초 마감 뒤 첫 제출·조회·깨우기(D-009) 때 1번(Redis SET NX 가드 — 멀티 레플리카).
+ *   미제출은 MISSING. INVALID가 하나라도 있으면 경기 DISPUTED(표시용). 저장 실패면 가드를 풀어 다음 계기에 다시 시도한다
+ * - 조회: 숨김 아님이면 DISPUTED도 공개(tetris-audit D-004 — 검증 실패는 참가자 단위). 재생은 VERIFIED 참가자만
  */
+/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
+const isForeignKeyViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
+
 @Injectable()
 export class TetrisBattleResultService {
   private readonly logger = new Logger(TetrisBattleResultService.name);
@@ -82,7 +87,15 @@ export class TetrisBattleResultService {
     private readonly userRepository: Repository<User>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-  ) {}
+  ) {
+    // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06)
+    this.roomService.setMatchFinishedListener((matchId) =>
+      this.roomService.scheduleWake(
+        () => this.finalizeIfDue(matchId, Date.now()),
+        REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS,
+      ),
+    );
+  }
 
   // ==================== 제출 ====================
 
@@ -119,12 +132,33 @@ export class TetrisBattleResultService {
       throw new TetrisBattleSubmissionClosedErrorResponseDto();
     }
     // 시뮬레이션 전에 싸게 거른다 — 최종 1회 보장은 아래 HSETNX
+    // 이미 낸 사람은 닫힌 뒤에도 409(재제출) — 닫힘(410)은 아직 내지 않은 사람에게만
     if ((await this.matches.submissions(redis, matchId))[player.playerId]) {
       throw new TetrisBattleReplayAlreadySubmittedErrorResponseDto();
     }
+    if (await this.matches.isClosed(redis, matchId)) throw new TetrisBattleSubmissionClosedErrorResponseDto();
+    // 같은 제출을 동시에 여러 개 보내도 시뮬레이션은 하나만(BE-08). 늦은 쪽은 503(잠시 후 재시도) —
+    // 409(이미 제출)로 답하면 앞선 요청이 실패했을 때 클라이언트가 완료로 보고 재시도를 멈춰 MISSING이 된다(리뷰 R1)
+    if (!(await this.matches.claimVerification(redis, matchId, player.playerId))) {
+      throw new TetrisBattleUnavailableErrorResponseDto();
+    }
+    try {
+      return await this.verifyAndRecord(redis, snap, player, replay, userId);
+    } finally {
+      await this.matches.releaseVerification(redis, matchId, player.playerId).catch(() => undefined);
+    }
+  }
 
+  private async verifyAndRecord(
+    redis: Redis,
+    snap: MatchSnapshot,
+    player: MatchPlayerSnapshot,
+    replay: BattleReplayDto,
+    userId: number | null,
+  ): Promise<{ verdict: 'VERIFIED' | 'INVALID' }> {
+    const { matchId } = snap;
     const context = await this.verificationContext(redis, snap, player);
-    const result = verifyBattleReplay(replay as BattleReplayInput, context);
+    const result = verifyBattleReplay(replay, context);
     if (result.verdict === 'INVALID') {
       this.logger.warn(`대전 리플레이 검증 실패: match=${matchId}, player=${player.playerId}, reason=${result.reason}`);
     }
@@ -160,7 +194,8 @@ export class TetrisBattleResultService {
     if (!MATCH_ID_PATTERN.test(matchId)) throw new TetrisBattleMatchNotFoundErrorResponseDto();
     await this.finalizeIfDue(matchId, now);
 
-    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0, status: 'VERIFIED' } });
+    // 검증 실패는 참가자 단위(D-004) — DISPUTED 경기도 공개하고, INVALID 참가자는 verdict로 표시·재생 제외
+    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0 } });
     if (!match) throw new TetrisBattleMatchNotFoundErrorResponseDto();
     const players = await this.playerRepository.find({ where: { matchId }, order: { place: 'ASC' } });
     return {
@@ -169,6 +204,7 @@ export class TetrisBattleResultService {
       playerCount: match.playerCount,
       startedAt: match.startedAt,
       endedAt: match.endedAt,
+      disputed: match.status === 'DISPUTED',
       players: players.map((p) => ({
         playerId: p.playerId,
         name: p.name,
@@ -180,8 +216,7 @@ export class TetrisBattleResultService {
         maxCombo: p.maxCombo,
         frames: p.frames,
         koReason: p.koReason,
-        // 경기가 VERIFIED면 INVALID 참가자는 없다
-        verdict: p.verdict === 'VERIFIED' ? 'VERIFIED' : 'MISSING',
+        verdict: p.verdict,
       })),
     };
   }
@@ -190,7 +225,7 @@ export class TetrisBattleResultService {
     if (!MATCH_ID_PATTERN.test(matchId)) throw new TetrisBattleMatchNotFoundErrorResponseDto();
     if (!PLAYER_ID_PATTERN.test(playerId)) throw new TetrisBattleReplayNotFoundErrorResponseDto();
 
-    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0, status: 'VERIFIED' } });
+    const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0 } });
     if (!match) throw new TetrisBattleMatchNotFoundErrorResponseDto();
     const player = await this.playerRepository.findOne({ where: { matchId, playerId } });
     if (!player || player.verdict !== 'VERIFIED') throw new TetrisBattleReplayNotFoundErrorResponseDto();
@@ -243,6 +278,7 @@ export class TetrisBattleResultService {
       snap.clockStart !== null && snap.endedClock !== null
         ? snap.endedClock - snap.clockStart
         : (snap.endedAt ?? snap.startedAt) - snap.startedAt - MATCH_START_DELAY_MS;
+    const elapsedFrames = Math.floor((elapsedMs * FRAMES_PER_SECOND) / 1000);
     const [garbage, sentLog] = await Promise.all([
       this.matches.garbageLog(redis, snap.matchId, player.playerId),
       this.matches.sentLog(redis, snap.matchId, player.playerId),
@@ -256,7 +292,9 @@ export class TetrisBattleResultService {
       sentLog,
       lastSeq: player.seq,
       ko: player.alive || !player.koReason ? null : { reason: player.koReason, frame: player.frames ?? player.frame },
-      maxFrames: Math.floor((elapsedMs * FRAMES_PER_SECOND) / 1000) + SURVIVOR_FRAME_SLACK,
+      maxFrames: elapsedFrames + SURVIVOR_FRAME_SLACK,
+      // 동시 탑아웃(D-006): 생존자의 탈락이 종료 시각 ± 여유 안이면 서버가 정한 순서(상대 먼저 KO)를 따른다
+      lateTopOutFrom: player.alive ? elapsedFrames - SURVIVOR_FRAME_SLACK : null,
     };
   }
 
@@ -291,7 +329,7 @@ export class TetrisBattleResultService {
         await this.saveRows(snap, subs, new Set());
       } catch (error) {
         // 그 사이 탈퇴한 사용자(FK 위반)면 그 USER_ID만 비우고 1번 더(리뷰 L6) — 탈퇴해도 경기 기록은 이름으로 남긴다
-        if (!String((error as Error)?.message ?? '').includes('ORA-02291')) throw error;
+        if (!isForeignKeyViolation(error)) throw error;
         const missing = await this.missingUserIds(snap, subs);
         if (missing.size === 0) throw error;
         this.logger.warn(`대전 결과 저장: 없는 USER_ID ${[...missing].join(',')}를 비우고 재시도 — match=${snap.matchId}`);

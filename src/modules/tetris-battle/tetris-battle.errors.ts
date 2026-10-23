@@ -24,6 +24,8 @@ const DEFAULT_MESSAGES: Record<TetrisBattleErrorCode, string> = {
   SERVICE_UNAVAILABLE: '대전 서버를 일시적으로 사용할 수 없습니다.',
   INTERNAL_ERROR: '서버 내부 오류가 발생했습니다.',
   PLAYER_NOT_ALIVE: '이미 탈락했습니다.',
+  SEAT_IN_USE: '다른 탭이나 기기에서 경기 중입니다. 경기가 끝나면 들어올 수 있습니다.',
+  PLAYER_NOT_FOUND: '내보낼 참가자를 찾을 수 없습니다.',
 };
 
 /**

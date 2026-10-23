@@ -41,6 +41,8 @@ const ROOM_CODE_PATTERN = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGT
 const NAME_PRECHECK_MAX = 64;
 /** 재연결 토큰 형식: base64url 32자(24바이트) — 형식이 다르면 조회하지 않고 거부 */
 const PLAYER_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+/** 탭 식별자 — 프론트가 탭 메모리에만 두는 값(새로고침·탭 복제 때 새로 생김). 토큰·userId가 맞을 때만 비교한다(tetris-audit D-007) */
+const TAB_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 /** listRooms — 페이로드 없음 */
 export class ListRoomsDto {}
@@ -67,6 +69,15 @@ export class CreateRoomDto {
   @IsString()
   @MaxLength(NAME_PRECHECK_MAX)
   playerName: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(TAB_ID_PATTERN)
+  tabId?: string;
+  /** 하트비트(presencePing 응답)를 보내는 클라이언트 — 이 자리만 하트비트로 끊김을 판정한다(tetris-audit D-010, 옛 클라이언트 호환) */
+  @IsOptional()
+  @IsBoolean()
+  heartbeat?: boolean;
 }
 
 export class JoinRoomDto {
@@ -96,6 +107,15 @@ export class JoinRoomDto {
   @IsInt()
   @Min(0)
   lastGarbageId?: number;
+
+  @IsOptional()
+  @IsString()
+  @Matches(TAB_ID_PATTERN)
+  tabId?: string;
+  /** 하트비트(presencePing 응답)를 보내는 클라이언트 — 이 자리만 하트비트로 끊김을 판정한다(tetris-audit D-010, 옛 클라이언트 호환) */
+  @IsOptional()
+  @IsBoolean()
+  heartbeat?: boolean;
 }
 
 export class RoomCodeDto {
@@ -103,6 +123,12 @@ export class RoomCodeDto {
   @IsString()
   @Matches(ROOM_CODE_PATTERN)
   code: string;
+}
+
+export class KickPlayerDto extends RoomCodeDto {
+  @IsString()
+  @Matches(/^p\d{1,6}$/)
+  playerId: string;
 }
 
 export class SetReadyDto extends RoomCodeDto {

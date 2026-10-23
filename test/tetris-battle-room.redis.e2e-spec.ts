@@ -320,7 +320,7 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
       const p2 = await ws.connect({ namespace: NS });
       const p3 = await ws.connect({ namespace: NS });
       const j2 = await emitWithAck<TetrisBattleAck<EnterRoomAckData>>(p2, C.JOIN_ROOM, { code, playerName: '둘째' });
-      const j3 = await emitWithAck<TetrisBattleAck<EnterRoomAckData>>(p3, C.JOIN_ROOM, { code, playerName: '셋째' });
+      const j3 = await emitWithAck<TetrisBattleAck<EnterRoomAckData>>(p3, C.JOIN_ROOM, { code, playerName: '셋째', tabId: 'tab-p3' });
       if (!j2.ok || !j3.ok) throw new Error('join');
       for (const s of [host, p2, p3]) await emitWithAck(s, C.SET_READY, { code, ready: true });
       const starting = waitFor<MatchStartingPayload>(host, S.MATCH_STARTING);
@@ -353,9 +353,17 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
       await hostLock(3); // → p2 (id 2) — 재연결한 새 소켓이 채널로 받는다
       await expect(p2bGarbage).resolves.toMatchObject({ id: 2, lines: 3 });
 
-      // p3: 옛 소켓이 살아 있는 채로 새 소켓이 토큰으로 넘겨받는다 → 이후 가비지는 새 소켓만
+      // p3: 같은 탭이 옛 소켓이 아직 살아 있는 채로(서버가 끊김을 모름) 새 소켓으로 넘겨받는다 → 이후 가비지는 새 소켓만.
+      // 경기 중 연결된 자리는 같은 tabId만 넘겨받는다(tetris-audit D-007) — 다른 탭이면 SEAT_IN_USE
+      const p3other = await ws.connect({ namespace: NS });
+      const denied = await emitWithAck<TetrisBattleAck<EnterRoomAckData>>(p3other, C.JOIN_ROOM, {
+        code, playerName: '셋째', playerToken: j3.data.playerToken, tabId: 'tab-other',
+      });
+      expect(denied).toMatchObject({ ok: false, code: 'SEAT_IN_USE' });
       const p3b = await ws.connect({ namespace: NS });
-      await emitWithAck(p3b, C.JOIN_ROOM, { code, playerName: '셋째', playerToken: j3.data.playerToken, lastGarbageId: 1 });
+      const replaced = waitFor<{ code: string }>(p3, S.SESSION_REPLACED);
+      await emitWithAck(p3b, C.JOIN_ROOM, { code, playerName: '셋째', playerToken: j3.data.playerToken, lastGarbageId: 1, tabId: 'tab-p3' });
+      await expect(replaced).resolves.toEqual({ code });
       const p3bGarbage = waitFor<GarbagePayload>(p3b, S.GARBAGE);
       const oldSocketGot = expectNoEvent(p3, S.GARBAGE, 500); // 보내기 전부터 지켜본다
       await hostLock(1); // → p3 (id 2)

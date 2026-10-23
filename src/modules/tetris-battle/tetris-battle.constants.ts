@@ -11,6 +11,26 @@ export const ROOM_TTL_SECONDS = 2 * 60 * 60;
 /** WAITING·RESULT 방에서 끊긴 플레이어를 자리에서 빼기까지의 유예(ms) — DESIGN §8 재연결 유예와 같은 값 */
 export const DISCONNECT_GRACE_MS = 10_000;
 
+/**
+ * 깨우기 여유(ms) — 끊김 유예·제출 마감이 끝난 직후 정리를 한 번 앞당겨 부를 때(tetris-audit D-009) 경계를 확실히 넘기려고 더한다.
+ * 깨우기는 사건을 처리한 레플리카의 타이머이고, 상태는 Redis에만 있다. 레플리카가 죽으면 기존 lazy 정리가 대신한다
+ */
+export const WAKE_MARGIN_MS = 500;
+/** 매치 종료를 방에 반영하지 못했을 때(CAS 충돌 한도 초과·Redis 오류) 다시 시도하기까지(tetris-audit BE-05) */
+export const FINISH_RETRY_DELAY_MS = 1_000;
+/** 종료 반영 재시도 상한 — CAS 충돌이 계속돼도 무한히 깨우지 않는다. 그 뒤는 생존 확인·다음 요청이 회수(리뷰 R1) */
+export const FINISH_RETRY_MAX_ATTEMPTS = 3;
+
+/**
+ * 하트비트(tetris-audit D-010·D-012) — 서버가 각 레플리카의 자기 소켓에 PRESENCE_PING을 보내고, 방 안의 클라이언트가
+ * heartbeat로 답한다(클라이언트 타이머가 아니라 메시지 응답이라 숨겨진 탭의 타이머 제한을 받지 않는다).
+ * 답이 HEARTBEAT_TTL_MS 넘게 없으면 끊김으로 보고 소켓을 끊는다 — 갑작스런 끊김 감지가 핑 기본값(최대 약 45초)보다 빠르다(최악 약 15초)
+ */
+export const PRESENCE_PING_INTERVAL_MS = 4_000;
+export const HEARTBEAT_TTL_MS = 10_000;
+/** 방당 하트비트 판정 간격(Redis SET NX 게이트) */
+export const HEARTBEAT_PROBE_INTERVAL_MS = 5_000;
+
 /** 같은 방 동시 변경 충돌(CAS 실패) 시 재시도 횟수 */
 export const ROOM_CAS_MAX_ATTEMPTS = 8;
 
@@ -20,6 +40,10 @@ export const ROOM_CODE_MAX_ATTEMPTS = 5;
 /** 로비 목록에 내보내는 방 수 상한, 로비 인덱스에서 읽어 보는 후보 수 */
 export const LOBBY_LIST_LIMIT = 50;
 export const LOBBY_SCAN_LIMIT = 200;
+/** 로비 인덱스가 LOBBY_SCAN_LIMIT보다 클 때 조회마다 존재를 확인해 정리하는 가장 오래된 코드 수(tetris-audit BE-03) */
+export const LOBBY_TAIL_SWEEP_BATCH = 20;
+/** 로비 방송 묶기(ms) — 방 변경이 몰려도 레플리카당 이 간격에 1번만 목록을 다시 만든다(tetris-audit BE-09) */
+export const LOBBY_BROADCAST_DEBOUNCE_MS = 300;
 
 /** 비밀번호 해시: scrypt(N=16384 기본값) 64바이트 키 + 16바이트 salt */
 export const PASSWORD_KEY_LENGTH = 64;
@@ -49,6 +73,8 @@ export const TETRIS_BATTLE_RATE_LIMITS = {
   chat: { limit: 5, windowSec: 5 },
   /** 이모트 — 방·플레이어 단위 */
   emote: { limit: 6, windowSec: 5 },
+  /** 강퇴 — 방·방장 단위 (tetris-audit D-011) */
+  kick: { limit: 10, windowSec: 10 },
 } as const;
 
 export type TetrisBattleRateLimitAction = keyof typeof TETRIS_BATTLE_RATE_LIMITS;

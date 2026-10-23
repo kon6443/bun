@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 import {
+  MatchEvents,
   SocketIdentity,
   TetrisBattleRoomService,
 } from '../src/modules/tetris-battle/tetris-battle-room.service';
@@ -276,11 +277,16 @@ describeIfRedis('테트리스 대전 매치 — 실제 Redis (Lua)', () => {
     await a.markDisconnected(code, who(1).socketId, T0);
     await a.markDisconnected(code, who(2).socketId, T0);
 
-    // p1이 늦게 재연결 → 정리(sweep)가 p1부터 KO → 2인이라 그 즉시 끝 → p2는 KO되지 않는다
+    // p1이 늦게 재연결 → 정리(sweep)가 p1부터 KO → 2인이라 그 즉시 끝 → p2는 KO되지 않는다.
+    // 경기가 끝나면 KO·종료는 방송 순서(매치 → RESULT)를 지키려고 서비스가 바로 알리고, 돌려주는 match는 비운다(리뷰 R1)
+    const notified: MatchEvents[] = [];
+    a.setMatchListener((_code, events) => void notified.push(events));
     const back = await a.joinRoom({ code, playerName: '플1', playerToken: tokens[0] }, who(10), T0 + DISCONNECT_GRACE_MS);
 
-    expect(back.match?.kos).toEqual([expect.objectContaining({ playerId: 'p1', place: 2, reason: 'disconnect' })]);
-    expect(back.match?.ended?.results.map((r) => [r.playerId, r.place])).toEqual([
+    expect(back.match).toMatchObject({ kos: [], ended: null });
+    const events = notified[notified.length - 1];
+    expect(events.kos).toEqual([expect.objectContaining({ playerId: 'p1', place: 2, reason: 'disconnect' })]);
+    expect(events.ended?.results.map((r) => [r.playerId, r.place])).toEqual([
       ['p2', 1],
       ['p1', 2],
     ]);

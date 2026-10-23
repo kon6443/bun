@@ -94,6 +94,9 @@ describe('E2E 테트리스 대전 결과', () => {
     jest.spyOn(proto, 'isSaved').mockResolvedValue(false);
     jest.spyOn(proto, 'claimSave').mockResolvedValue(true);
     jest.spyOn(proto, 'releaseSave').mockResolvedValue(undefined);
+    jest.spyOn(proto, 'isClosed').mockImplementation(async () => closed);
+    jest.spyOn(proto, 'claimVerification').mockResolvedValue(true);
+    jest.spyOn(proto, 'releaseVerification').mockResolvedValue(undefined);
 
     matchRepository = createMockRepository<TetrisBattleMatch>();
     playerRepository = createMockRepository<TetrisBattlePlayer>();
@@ -109,7 +112,10 @@ describe('E2E 테트리스 대전 결과', () => {
       providers: [
         TetrisBattleResultService,
         TetrisBattleBrowseService,
-        { provide: TetrisBattleRoomService, useValue: { readyRedisClient: () => ({}), lobbyCounts } },
+        {
+          provide: TetrisBattleRoomService,
+          useValue: { readyRedisClient: () => ({}), lobbyCounts, setMatchFinishedListener: () => undefined, scheduleWake: () => undefined },
+        },
         { provide: getRepositoryToken(TetrisBattleMatch), useValue: matchRepository },
         { provide: getRepositoryToken(TetrisBattlePlayer), useValue: playerRepository },
         { provide: getRepositoryToken(TetrisBattleReplay), useValue: replayRepository },
@@ -220,6 +226,7 @@ describe('E2E 테트리스 대전 결과', () => {
               roomName: '방2',
               playerCount: 2,
               endedAt: '2026-10-22T00:02:00.000Z',
+              disputed: false,
               winnerName: '우승',
               players: [
                 { name: '우승', place: 1 },
@@ -275,6 +282,7 @@ describe('E2E 테트리스 대전 결과', () => {
           playerCount: 2,
           startedAt: '2026-10-22T00:00:00.000Z',
           endedAt: '2026-10-22T00:01:00.000Z',
+          disputed: false,
           players: [
             { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED' },
           ],

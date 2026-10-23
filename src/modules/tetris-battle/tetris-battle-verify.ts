@@ -15,7 +15,11 @@ import { KoReason } from './tetris-battle.events';
  *  4. 시뮬 결과의 공격 고정(sent > 0)을 서버 lock 로그와 대조 — 서버가 마지막으로 받은 seq까지만
  *     (서버가 먼저 탈락 처리한 뒤 클라이언트가 계속 둔 고정은 서버에 없다)
  *  5. 탈락(topout)이면 시뮬 탈락 프레임 = 서버 기록 탈락 프레임. 생존자면 시뮬에서 탈락하지 않았고 frames ≤ 경과 시간 상한.
- *     끊김·기권 탈락은 프레임을 대조하지 않는다(서버가 정한 탈락이라 클라이언트 판과 시점이 다르다)
+ *     끊김·기권 탈락은 프레임을 대조하지 않는다(서버가 정한 탈락이라 클라이언트 판과 시점이 다르다).
+ *     생존자의 탈락이 경기 막판(`lateTopOutFrom` 이후)이면 받는다 — 동시 탑아웃에서 서버가 상대를 먼저 KO한 경우(tetris-audit D-006)
+ *
+ * 프레임 대조(5)는 시뮬레이션 **전에** 리플레이 헤더 frames로 먼저 본다(tetris-audit BE-07) — 시뮬 성공이면 sim.frames = replay.frames,
+ * 탈락이면 탈락 프레임 = frames라 판정은 같고, 상한을 넘는 리플레이에 시뮬레이션 비용을 쓰지 않는다.
  */
 
 export interface VerificationContext {
@@ -32,6 +36,8 @@ export interface VerificationContext {
   ko: { reason: KoReason; frame: number } | null;
   /** 생존자 frames 상한 = 경과 시간 × 60 + 여유 */
   maxFrames: number;
+  /** 생존자가 이 프레임 이후에 탈락했으면 동시 탑아웃으로 보고 받는다(D-006). 탈락자는 null */
+  lateTopOutFrom: number | null;
 }
 
 export type VerificationReason =
@@ -49,6 +55,13 @@ const invalid = (reason: VerificationReason): VerificationResult => ({ verdict: 
 
 export function verifyBattleReplay(replay: BattleReplayInput, ctx: VerificationContext): VerificationResult {
   if (replay.seed !== ctx.seed) return invalid('SEED_MISMATCH');
+
+  // 5의 프레임 대조를 먼저(값싼 검사) — 판정 결과는 시뮬 뒤에 보는 것과 같다
+  if (ctx.ko === null) {
+    if (replay.frames > ctx.maxFrames) return invalid('FRAMES_EXCEED_ELAPSED');
+  } else if (ctx.ko.reason === 'topout' && replay.frames !== ctx.ko.frame) {
+    return invalid('TOP_OUT_FRAME_MISMATCH');
+  }
 
   // 2. 가비지 — 리플레이 형식 [deltaFrame, id, lines, hole, ...]
   const received: { id: number; lines: number; hole: number }[] = [];
@@ -79,7 +92,8 @@ export function verifyBattleReplay(replay: BattleReplayInput, ctx: VerificationC
 
   // 5. 탈락·생존
   if (ctx.ko === null) {
-    if (sim.topOutFrame !== null) return invalid('SURVIVOR_TOPPED_OUT');
+    const lateTopOut = sim.topOutFrame !== null && ctx.lateTopOutFrom !== null && sim.topOutFrame >= ctx.lateTopOutFrom;
+    if (sim.topOutFrame !== null && !lateTopOut) return invalid('SURVIVOR_TOPPED_OUT');
     if (sim.frames > ctx.maxFrames) return invalid('FRAMES_EXCEED_ELAPSED');
   } else if (ctx.ko.reason === 'topout' && sim.topOutFrame !== ctx.ko.frame) {
     return invalid('TOP_OUT_FRAME_MISMATCH');

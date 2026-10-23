@@ -1,0 +1,14 @@
+{
+  "games/tetris-engine/__fixtures__/golden-replays.json": "02f6277c2a1cf2d949c3f85ef714fb9339f85b87fd4ec600f46a976c4220837e",
+  "games/tetris-engine/constants.ts": "775e66fed14dc0c2d963822d172c999dfc15e718948aa1638a9bf588ebf8ab80",
+  "games/tetris-engine/game.ts": "b7c5f769c1ef514029eb0239dc09366101385da750603102689b8e74005ef22e",
+  "games/tetris-engine/index.ts": "6a93c3050621d834eadec76eef163dda1c2a73fc71ff7ad56e8092a33499186a",
+  "games/tetris-engine/pieces.ts": "203e988f99df348f3ee29977fcce95f68bf8fe616362c64a08b7c2c949a8217f",
+  "games/tetris-engine/random.ts": "eee85306a1c27a877a989afbf9931194ec4942dfb8c999580f670394376c4161",
+  "games/tetris-engine/replay.ts": "1b12543dd96b07fcb6f2271561a0773fa45a3dd14a2773dec86f12ef81d64f72",
+  "tetris-battle/battle-engine/__fixtures__/golden-battle-replays.json": "67e6d27f7375c2af302bc6cc6869bd215a3fa9a12da8a491802ec5821af6ca12",
+  "tetris-battle/battle-engine/battle.ts": "a6eda7749fa7558a72a74b45cb96298f2fae3e6fc956d800624de91a1b415a9b",
+  "tetris-battle/battle-engine/constants.ts": "7053ad793500096eba86e81f2d537d1a765e1358d0b6d5322a4868a7781bb50e",
+  "tetris-battle/battle-engine/index.ts": "48c61ff55b396e9ea17908c828721fcf945d94c4807766ac283679f72c7237fc",
+  "tetris-battle/battle-engine/replay.ts": "f126c336dd3c9989a5e93406de12cf48a488cb57741f99586b72f552d59e699a"
+}
