@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import type { Redis } from 'ioredis';
@@ -16,6 +18,8 @@ import {
   SURVIVOR_FRAME_SLACK,
   MATCH_ID_PATTERN,
   MATCH_START_DELAY_MS,
+  PENDING_SAVE_SWEEP_ENVS,
+  PENDING_SAVE_SWEEP_LIMIT,
   REPLAY_SUBMIT_DEADLINE_MS,
   WAKE_MARGIN_MS,
 } from './tetris-battle.constants';
@@ -74,6 +78,8 @@ const isForeignKeyViolation = (error: unknown): boolean =>
 export class TetrisBattleResultService {
   private readonly logger = new Logger(TetrisBattleResultService.name);
   private readonly matches = new TetrisBattleMatchStore();
+  /** 저장 대기 스윕을 이 레플리카에서 돌리는지 — ENV 화이트리스트 + TASK_SLOT 1 (data-access 스케줄러 2단 가드) */
+  private readonly runsPendingSaveSweep: boolean;
 
   constructor(
     private readonly roomService: TetrisBattleRoomService,
@@ -87,14 +93,51 @@ export class TetrisBattleResultService {
     private readonly userRepository: Repository<User>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    configService: ConfigService,
   ) {
-    // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06)
-    this.roomService.setMatchFinishedListener((matchId) =>
-      this.roomService.scheduleWake(
-        () => this.finalizeIfDue(matchId, Date.now()),
-        REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS,
-      ),
-    );
+    const env = configService.get<string>('ENV')?.toUpperCase() ?? '';
+    const taskSlot = Number(configService.get<number>('TASK_SLOT')) || 1;
+    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && taskSlot === 1;
+
+    // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06).
+    // 타이머는 레플리카 메모리라 재시작하면 사라진다 → Redis 저장 대기에도 올려 스윕이 대신 깨운다(games-polish BT-05)
+    this.roomService.setMatchFinishedListener((matchId) => {
+      const delayMs = REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS;
+      this.roomService.scheduleWake(() => this.finalizeIfDue(matchId, Date.now()), delayMs);
+      void this.markPendingSave(matchId, Date.now() + delayMs);
+    });
+  }
+
+  private async markPendingSave(matchId: string, dueAt: number): Promise<void> {
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) return;
+    try {
+      await this.matches.markPendingSave(redis, matchId, dueAt);
+    } catch (error) {
+      this.logger.warn(`저장 대기 등록 실패: match=${matchId}`, toErrorDetail(error));
+    }
+  }
+
+  /**
+   * 저장 대기 스윕 — 마감이 지난 매치를 저장하고, 저장됐거나 매치가 사라졌으면 대기에서 뺀다.
+   * 저장 자체는 finalize의 SET NX 가드로 1번이라 다른 계기(제출·조회·깨우기)와 겹쳐도 안전하다
+   */
+  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'tetrisBattlePendingSaves' })
+  async sweepPendingSaves(now = Date.now()): Promise<void> {
+    if (!this.runsPendingSaveSweep) return;
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) return;
+    try {
+      const due = await this.matches.duePendingSaves(redis, now, PENDING_SAVE_SWEEP_LIMIT);
+      for (const matchId of due) {
+        await this.finalizeIfDue(matchId, now);
+        if ((await this.matches.isSaved(redis, matchId)) || !(await this.matches.exists(redis, matchId))) {
+          await this.matches.clearPendingSave(redis, matchId);
+        }
+      }
+    } catch (error) {
+      this.logger.warn('저장 대기 스윕 실패', toErrorDetail(error));
+    }
   }
 
   // ==================== 제출 ====================

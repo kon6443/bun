@@ -30,6 +30,8 @@ export const PRESENCE_PING_INTERVAL_MS = 4_000;
 export const HEARTBEAT_TTL_MS = 10_000;
 /** 방당 하트비트 판정 간격(Redis SET NX 게이트) */
 export const HEARTBEAT_PROBE_INTERVAL_MS = 5_000;
+/** 소켓당 heartbeat 처리 최소 간격 — 정상은 핑(4초)마다 1번, 반복 송신의 Redis 쓰기만 막는다(games-polish BT-07) */
+export const HEARTBEAT_MIN_INTERVAL_MS = 1_000;
 
 /** 같은 방 동시 변경 충돌(CAS 실패) 시 재시도 횟수 */
 export const ROOM_CAS_MAX_ATTEMPTS = 8;
@@ -75,6 +77,10 @@ export const TETRIS_BATTLE_RATE_LIMITS = {
   emote: { limit: 6, windowSec: 5 },
   /** 강퇴 — 방·방장 단위 (tetris-audit D-011) */
   kick: { limit: 10, windowSec: 10 },
+  /** 방 목록 — 소켓 단위. 정상은 연결마다 1번 + 새로고침 버튼이라 연타만 막는다 (games-polish BT-02) */
+  listRoomsSocket: { limit: 5, windowSec: 5 },
+  /** 방 목록 — IP 단위 (소켓을 새로 열어 우회하는 것을 막는다, NAT 공유를 고려해 넉넉히) */
+  listRoomsIp: { limit: 30, windowSec: 5 },
 } as const;
 
 export type TetrisBattleRateLimitAction = keyof typeof TETRIS_BATTLE_RATE_LIMITS;
@@ -110,6 +116,11 @@ export const LOCK_FRAME_SLACK = 120;
 
 /** 리플레이 제출 마감 — 경기 종료 후 이 시간이 지나면 410, 미제출자는 MISSING으로 저장 (DESIGN §17-1) */
 export const REPLAY_SUBMIT_DEADLINE_MS = 60_000;
+
+/** 저장 대기 스윕(games-polish BT-05) — 1회에 확인하는 최대 매치 수. 주기는 result.service의 @Cron(30초) */
+export const PENDING_SAVE_SWEEP_LIMIT = 20;
+/** 스윕을 돌리는 ENV — scheduler.service와 같은 화이트리스트(LOCAL은 메모리 깨우기만) */
+export const PENDING_SAVE_SWEEP_ENVS: readonly string[] = ['QA', 'PROD'];
 
 /**
  * 경기 후 검증의 가비지 누락 허용 폭(D-022·리뷰 L4) — 탈락·종료 시각 이 시간 전부터 보낸 가비지만 리플레이에서 빠져도 된다.

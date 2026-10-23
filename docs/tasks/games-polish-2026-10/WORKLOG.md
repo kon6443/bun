@@ -238,3 +238,19 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 조사 중 코드·태스크 문서 수정 0. 리뷰 루프 미실행(지시대로 조사만)
 - 실측 필요(브라우저·실기기): FE-06 모바일 이어하기 지연, FE-13 슬라이더 점프 지연, FE-37 리렌더 비용, FE-43 슬롯 버튼 실제 크기, FE-51
 - L 항목(○)은 조사 에이전트 인용 기준이고 H·M(✔)만 원본 재확인 — 묶음 구현 착수 시 해당 항목 원본 재확인 후 진행
+
+## 2026-10-23 — P1 `battle` 백엔드 구현 (브랜치 `feat-onam-games-polish-battle`)
+- 재부팅 후 재개: 프론트 세션 이름 `next-bun-80` → `next-bun-35`(같은 세션 resume, 사용자 확인). worktree 의존성은 `pnpm install --frozen-lockfile`(sandbox가 패키지 내부 `.vscode/` 쓰기를 막아 sandbox 밖)
+- 기준선: base에서 `pnpm ci:core` — 단위 1545 중 `verify-worker-pool.spec`이 전체 실행 때만 간헐 실패(1회차 6건·2회차 1건·이후 4회 통과, 단독 16/16 통과). 실패 메시지는 아직 못 잡음 → **BD-17(L, 테스트 불안정)로 P2에서 원인 확인**(lessons 2026-10-22 "간헐 실패를 환경 탓으로 넘기지 않는다")
+
+| ID | 변경 | 회귀 테스트 |
+|---|---|---|
+| BT-01 | `room.service.lock()` 입력에 `tSpin·lines·pc` 추가, `assertAttack` — `sent > computeAttack(lines,tSpin,b2b,combo,pc)`면 `INVALID_PAYLOAD`(저장소 호출 전). DTO 주석 갱신 | match.spec 거부 5(줄 없이 공격·싱글·테트리스 초과·TSD 초과·PC만) + 허용 5(상쇄·B2B·TSD·PC·콤보). E2E 호출처 3파일에 `LOCK_ATTACK_ROOM`(공격표 14) — 골든 최대 per-lock sent 5 |
+| BT-02 | `listRooms`에 `consumeOrThrow('listRoomsSocket'(5/5초), 'listRoomsIp'(30/5초))` | gateway.spec 한도 초과 시 RATE_LIMITED·목록·로비 구독 없음 |
+| BT-03 | WS 가드: JWT 검증 오류만 게스트, 유저 DB 조회 오류는 `SERVICE_UNAVAILABLE`(authResolved 미설정 → 다음 이벤트 재조회) | guard.spec DB 오류 → 거절 후 재조회 성공 |
+| BT-05 | 종료 시 Redis ZSET `tetris-battle:pending-saves`(점수=마감 시각, 키 TTL 2h) 등록 + `@Cron` 30초 스윕(ENV QA/PROD + TASK_SLOT 1 2단 가드, 1회 20개) → `finalizeIfDue` 후 저장됐거나 매치가 사라졌으면 ZREM. 메모리 깨우기는 유지 | result.spec 등록·저장 후 제거·실패 시 유지·매치 소멸 시 제거·LOCAL/TASK_SLOT 2 스킵 |
+| BT-07 | heartbeat 소켓 로컬 최소 간격 1초(`client.data.lastHeartbeatAt`) | gateway.spec 1초 안 재송신 무시 |
+
+- 보류(근거): **BT-06**(보고 통계 대조) — 소비처 없음 + `pieces`(=seq)·`maxCombo` 정의가 시뮬과 같은지 미확인이라 거짓 INVALID 위험 → 통계를 쓰는 기능이 생길 때 · **BT-14**(USER_ID 우선순위) — 기존 테스트(result.spec "전원 제출하면 바로 저장")가 제출자 userId 우선을 의도로 고정하고 소비처 없음 → 정책 결정 시
+- 검증: `pnpm ci:core` lint 0 errors·경고 6(기준선 동일) · 단위 **1564/1564**(+19) · build ✅ · E2E `--testPathPatterns tetris-battle`(sandbox 밖) 49 통과·56 skip — Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT` 없어 **미실행(컴파일만 확인)**
+- 교훈: 호출처 grep을 `head`로 잘라 E2E 호출처 누락 → `docs/lessons.md` 2026-10-23

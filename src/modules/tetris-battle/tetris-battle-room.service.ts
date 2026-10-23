@@ -31,8 +31,8 @@ import {
   playerTokenMatches,
   verifyRoomPasswordOrThrow,
 } from './tetris-battle-room-tokens';
-import { GARBAGE_HOLE_MAX } from './battle-engine';
-import { SEED_MAX } from './battle-engine/engine';
+import { GARBAGE_HOLE_MAX, computeAttack } from './battle-engine';
+import { type LockEvent, SEED_MAX } from './battle-engine/engine';
 import { MatchSnapshot, ScriptKo, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import {
   AttackPayload,
@@ -862,7 +862,19 @@ export class TetrisBattleRoomService {
   async lock(
     code: string,
     socketId: string,
-    input: { matchId: string; seq: number; frame: number; sent: number; combo: number; b2b: boolean; board: string; pending: number },
+    input: {
+      matchId: string;
+      seq: number;
+      frame: number;
+      sent: number;
+      combo: number;
+      b2b: boolean;
+      tSpin: LockEvent['tSpin'];
+      lines: number;
+      pc: boolean;
+      board: string;
+      pending: number;
+    },
     now = Date.now(),
   ): Promise<LockOutcome> {
     const redis = this.requireRedis();
@@ -870,6 +882,7 @@ export class TetrisBattleRoomService {
     // 이 방의 직전 매치가 이미 끝났으면 늦게 온 보고는 무시하고 성공(리뷰 H7)
     if (ended) return this.ignoredLock(ref.matchId);
     this.assertBoard(input.board);
+    this.assertAttack(input);
 
     const hole = randomInt(0, GARBAGE_HOLE_MAX + 1);
     const r = await this.matches.lock(redis, ref.matchId, ref.playerIds, { ...input, playerId: player.playerId, hole }, now);
@@ -988,6 +1001,26 @@ export class TetrisBattleRoomService {
   }
 
   /** 판: base64(정확히 BOARD_BYTES바이트, 정규 인코딩) + 칸 값 0~8 */
+  /**
+   * 보고한 sent가 같은 고정의 공격표 값을 넘지 못하게 한다 — 줄을 안 지우고 공격만 보내는 조작 차단(games-polish BT-01).
+   * sent는 대기 가비지 상쇄 후 값이라 공격표 값과 같거나 작다. 공격표는 엔진 사본 computeAttack이 읽는 필드만 채운다
+   */
+  private assertAttack(input: { sent: number; lines: number; tSpin: LockEvent['tSpin']; b2b: boolean; combo: number; pc: boolean }): void {
+    const lock: LockEvent = {
+      frame: 0,
+      piece: 0,
+      rows: [],
+      points: 0,
+      lines: input.lines,
+      tSpin: input.tSpin,
+      backToBack: input.b2b,
+      combo: input.combo,
+    };
+    if (input.sent > computeAttack(lock, input.pc)) {
+      throw new TetrisBattleError('INVALID_PAYLOAD', '공격 줄 수가 고정 결과와 맞지 않습니다.');
+    }
+  }
+
   private assertBoard(board: string): void {
     const bytes = Buffer.from(board, 'base64');
     if (bytes.length !== BOARD_BYTES || bytes.toString('base64') !== board || bytes.some((v) => v > BOARD_CELL_MAX)) {
