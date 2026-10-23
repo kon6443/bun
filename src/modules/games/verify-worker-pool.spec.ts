@@ -117,7 +117,9 @@ describe('VerifyWorkerPool', () => {
 
     await expect(slow).rejects.toBeInstanceOf(VerifyTimeoutError);
     await expect(next).resolves.toBe(2);
-    expect(created).toBe(2);
+    // 새 워커가 떴다. 정확히 2로 고정하지 않는다 — ready 대기 상한도 timeoutMs(100ms)라, CPU 부하로 새 워커 기동이
+    // 100ms를 넘으면 그 워커도 회수돼 한 번 더 뜬다(정상 동작). 전체 테스트 병렬 실행에서 간헐 실패하던 원인(games-polish BD-17)
+    expect(created).toBeGreaterThanOrEqual(2);
   });
 
   it('워커 처리 실패 답({ ok: false })이면 VerifyWorkerError — 워커는 계속 쓴다', async () => {
