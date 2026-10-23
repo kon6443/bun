@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { GameType } from '../../entities/GameScore';
@@ -10,7 +10,7 @@ import { GameSessionUnavailableErrorResponseDto } from './games-error.dto';
  *
  * Redis 키 패턴 (game: prefix):
  * - game:session:{sessionId} → JSON { gameType, boardKey, seed, engineVersion, startedAt, userId } (TTL = 엔진별 sessionTtlSeconds)
- * - game:session:{sessionId}:verifying → 검증 진행 가드 (TTL 30초)
+ * - game:session:{sessionId}:verifying → 검증 진행 가드, 값 = 소유 토큰 (TTL 60초)
  * - game:session:{sessionId}:timeouts → 검증 시간 초과 횟수 (TTL = 세션 TTL)
  *
  * 레플리카 여러 대가 같은 세션을 봐야 하므로 인메모리에 두지 않는다.
@@ -36,8 +36,11 @@ const sessionKey = (sessionId: string) => `game:session:${sessionId}`;
 const verifyingKey = (sessionId: string) => `game:session:${sessionId}:verifying`;
 const timeoutsKey = (sessionId: string) => `game:session:${sessionId}:timeouts`;
 
-/** 검증 진행 가드 TTL(초) — 검증 시간 상한(5초)·DB 저장보다 넉넉히 */
-const VERIFY_GUARD_TTL_SECONDS = 30;
+/** 검증 진행 가드 TTL(초) — 최악 대기(워커 1개·대기열 4 × 시간 상한 5초 + 자기 5초 = 25초) + DB 저장보다 넉넉히 */
+const VERIFY_GUARD_TTL_SECONDS = 60;
+
+/** 가드 값이 내 토큰일 때만 지운다 — 만료 뒤 다른 요청이 잡은 가드를 지우지 않게 */
+const RELEASE_GUARD_SCRIPT = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
 
 @Injectable()
 export class GameSessionService {
@@ -114,22 +117,23 @@ export class GameSessionService {
 
   /**
    * 검증 진행 가드 — 같은 세션을 동시에 여러 번 내도 검증(워커 CPU)은 하나만 돈다(games-polish BD-01).
-   * 결과가 정해지면 releaseVerification으로 푼다. 프로세스가 죽어도 TTL 뒤 풀린다
+   * 잡으면 소유 토큰, 이미 잡혀 있으면 null. 결과가 정해지면 그 토큰으로 releaseVerification한다. 프로세스가 죽어도 TTL 뒤 풀린다
    */
-  async claimVerification(sessionId: string): Promise<boolean> {
+  async claimVerification(sessionId: string): Promise<string | null> {
     const redis = this.requireRedis();
+    const token = randomBytes(16).toString('hex');
     try {
-      return (await redis.set(verifyingKey(sessionId), '1', 'EX', VERIFY_GUARD_TTL_SECONDS, 'NX')) === 'OK';
+      return (await redis.set(verifyingKey(sessionId), token, 'EX', VERIFY_GUARD_TTL_SECONDS, 'NX')) === 'OK' ? token : null;
     } catch (error) {
       this.logger.error('claimVerification() Redis 오류:', toErrorDetail(error));
       throw new GameSessionUnavailableErrorResponseDto();
     }
   }
 
-  /** 검증 진행 가드 해제 — 실패해도 TTL로 풀리므로 던지지 않는다 */
-  async releaseVerification(sessionId: string): Promise<void> {
+  /** 검증 진행 가드 해제 — 내 토큰일 때만. 실패해도 TTL로 풀리므로 던지지 않는다 */
+  async releaseVerification(sessionId: string, token: string): Promise<void> {
     try {
-      await this.redis?.del(verifyingKey(sessionId));
+      await this.redis?.eval(RELEASE_GUARD_SCRIPT, 1, verifyingKey(sessionId), token);
     } catch (error) {
       this.logger.warn(`releaseVerification() Redis 오류: ${toErrorDetail(error)}`);
     }

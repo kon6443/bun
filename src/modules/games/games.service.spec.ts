@@ -78,7 +78,7 @@ describe('GamesService', () => {
       createSession: jest.fn(),
       getSession: jest.fn().mockResolvedValue(session()),
       consumeSession: jest.fn().mockResolvedValue(session()),
-      claimVerification: jest.fn().mockResolvedValue(true),
+      claimVerification: jest.fn().mockResolvedValue('guard-token'),
       releaseVerification: jest.fn().mockResolvedValue(undefined),
       recordVerifyTimeout: jest.fn().mockResolvedValue(1),
       restoreSession: jest.fn().mockResolvedValue(true),
@@ -399,7 +399,7 @@ describe('GamesService', () => {
       });
 
       it('같은 세션이 검증 중이면 검증하지 않고 503 reason IN_PROGRESS — 남의 가드는 풀지 않는다 (BD-01)', async () => {
-        gameSessionService.claimVerification.mockResolvedValue(false);
+        gameSessionService.claimVerification.mockResolvedValue(null);
         await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', status: 503, details: { reason: 'IN_PROGRESS' } });
         expect(engine.verify).not.toHaveBeenCalled();
         expect(gameSessionService.releaseVerification).not.toHaveBeenCalled();
@@ -410,6 +410,7 @@ describe('GamesService', () => {
         engine.verify.mockResolvedValue({ ok: false, reason: 'NOT_ENDED' });
         await failWith();
         expect(gameSessionService.releaseVerification).toHaveBeenCalledTimes(2);
+        expect(gameSessionService.releaseVerification).toHaveBeenCalledWith(SESSION_ID, 'guard-token');
       });
 
       it('검증 시간 초과는 첫 번째는 503 TIMEOUT(세션 유지), 같은 세션 2번째는 422 VERIFY_TIMEOUT(세션 소모) (BD-02)', async () => {

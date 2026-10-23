@@ -211,7 +211,8 @@ export class GamesService {
     }
 
     // 같은 세션을 동시에 여러 번 내도 검증은 하나만(BD-01) — 그 결과가 정해진 뒤 다시 내면 409(소모됨) 또는 재시도
-    if (!(await this.gameSessionService.claimVerification(dto.sessionId))) {
+    const guard = await this.gameSessionService.claimVerification(dto.sessionId);
+    if (!guard) {
       throw verifyBusy('IN_PROGRESS', GAME_VERIFY_RETRY_AFTER_SECONDS);
     }
     let saved: GameScore;
@@ -220,7 +221,7 @@ export class GamesService {
     try {
       ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
     } finally {
-      await this.gameSessionService.releaseVerification(dto.sessionId);
+      await this.gameSessionService.releaseVerification(dto.sessionId, guard);
     }
     // 기록은 이미 커밋됐고 세션도 소모됐다 — 순위 계산이 실패해도 등록 성공(201)은 지킨다(재시도하면 409라 결과를 잃는다)
     let ranks: GameScoreSubmittedDto['ranks'] = null;
