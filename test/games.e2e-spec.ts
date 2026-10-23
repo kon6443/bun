@@ -528,6 +528,8 @@ describe('E2E 게임', () => {
         .get(e2e.url('/games/defense/scores/41/replay'))
         .expect(404);
       expect(current.body.code).toBe('GAME_SCORE_NOT_FOUND');
+      // 공개 전 404는 캐시하지 않는다 — 공개 시점이 지나면 바로 보여야 한다 (games-polish BD-06)
+      expect(current.headers['cache-control']).toBeUndefined();
 
       for (const boardKey of [items[2].boardKey, 'endless-s1']) {
         gameScoreRepository.findOne.mockResolvedValue(row(boardKey));
@@ -536,6 +538,7 @@ describe('E2E 게임', () => {
           .expect(200);
         expect(res.body.data).toEqual(expect.objectContaining({ boardKey, seed: 5, params: {}, frames: 30 }));
         expect(res.body.data).not.toHaveProperty('das');
+        expect(res.headers['cache-control']).toBe('public, max-age=60');
       }
     });
 

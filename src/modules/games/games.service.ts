@@ -411,9 +411,9 @@ export class GamesService {
       }
       return ranks;
     }
-    for (const period of RANKING_PERIODS) {
-      ranks[period] = await this.rankOf(gameType, target, rankingPeriodStart(period, crtdAt));
-    }
+    // 기간별 COUNT는 서로 독립 — 순서대로 기다리지 않는다(games-polish BD-07)
+    const counted = await Promise.all(RANKING_PERIODS.map((period) => this.rankOf(gameType, target, rankingPeriodStart(period, crtdAt))));
+    RANKING_PERIODS.forEach((period, i) => (ranks[period] = counted[i]));
     return ranks;
   }
 
