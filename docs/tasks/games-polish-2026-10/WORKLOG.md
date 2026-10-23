@@ -316,3 +316,4 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 
 - 검증: ci:core 단위 **1585/1585**·lint 경고 6 · E2E 240 통과(sandbox 밖) · 변경 스펙 병렬 5회 27/27
 - R2: Opus에 수정분 재검토 요청(진행 중), review-flow 수정분 자체 확인 — 변경 심볼(`claimVerification` 반환 타입·`releaseVerification` 인자) 호출처 games.service 1곳뿐, 확정 0
+- **R2 결과**: Opus 수정분 4커밋 재검토 확정 0(되돌리면 실패하는 테스트 각각 확인, Lua 해제 스크립트는 실제 Redis 미실행 — 표준 패턴) · review-flow 확정 0 → **백엔드 리뷰 루프 종료**, review 브랜치 base 머지
