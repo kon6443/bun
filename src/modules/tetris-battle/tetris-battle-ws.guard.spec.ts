@@ -63,6 +63,17 @@ describe('TetrisBattleWsGuard', () => {
     expect(client.data.userId).toBeNull();
   });
 
+  it('유저 조회가 DB 오류면 게스트로 확정하지 않고 SERVICE_UNAVAILABLE, 다음 이벤트에서 다시 조회한다 (BT-03)', async () => {
+    const client = buildClient({ auth: { token: sign({ sub: USER.userId }, SECRET) }, headers: {} });
+    userRepository.findOne.mockRejectedValueOnce(new Error('ORA-12516'));
+
+    await expect(guard.canActivate(buildContext(client))).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    expect(client.data.authResolved).toBeUndefined();
+
+    await expect(guard.canActivate(buildContext(client))).resolves.toBe(true);
+    expect(client.data).toMatchObject({ userId: USER.userId, authResolved: true });
+  });
+
   it('한 번 판정한 소켓은 다시 조회하지 않는다', async () => {
     const client = buildClient({ auth: { token: sign({ sub: USER.userId }, SECRET) }, headers: {} });
     await guard.canActivate(buildContext(client));
