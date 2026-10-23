@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from './User';
 
-export const GAME_TYPES = ['TETRIS'] as const;
+export const GAME_TYPES = ['TETRIS', 'DEFENSE'] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
 /**
@@ -17,7 +17,7 @@ export class GameScore {
   @PrimaryGeneratedColumn({ name: 'SCORE_ID' })
   scoreId: number;
 
-  // DB CHECK: GAME_TYPES — DB는 DEFENSE를 먼저 허용했다(migrations/*-AlterGameTypeCheckAddDefense.ts). 엔진을 레지스트리에 붙일 때 GAME_TYPES에도 추가
+  // DB CHECK: GAME_TYPES (migrations/*-AlterGameTypeCheckAddDefense.ts)
   @Column({ name: 'GAME_TYPE', type: 'varchar2', length: 20 })
   gameType: GameType;
 

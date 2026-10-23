@@ -36,7 +36,7 @@
 
 ## 2. 게임 세션 (Redis — 멀티 레플리카 공유, 인메모리 금지)
 
-- 키 `game:session:{sessionId}` → `{ gameType, seed, engineVersion, startedAt(ms), userId|null }`, TTL 2시간
+- 키 `game:session:{sessionId}` → `{ gameType, boardKey, seed, engineVersion, startedAt(ms), userId|null }`, TTL은 게임별 엔진 값(테트리스 2시간) — 2026-10-21 보드·게임별 TTL 추가, 정본 `docs/tasks/defense/DESIGN.md` §B3
 - Redis 클라이언트는 기존 관례대로 `main.ts`에서 `setRedisClient(redisAdapter.getPubClient())`로 주입(`OnlineUserService`·`FishingOnlineService`와 같은 방식)
 - 제출 시 **1회만** 사용 — 2026-10-21부터 검증 결과가 확정된 뒤 `GETDEL`(검증기 오류는 503 `GAME_VERIFY_BUSY` + 세션 유지). 정본은 `docs/tasks/defense/DESIGN.md` §B4. Redis 장애로 세션을 못 만들면 플레이는 그대로 되고 랭킹 등록만 불가(프론트 안내)
 - `seed`: 서버가 `crypto.randomInt(0, 2**32)`로 발급 — 클라이언트가 seed 값을 정할 수는 없다. 단 seed는 발급 즉시 응답에 실리고 쓰지 않은 세션은 버릴 수 있어(분당 20개), 유리한 seed를 골라 오프라인으로 입력을 만든 뒤 실시간 검사만 기다려 제출하는 봇은 막지 못한다 — D-005에서 수용한 위험(D-015)

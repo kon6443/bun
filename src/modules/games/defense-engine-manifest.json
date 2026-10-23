@@ -1,0 +1,98 @@
+{
+  "engineVersion": 3,
+  "sha256": "e5564b03197199fd83920326739e02bfbd45ff0acbeef0e3cd4f5e7d1ceeb881",
+  "files": [
+    {
+      "path": "__fixtures__/golden-replays.json",
+      "sha256": "1415f0c33d4d3b8922369b68eccbb30476966ea5a7fd0293725958d2c2a71bdd"
+    },
+    {
+      "path": "augment.ts",
+      "sha256": "884d97f0ccbc6436ab970efc0160623b9d6c48ae8beadc9009d86c2b996f4065"
+    },
+    {
+      "path": "combat.ts",
+      "sha256": "001d296e9effd8f5ca7082d0f6e27d9920cc009914958670e85b3a2914b8a5b9"
+    },
+    {
+      "path": "constants.ts",
+      "sha256": "f3477a8940195db2283f2eed4ad2fe8ea4ff78e98acee45cb2322eb786eda7a5"
+    },
+    {
+      "path": "damage.ts",
+      "sha256": "77a458b7a9b58706a42c9eca0a8ba25214e00a1c5f08ccdf2568be07768ab24b"
+    },
+    {
+      "path": "data/augments.ts",
+      "sha256": "f7a25e9a3b34e01df1e7a70f04e57ba5bdbddc599c9ac7eaa711392bf4958e6e"
+    },
+    {
+      "path": "data/enemies.ts",
+      "sha256": "48f0e42df4a6e4e37c541367f36558419f500fe874a055278845a4749eafa9b1"
+    },
+    {
+      "path": "data/maps.ts",
+      "sha256": "8c680f7eab9481b441715b4dc481d0eb6a93180c4a72acb87afd9752d279eabd"
+    },
+    {
+      "path": "data/rules.ts",
+      "sha256": "60acca1ea5d206b855290e9994bc8918f5f2db4d8c539baf25c15062e05ce5ed"
+    },
+    {
+      "path": "data/stages.ts",
+      "sha256": "a180eca48e983159997a0422aaf388534826bd8d07d27ef57ca9c77586af98dc"
+    },
+    {
+      "path": "data/towers.ts",
+      "sha256": "8767923f11fa138d0d3a5138d4e6c5e86d13aee9cf951ba03252582587aeea0b"
+    },
+    {
+      "path": "data/waves.ts",
+      "sha256": "902617374372371a78b9a90aea0c76dc6824ee2f98c65a162abb449ac688e7be"
+    },
+    {
+      "path": "data/weeklyCombos.ts",
+      "sha256": "de84c4155c08e54e6b23708a5da45c6cfbbb2741f136d7e1f18978d8da2111b1"
+    },
+    {
+      "path": "effects.ts",
+      "sha256": "27bce80f166c342476ff2991e2e20f60264cb41b0b2db9e4eea68745441189fd"
+    },
+    {
+      "path": "game.ts",
+      "sha256": "bd3b27b3d0d399fa3b2f62ae8098ece727d28067fe0e6bd320f5b008c1342dab"
+    },
+    {
+      "path": "geometry.ts",
+      "sha256": "75230c3a8c8d76fe455cdcb69c0f0c93a3665d768be7ba1cee53e2d1087bcc04"
+    },
+    {
+      "path": "index.ts",
+      "sha256": "1146c8be48ae92885dc36392773995b6172f239c4160d4611dc13d201bf468d3"
+    },
+    {
+      "path": "random.ts",
+      "sha256": "4071a65060eb9441b62b28827660c416876b716078dd3906517f8f5abe66d36d"
+    },
+    {
+      "path": "replay.ts",
+      "sha256": "c1f8e0e2753807f1278e028f1973ad2f7f301ad58ca49df6b5d7586cb57b4940"
+    },
+    {
+      "path": "spawn.ts",
+      "sha256": "6c68d27fee69b45f38a3d11cb8019f4acabf05fa9bb297ff46258f23c7d16176"
+    },
+    {
+      "path": "state.ts",
+      "sha256": "95386dd66e1c39ee4008fac85b3b76f3a054dc0cc18a682aff095052b61860e0"
+    },
+    {
+      "path": "status.ts",
+      "sha256": "b9e117ef9edd2aa9bbc8df07634e7847c89a6e5d046a20c98fc5afe933cb23df"
+    },
+    {
+      "path": "wavegen.ts",
+      "sha256": "0ad4b2b3b766f7c512fe605e2c8cc2e15ccee249e1961b151fa57afab3505d10"
+    }
+  ]
+}
