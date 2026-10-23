@@ -10,6 +10,8 @@ import { GameSessionUnavailableErrorResponseDto } from './games-error.dto';
  *
  * Redis 키 패턴 (game: prefix):
  * - game:session:{sessionId} → JSON { gameType, boardKey, seed, engineVersion, startedAt, userId } (TTL = 엔진별 sessionTtlSeconds)
+ * - game:session:{sessionId}:verifying → 검증 진행 가드 (TTL 30초)
+ * - game:session:{sessionId}:timeouts → 검증 시간 초과 횟수 (TTL = 세션 TTL)
  *
  * 레플리카 여러 대가 같은 세션을 봐야 하므로 인메모리에 두지 않는다.
  * 제출 시 GET으로 읽어 검증하고, 검증 결과가 확정된 뒤에만 GETDEL로 1회 소모한다 — 검증이 밀려 실패해도 세션이 남아 재시도할 수 있다(defense DESIGN §B4).
@@ -33,6 +35,11 @@ export interface GameSession {
 const SEED_UPPER_EXCLUSIVE = 2 ** 32;
 
 const sessionKey = (sessionId: string) => `game:session:${sessionId}`;
+const verifyingKey = (sessionId: string) => `game:session:${sessionId}:verifying`;
+const timeoutsKey = (sessionId: string) => `game:session:${sessionId}:timeouts`;
+
+/** 검증 진행 가드 TTL(초) — 검증 시간 상한(5초)·DB 저장보다 넉넉히 */
+const VERIFY_GUARD_TTL_SECONDS = 30;
 
 @Injectable()
 export class GameSessionService {
@@ -105,6 +112,59 @@ export class GameSessionService {
       throw new GameSessionUnavailableErrorResponseDto();
     }
     return raw ? (JSON.parse(raw) as GameSession) : null;
+  }
+
+  /**
+   * 검증 진행 가드 — 같은 세션을 동시에 여러 번 내도 검증(워커 CPU)은 하나만 돈다(games-polish BD-01).
+   * 결과가 정해지면 releaseVerification으로 푼다. 프로세스가 죽어도 TTL 뒤 풀린다
+   */
+  async claimVerification(sessionId: string): Promise<boolean> {
+    const redis = this.requireRedis();
+    try {
+      return (await redis.set(verifyingKey(sessionId), '1', 'EX', VERIFY_GUARD_TTL_SECONDS, 'NX')) === 'OK';
+    } catch (error) {
+      this.logger.error('claimVerification() Redis 오류:', toErrorDetail(error));
+      throw new GameSessionUnavailableErrorResponseDto();
+    }
+  }
+
+  /** 검증 진행 가드 해제 — 실패해도 TTL로 풀리므로 던지지 않는다 */
+  async releaseVerification(sessionId: string): Promise<void> {
+    try {
+      await this.redis?.del(verifyingKey(sessionId));
+    } catch (error) {
+      this.logger.warn(`releaseVerification() Redis 오류: ${toErrorDetail(error)}`);
+    }
+  }
+
+  /** 이 세션의 검증 시간 초과 횟수를 1 올리고 돌려준다(games-polish BD-02). 키 TTL은 세션 TTL과 같다 */
+  async recordVerifyTimeout(sessionId: string, ttlSeconds: number): Promise<number> {
+    const redis = this.requireRedis();
+    try {
+      const [[, count]] = (await redis.multi().incr(timeoutsKey(sessionId)).expire(timeoutsKey(sessionId), ttlSeconds).exec()) as [
+        [Error | null, number],
+        [Error | null, number],
+      ];
+      return count;
+    } catch (error) {
+      this.logger.error('recordVerifyTimeout() Redis 오류:', toErrorDetail(error));
+      throw new GameSessionUnavailableErrorResponseDto();
+    }
+  }
+
+  /**
+   * 소모한 세션을 되돌린다 — 확정 결과를 저장하다 DB가 실패했을 때 같은 세션으로 다시 낼 수 있게(games-polish BD-03).
+   * 남은 TTL만큼만, 이미 같은 키가 있으면 덮지 않는다. 만료가 지났으면 되돌리지 않고 false
+   */
+  async restoreSession(sessionId: string, session: GameSession, ttlSeconds: number): Promise<boolean> {
+    const remainingSeconds = Math.floor((session.startedAt + ttlSeconds * 1000 - Date.now()) / 1000);
+    if (remainingSeconds <= 0) return false;
+    try {
+      return (await this.requireRedis().set(sessionKey(sessionId), JSON.stringify(session), 'EX', remainingSeconds, 'NX')) === 'OK';
+    } catch (error) {
+      this.logger.error('restoreSession() Redis 오류:', toErrorDetail(error));
+      return false;
+    }
   }
 
   private requireRedis(): Redis {

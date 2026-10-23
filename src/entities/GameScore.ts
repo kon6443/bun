@@ -47,6 +47,10 @@ export class GameScore {
   @Column({ name: 'IP_HASH', type: 'varchar2', length: 64, nullable: true })
   ipHash: string | null;
 
+  // 리플레이 해시(sha256 hex) — 같은 리플레이 반복 등록 차단, 유니크(migrations/*-AddGameScoresReplayHash.ts). 도입 전 기록은 null
+  @Column({ name: 'REPLAY_HASH', type: 'varchar2', length: 64, nullable: true })
+  replayHash: string | null;
+
   @Column({ name: 'IS_HIDDEN', type: 'number', default: 0 })
   isHidden: 0 | 1;
 
