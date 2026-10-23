@@ -67,8 +67,10 @@ export function createDefenseGameEngine({ getWeeklySecret, verify }: DefenseGame
       return !WEEKLY_BOARD_PATTERN.test(boardKey);
     },
     isReplayPublic(boardKey, now) {
-      // 진행 중인 주(이번 주 이후)의 주간 보드만 비공개 — 1위 입력을 받아 그대로·고쳐서 내는 복제 방지 (DESIGN §B8, 사용자 결정 2026-10-22)
-      return !WEEKLY_BOARD_PATTERN.test(boardKey) || boardKey < weeklyBoardAt(now).boardKey;
+      // 주간 보드는 그 주가 끝나고 세션 유효 시간(4시간)이 더 지나야 공개 — 1위 입력을 받아 그대로·고쳐서 내는 복제 방지 (D-027).
+      // 주 마지막 순간에 받은 세션도 그 주 보드로 등록되므로(§B3), 주가 바뀌자마자 공개하면 그 세션으로 복제본을 낼 수 있다(D-032)
+      const sessionsClosedAt = new Date(now.getTime() - DEFENSE_SESSION_TTL_SECONDS * 1000);
+      return !WEEKLY_BOARD_PATTERN.test(boardKey) || boardKey < weeklyBoardAt(sessionsClosedAt).boardKey;
     },
     listBoards(now) {
       const boards: GameBoard[] = [];

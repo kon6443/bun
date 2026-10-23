@@ -80,6 +80,16 @@ describe('createDefenseGameEngine — 보드·세션·형식 규칙', () => {
     expect(engineWith('s').isReplayPublic(boardKey, NOW)).toBe(expected);
   });
 
+  it('주가 바뀐 뒤에도 세션 유효 시간(4시간) 동안은 지난 주 리플레이를 공개하지 않는다 — 마지막 순간에 받은 세션으로 복제 제출 방지', () => {
+    const engine = engineWith('s');
+    // w43의 마지막 순간(KST 일 23:59)에 발급한 세션은 w43 보드로 등록된다
+    expect(engine.resolveSessionBoard('weekly', new Date('2026-10-25T14:59:00.000Z'))).toMatchObject({ boardKey: 'weekly-2026-w43' });
+    const weekEnd = Date.parse('2026-10-25T15:00:00.000Z'); // KST 월 00:00 — w44 시작
+    expect(engine.isReplayPublic('weekly-2026-w43', new Date(weekEnd + 30 * 60 * 1000))).toBe(false);
+    expect(engine.isReplayPublic('weekly-2026-w43', new Date(weekEnd + 4 * 60 * 60 * 1000 - 1))).toBe(false);
+    expect(engine.isReplayPublic('weekly-2026-w43', new Date(weekEnd + 4 * 60 * 60 * 1000))).toBe(true);
+  });
+
   it('주간 보드만 기간 필터를 쓰지 않는다', () => {
     const engine = engineWith('s');
     expect(engine.isPeriodRanking('weekly-2026-w43')).toBe(false);

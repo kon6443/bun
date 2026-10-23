@@ -186,7 +186,7 @@ export class GamesController {
   @ApiOperation({
     summary: '리플레이 재생 데이터',
     description:
-      '누구나 조회. 같은 엔진 버전으로 seed + 입력 기록을 재생한다. DEFENSE 주간 보드는 그 주가 끝난 뒤 공개(전원 같은 seed라 입력 복제 방지 — 진행 중이면 404)',
+      '누구나 조회. 같은 엔진 버전으로 seed + 입력 기록을 재생한다. DEFENSE 주간 보드는 그 주가 끝나고 4시간(세션 유효 시간) 뒤 공개(전원 같은 seed라 입력 복제 방지 — 그 전이면 404)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiParam({ name: 'scoreId', description: '랭킹 기록 ID', type: Number })
