@@ -300,3 +300,19 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 메인 결정(기본값, 사용자 보고): 허브 "등록하지 못한 기록" 버리기 버튼 → P5 · 디펜스 세션 시계 `expiresAt` 방식 → P3
 - 미검증: 실서버 제출에서 `details` 실물 — 최종 실API 검증 항목
 - P3 지시 + Q-D2·D3·D4 답 전달(P3 백엔드 절 내용)
+
+## 2026-10-23 — 백엔드 리뷰 R1 (전체 diff `origin/main...feat-onam-games-polish`, 30파일)
+- 방식: 백엔드는 P1~P6 구현이 끝나 전체 diff에 한 번(몰아서). 리뷰어 2: `review-flow`(메인) · Opus 서브에이전트(독립). 수정은 브랜치 `feat-onam-games-polish-review`
+
+| # | 리뷰어 | 지적 | 교차검증 | 조치 |
+|---|---|---|---|---|
+| R1 | review-flow | 리플레이 해시가 params 키 순서를 그대로 직렬화 — 순서만 바꾸면 다른 해시(디펜스 params `{}`·테트리스 seed 무작위라 실제 우회 없음) | Opus도 동일 지적 ✅ | params 키 정렬 · 테스트(키 순서 바꿔도 같은 해시) |
+| R2 | review-flow | 스윕이 저장 못 한 매치를 앞에 남겨, 20개가 쌓이면 뒤 매치가 TTL까지 처리 안 됨 | Opus도 동일 지적 ✅ | 미저장 매치는 60초 뒤로 재예약(`PENDING_SAVE_RETRY_MS`) · 테스트 |
+| R3 | review-flow | 풀 꺼짐이 `VerifyUnavailableError`인지 테스트가 메시지로만 확인 | ✅ | `toBeInstanceOf(VerifyUnavailableError)` |
+| O1 | Opus | 검증 가드 TTL 30초 = 최악 대기(대기열 4×5초+5초) — 만료 뒤 다른 요청이 잡은 가드를 먼저 끝난 요청이 DEL | 메인 확인 ✅(시간 계산·DEL 무조건) | 소유 토큰 + Lua 비교 삭제, TTL 60초 |
+| O2 | Opus | 자리가 꺼지는 순간 대기 작업은 일반 `VerifyWorkerError`(2초) — BD-14 의도 누락 | `verify-worker-pool.ts:268` 확인 ✅ | `VerifyUnavailableError`로 · 테스트 |
+| O3 | Opus | CPU 경합 시 5초 근처 정상 리플레이가 시간 초과 2회로 소모될 수 있음(의심) | 설계 trade-off — defense WORKLOG 실측 최악 1.76~2.18초(프론트 하네스)·0.3초(백엔드)로 5초와 여유 큼 | **보류** — 운영 실측 후 재검토 |
+| O4 | Opus | 세션 서비스 새 메서드(가드·횟수·복구) 직접 테스트 없음 | ✅ | 단위 4건(SET NX·토큰 해제·INCR+TTL·남은 TTL 복구/만료) |
+
+- 검증: ci:core 단위 **1585/1585**·lint 경고 6 · E2E 240 통과(sandbox 밖) · 변경 스펙 병렬 5회 27/27
+- R2: Opus에 수정분 재검토 요청(진행 중), review-flow 수정분 자체 확인 — 변경 심볼(`claimVerification` 반환 타입·`releaseVerification` 인자) 호출처 games.service 1곳뿐, 확정 0

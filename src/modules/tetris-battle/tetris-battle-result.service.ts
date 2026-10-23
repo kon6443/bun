@@ -18,6 +18,7 @@ import {
   SURVIVOR_FRAME_SLACK,
   MATCH_ID_PATTERN,
   MATCH_START_DELAY_MS,
+  PENDING_SAVE_RETRY_MS,
   PENDING_SAVE_SWEEP_ENVS,
   PENDING_SAVE_SWEEP_LIMIT,
   REPLAY_SUBMIT_DEADLINE_MS,
@@ -134,6 +135,9 @@ export class TetrisBattleResultService {
         await this.finalizeIfDue(matchId, now);
         if ((await this.matches.isSaved(redis, matchId)) || !(await this.matches.exists(redis, matchId))) {
           await this.matches.clearPendingSave(redis, matchId);
+        } else {
+          // 아직 저장 못 함(마감 전·저장 실패) — 뒤로 미뤄 다른 대기 매치가 앞 20개에 막히지 않게 한다
+          await this.matches.markPendingSave(redis, matchId, now + PENDING_SAVE_RETRY_MS);
         }
       }
     } catch (error) {

@@ -10,7 +10,7 @@ import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
 import { User } from '../../entities/User';
 import golden from './battle-engine/__fixtures__/golden-battle-replays.json';
 import { BattleReplayInput, simulateBattleReplay } from './battle-engine';
-import { REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from './tetris-battle.constants';
+import { PENDING_SAVE_RETRY_MS, REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from './tetris-battle.constants';
 import { MatchSnapshot, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
@@ -224,6 +224,8 @@ describe('TetrisBattleResultService', () => {
 
       expect(store.releaseSave).toHaveBeenCalled();
       expect(store.clearPendingSave).not.toHaveBeenCalled();
+      // 뒤로 미뤄 다음 스윕이 다른 대기 매치부터 본다(앞 20개 고착 방지)
+      expect(store.markPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH, due + 1 + PENDING_SAVE_RETRY_MS);
     });
 
     it('매치가 TTL로 사라졌으면 저장 없이 대기에서 뺀다', async () => {

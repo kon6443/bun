@@ -78,7 +78,7 @@ describe('GamesService', () => {
       createSession: jest.fn(),
       getSession: jest.fn().mockResolvedValue(session()),
       consumeSession: jest.fn().mockResolvedValue(session()),
-      claimVerification: jest.fn().mockResolvedValue(true),
+      claimVerification: jest.fn().mockResolvedValue('guard-token'),
       releaseVerification: jest.fn().mockResolvedValue(undefined),
       recordVerifyTimeout: jest.fn().mockResolvedValue(1),
       restoreSession: jest.fn().mockResolvedValue(true),
@@ -374,9 +374,14 @@ describe('GamesService', () => {
         expect(hashes[0]).toMatch(/^[0-9a-f]{64}$/);
         expect(hashes[1]).toBe(hashes[0]);
 
+        // params 키 순서만 바꿔도 같은 리플레이다
+        await submit({ ...dto(), replay: { ...dto().replay, das: undefined, arr: undefined, params: { arr: 2, das: 10 } } } as never);
+        const reordered = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[2];
+        expect(reordered).toBe(hashes[0]);
+
         gameSessionService.getSession.mockResolvedValue(session({ seed: 1 }));
         await submit();
-        const other = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[2];
+        const other = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[3];
         expect(other).not.toBe(hashes[0]);
       });
 
@@ -394,7 +399,7 @@ describe('GamesService', () => {
       });
 
       it('같은 세션이 검증 중이면 검증하지 않고 503 reason IN_PROGRESS — 남의 가드는 풀지 않는다 (BD-01)', async () => {
-        gameSessionService.claimVerification.mockResolvedValue(false);
+        gameSessionService.claimVerification.mockResolvedValue(null);
         await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', status: 503, details: { reason: 'IN_PROGRESS' } });
         expect(engine.verify).not.toHaveBeenCalled();
         expect(gameSessionService.releaseVerification).not.toHaveBeenCalled();
@@ -405,6 +410,7 @@ describe('GamesService', () => {
         engine.verify.mockResolvedValue({ ok: false, reason: 'NOT_ENDED' });
         await failWith();
         expect(gameSessionService.releaseVerification).toHaveBeenCalledTimes(2);
+        expect(gameSessionService.releaseVerification).toHaveBeenCalledWith(SESSION_ID, 'guard-token');
       });
 
       it('검증 시간 초과는 첫 번째는 503 TIMEOUT(세션 유지), 같은 세션 2번째는 422 VERIFY_TIMEOUT(세션 소모) (BD-02)', async () => {

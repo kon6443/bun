@@ -265,7 +265,7 @@ export class VerifyWorkerPool<I, O> {
       const retryMs = this.options.disabledRetryMs ?? DEFAULT_DISABLED_RETRY_MS;
       this.logger.error(`검증 워커 ${index}번 자리를 끕니다(${retryMs}ms 뒤 다시 시도) — 연속 ${count}회 크래시: ${reason}`);
       if (this.isDisabled()) {
-        this.rejectQueue(new VerifyWorkerError('검증 워커를 쓸 수 없습니다'));
+        this.rejectQueue(new VerifyUnavailableError('검증 워커를 쓸 수 없습니다'));
       }
       setTimeout(() => this.respawn(index), retryMs).unref();
       return;

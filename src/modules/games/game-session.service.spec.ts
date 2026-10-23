@@ -7,12 +7,16 @@ import { GameSessionService } from './game-session.service';
  */
 describe('GameSessionService', () => {
   let service: GameSessionService;
-  let redis: { status: string; set: jest.Mock; get: jest.Mock; getdel: jest.Mock };
+  let redis: { status: string; set: jest.Mock; get: jest.Mock; getdel: jest.Mock; eval: jest.Mock; multi: jest.Mock };
+  let multi: { incr: jest.Mock; expire: jest.Mock; exec: jest.Mock };
 
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     service = new GameSessionService();
-    redis = { status: 'ready', set: jest.fn().mockResolvedValue('OK'), get: jest.fn(), getdel: jest.fn() };
+    multi = { incr: jest.fn(), expire: jest.fn(), exec: jest.fn().mockResolvedValue([[null, 1], [null, 1]]) };
+    multi.incr.mockReturnValue(multi);
+    multi.expire.mockReturnValue(multi);
+    redis = { status: 'ready', set: jest.fn().mockResolvedValue('OK'), get: jest.fn(), getdel: jest.fn(), eval: jest.fn(), multi: jest.fn(() => multi) };
     service.setRedisClient(redis as never);
   });
 
@@ -50,6 +54,44 @@ describe('GameSessionService', () => {
     await expect(service.consumeSession('a')).resolves.toEqual({ gameType: 'TETRIS', seed: 1 });
     await expect(service.consumeSession('a')).resolves.toBeNull();
     expect(redis.getdel).toHaveBeenCalledWith('game:session:a');
+  });
+
+  describe('검증 가드·시간 초과 횟수·세션 복구 (games-polish P2)', () => {
+    it('가드는 SET NX + TTL 60초, 잡으면 소유 토큰·못 잡으면 null (BD-01)', async () => {
+      const token = await service.claimVerification('a');
+      expect(token).toMatch(/^[0-9a-f]{32}$/);
+      expect(redis.set).toHaveBeenCalledWith('game:session:a:verifying', token, 'EX', 60, 'NX');
+
+      redis.set.mockResolvedValueOnce(null);
+      await expect(service.claimVerification('a')).resolves.toBeNull();
+    });
+
+    it('해제는 내 토큰일 때만 지운다 — 만료 뒤 남이 잡은 가드를 지우지 않게(리뷰 Opus #1)', async () => {
+      await service.releaseVerification('a', 'tok');
+      expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining("redis.call('GET', KEYS[1]) == ARGV[1]"), 1, 'game:session:a:verifying', 'tok');
+    });
+
+    it('시간 초과 횟수는 INCR + 세션 TTL로 세고 그 값을 돌려준다 (BD-02)', async () => {
+      multi.exec.mockResolvedValueOnce([[null, 2], [null, 1]]);
+      await expect(service.recordVerifyTimeout('a', 14400)).resolves.toBe(2);
+      expect(multi.incr).toHaveBeenCalledWith('game:session:a:timeouts');
+      expect(multi.expire).toHaveBeenCalledWith('game:session:a:timeouts', 14400);
+    });
+
+    it('세션 복구는 남은 TTL만큼 NX로 — 만료가 지났으면 쓰지 않고 false (BD-03)', async () => {
+      const now = Date.now();
+      const session = { gameType: 'TETRIS' as const, boardKey: 'default', seed: 1, engineVersion: 1, startedAt: now - 3_600_000, userId: null };
+
+      await expect(service.restoreSession('a', session, 7200)).resolves.toBe(true);
+      const [, , , ttl, nx] = redis.set.mock.calls[0];
+      expect(ttl).toBeGreaterThanOrEqual(3599);
+      expect(ttl).toBeLessThanOrEqual(3600);
+      expect(nx).toBe('NX');
+
+      redis.set.mockClear();
+      await expect(service.restoreSession('a', { ...session, startedAt: now - 7_300_000 }, 7200)).resolves.toBe(false);
+      expect(redis.set).not.toHaveBeenCalled();
+    });
   });
 
   it.each([

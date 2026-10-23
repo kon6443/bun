@@ -119,6 +119,8 @@ export const REPLAY_SUBMIT_DEADLINE_MS = 60_000;
 
 /** 저장 대기 스윕(games-polish BT-05) — 1회에 확인하는 최대 매치 수. 주기는 result.service의 @Cron(30초) */
 export const PENDING_SAVE_SWEEP_LIMIT = 20;
+/** 스윕이 저장하지 못한 매치를 다시 볼 때까지 미루는 시간 — 앞쪽 대기 매치가 계속 남아 뒤 매치를 막지 않게 */
+export const PENDING_SAVE_RETRY_MS = 60_000;
 /** 스윕을 돌리는 ENV — scheduler.service와 같은 화이트리스트(LOCAL은 메모리 깨우기만) */
 export const PENDING_SAVE_SWEEP_ENVS: readonly string[] = ['QA', 'PROD'];
 
