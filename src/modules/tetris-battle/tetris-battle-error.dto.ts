@@ -4,7 +4,7 @@
  */
 import { defineDomainError } from '../../common/dto/define-domain-error';
 
-/** 경기가 없음(만료·잘못된 id) · 숨김 · DISPUTED (404) */
+/** 경기가 없음(만료·잘못된 id) · 숨김 (404) — DISPUTED도 공개한다(tetris-audit D-004) */
 export const TetrisBattleMatchNotFoundErrorResponseDto = defineDomainError({
   code: 'TETRIS_BATTLE_MATCH_NOT_FOUND',
   status: 404,

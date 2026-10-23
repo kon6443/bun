@@ -82,6 +82,7 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
       setLiveSocketProbe: jest.fn(),
       setChangeListener: jest.fn(),
       setMatchListener: jest.fn(),
+      setSocketEvictor: jest.fn(),
       startMatch: jest.fn(),
       rematch: jest.fn(),
       lock: jest.fn(),

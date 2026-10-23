@@ -52,13 +52,21 @@ export const createRedisMock = () => {
     return chain;
   };
 
+  /** Redis 범위 규칙(stop 포함, 음수는 끝에서) */
+  const sliceRange = (list: string[], start: number, stop: number) => list.slice(start, stop < 0 ? list.length + stop + 1 : stop + 1);
+
   const redis = {
     get status() {
       return state.status;
     },
     hgetall: jest.fn(async (key: string) => ({ ...(hashes.get(key) ?? {}) })),
     eval: eval_,
-    zrevrange: jest.fn(async () => [...zset.entries()].sort((a, b) => b[1] - a[1]).map(([code]) => code)),
+    zrevrange: jest.fn(async (_key: string, start = 0, stop = -1) =>
+      sliceRange([...zset.entries()].sort((a, b) => b[1] - a[1]).map(([code]) => code), start, stop),
+    ),
+    zrange: jest.fn(async (_key: string, start = 0, stop = -1) =>
+      sliceRange([...zset.entries()].sort((a, b) => a[1] - b[1]).map(([code]) => code), start, stop),
+    ),
     zrem: jest.fn(async (_key: string, ...codes: string[]) => {
       codes.forEach((c) => zset.delete(c));
       return codes.length;
@@ -72,10 +80,11 @@ export const createRedisMock = () => {
     mget: jest.fn(async (...keys: string[]) => keys.map((key) => strings.get(key) ?? null)),
     multi: jest.fn(multi),
     pipeline: jest.fn(() => {
-      const keys: string[] = [];
+      const ops: (() => unknown)[] = [];
       const chain = {
-        hget: (key: string) => (keys.push(key), chain),
-        exec: async () => keys.map((key) => [null, hashes.get(key)?.json ?? null]),
+        hget: (key: string) => (ops.push(() => hashes.get(key)?.json ?? null), chain),
+        exists: (key: string) => (ops.push(() => (hashes.has(key) ? 1 : 0)), chain),
+        exec: async () => ops.map((op) => [null, op()]),
       };
       return chain;
     }),

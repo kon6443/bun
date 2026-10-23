@@ -17,7 +17,7 @@ import {
 } from 'class-validator';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 import { BATTLE_ENGINE_VERSION, MAX_BATTLE_FRAMES, MAX_GARBAGE_EVENTS } from './battle-engine';
-import { MAX_INPUT_LENGTH, SEED_MAX } from './battle-engine/engine';
+import { ARR_MAX, ARR_MIN, DAS_MAX, DAS_MIN, MAX_INPUT_LENGTH, SEED_MAX } from './battle-engine/engine';
 import { MATCH_LIST_DEFAULT_LIMIT, MATCH_LIST_MAX_LIMIT } from './tetris-battle.constants';
 
 // ==================== Request ====================
@@ -36,12 +36,17 @@ export class BattleReplayDto {
   @Max(SEED_MAX)
   seed: number;
 
-  @ApiProperty({ description: 'DAS (프레임)', example: 10 })
+  // 범위 밖이면 422 — 엔진이 INVALID_HEADER로 INVALID를 저장하게 두지 않는다(tetris-audit BE-12)
+  @ApiProperty({ description: `DAS (프레임, ${DAS_MIN}~${DAS_MAX})`, example: 10 })
   @IsInt()
+  @Min(DAS_MIN)
+  @Max(DAS_MAX)
   das: number;
 
-  @ApiProperty({ description: 'ARR (프레임)', example: 2 })
+  @ApiProperty({ description: `ARR (프레임, ${ARR_MIN}~${ARR_MAX})`, example: 2 })
   @IsInt()
+  @Min(ARR_MIN)
+  @Max(ARR_MAX)
   arr: number;
 
   @ApiProperty({ description: `진행 프레임 (탈락이면 탈락 프레임, 1~${MAX_BATTLE_FRAMES})`, example: 3600 })
@@ -100,8 +105,11 @@ export class BattleMatchPlayerDto {
   @ApiProperty({ example: 4 }) maxCombo: number;
   @ApiProperty({ example: 5400 }) frames: number;
   @ApiPropertyOptional({ enum: ['topout', 'disconnect', 'leave'], nullable: true }) koReason: 'topout' | 'disconnect' | 'leave' | null;
-  @ApiProperty({ enum: ['VERIFIED', 'MISSING'], description: '경기가 VERIFIED라 INVALID 참가자는 없다. 재생은 VERIFIED만' })
-  verdict: 'VERIFIED' | 'MISSING';
+  @ApiProperty({
+    enum: ['VERIFIED', 'MISSING', 'INVALID'],
+    description: '리플레이 판정 — 재생은 VERIFIED만. INVALID(검증 실패)여도 순위·통계는 서버 기록 그대로다',
+  })
+  verdict: 'VERIFIED' | 'MISSING' | 'INVALID';
 }
 
 export class BattleMatchDto {
@@ -110,6 +118,7 @@ export class BattleMatchDto {
   @ApiProperty({ example: 3 }) playerCount: number;
   @ApiProperty({ description: '경기 시작 (UTC ISO)' }) startedAt: Date;
   @ApiProperty({ description: '경기 종료 (UTC ISO)' }) endedAt: Date;
+  @ApiProperty({ description: '검증 실패(INVALID) 참가자가 있는 경기' }) disputed: boolean;
   @ApiProperty({ type: [BattleMatchPlayerDto], description: '순위 오름차순' }) players: BattleMatchPlayerDto[];
 }
 
@@ -169,6 +178,7 @@ export class BattleMatchListItemDto {
   @ApiProperty({ example: '한판 해요' }) roomName: string;
   @ApiProperty({ example: 3 }) playerCount: number;
   @ApiProperty({ description: '경기 종료 (UTC ISO)' }) endedAt: Date;
+  @ApiProperty({ description: '검증 실패(INVALID) 참가자가 있는 경기' }) disputed: boolean;
   @ApiProperty({ description: '1위 이름 — 항상 문자열(1위가 없는 경기는 목록에 나오지 않는다)', example: '테트리스왕' }) winnerName: string;
   @ApiProperty({ type: [BattleMatchListPlayerDto], description: '순위 오름차순' }) players: BattleMatchListPlayerDto[];
 }

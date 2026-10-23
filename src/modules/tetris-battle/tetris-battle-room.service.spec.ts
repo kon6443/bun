@@ -5,10 +5,15 @@ import {
   PASSWORD_FAILURE_LIMIT,
   PASSWORD_FAILURE_LIMIT_IP,
   ROOM_CAS_MAX_ATTEMPTS,
+  HEARTBEAT_PROBE_INTERVAL_MS,
+  HEARTBEAT_TTL_MS,
+  LOBBY_SCAN_LIMIT,
   TETRIS_BATTLE_RATE_LIMITS,
+  WAKE_MARGIN_MS,
 } from './tetris-battle.constants';
 import { ROOM_CODE_ALPHABET } from './tetris-battle.events';
 import { SocketIdentity, TetrisBattleRoomService } from './tetris-battle-room.service';
+import { roomPasswordCheck } from './tetris-battle-room-tokens';
 import { codeOf, createRedisMock, expectCode, roomKey } from './__spec__/redis-mock';
 
 const T0 = 1_800_000_000_000;
@@ -29,6 +34,8 @@ const D: SocketIdentity = { socketId: 'sock-d', userId: null, ip: '10.0.0.4' };
 describe('TetrisBattleRoomService', () => {
   let service: TetrisBattleRoomService;
   let mock: ReturnType<typeof createRedisMock>;
+  /** 깨우기 타이머(D-009) 대역 — 실제 타이머를 남기지 않고, 테스트가 직접 깨운다 */
+  let wakes: { task: () => void; delayMs: number }[];
 
   const create = (who = A, overrides: Partial<{ name: string; maxPlayers: number; password: string; playerName: string }> = {}, now = T0) =>
     service.createRoom({ name: '한판 해요', maxPlayers: 4, playerName: '방장', ...overrides }, who, now);
@@ -38,6 +45,8 @@ describe('TetrisBattleRoomService', () => {
     mock = createRedisMock();
     service = new TetrisBattleRoomService();
     service.setRedisClient(mock.redis as unknown as Redis);
+    wakes = [];
+    service.setWakeScheduler((task, delayMs) => wakes.push({ task, delayMs }));
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -180,6 +189,19 @@ describe('TetrisBattleRoomService', () => {
       expect(mock.redis.zrem).toHaveBeenCalledWith(LOBBY, room.room.code);
     });
 
+    it(`인덱스가 읽는 범위(${LOBBY_SCAN_LIMIT}개)보다 크면 가장 오래된 쪽의 사라진 코드도 지운다 (BE-03)`, async () => {
+      const live = await create(A);
+      for (let i = 0; i < LOBBY_SCAN_LIMIT + 5; i++) mock.zset.set(`OLD${String(i).padStart(3, '0')}`, i); // 방 키 없음(TTL 만료)
+      mock.zset.set(live.room.code, T0);
+
+      await service.listRooms(T0);
+      await new Promise((r) => setImmediate(r));
+
+      // 최근 200개는 기존 정리, 그 밖의 가장 오래된 쪽은 끝 정리 — 살아 있는 방은 남는다
+      expect(mock.zset.has('OLD000')).toBe(false);
+      expect(mock.zset.has(live.room.code)).toBe(true);
+    });
+
     it('유예가 지난 끊긴 플레이어는 인원에서 빼고, 남은 사람이 없으면 목록에서 숨긴다', async () => {
       const room = await create(A);
       await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
@@ -240,6 +262,8 @@ describe('TetrisBattleRoomService', () => {
   describe('joinRoom — 비밀번호', () => {
     const PW = 'letmein';
     let code: string;
+    // scrypt를 십여 번 연달아 돌리는 테스트가 있다 — 전체 스위트를 병렬로 돌리면 CPU 경합으로 기본 5초를 넘겨 간헐 실패했다
+    const SCRYPT_HEAVY_TIMEOUT_MS = 30_000;
 
     beforeEach(async () => {
       code = (await create(A, { password: PW })).room.code;
@@ -269,13 +293,10 @@ describe('TetrisBattleRoomService', () => {
       await expect(service.joinRoom({ code, password: PW, playerName: '다른이' }, C)).resolves.toMatchObject({
         playerId: 'p2',
       });
-    });
+    }, SCRYPT_HEAVY_TIMEOUT_MS);
 
     it('동시에 여러 번 시도해도 한도를 넘는 시도는 검증(scrypt) 없이 잠금 — 리뷰 F1', async () => {
-      const verify = jest.spyOn(
-        TetrisBattleRoomService.prototype as unknown as { passwordMatches: () => Promise<boolean> },
-        'passwordMatches',
-      );
+      const verify = jest.spyOn(roomPasswordCheck, 'matches');
       const attempts = PASSWORD_FAILURE_LIMIT.maxFailures * 3;
 
       const outcomes = await Promise.all(
@@ -285,7 +306,7 @@ describe('TetrisBattleRoomService', () => {
       expect(outcomes.filter((o) => o === 'ROOM_WRONG_PASSWORD')).toHaveLength(PASSWORD_FAILURE_LIMIT.maxFailures);
       expect(outcomes.filter((o) => o === 'ROOM_PASSWORD_LOCKED')).toHaveLength(attempts - PASSWORD_FAILURE_LIMIT.maxFailures);
       expect(verify).toHaveBeenCalledTimes(PASSWORD_FAILURE_LIMIT.maxFailures);
-    });
+    }, SCRYPT_HEAVY_TIMEOUT_MS);
 
     it(`소켓을 바꿔 가며 시도해도 같은 IP는 ${PASSWORD_FAILURE_LIMIT_IP.maxFailures}번까지 — 그 다음부터 IP 전체 잠금`, async () => {
       const sameIp = (i: number): SocketIdentity => ({ socketId: `sock-ip-${i}`, userId: null, ip: '203.0.113.7' });
@@ -298,7 +319,7 @@ describe('TetrisBattleRoomService', () => {
       await expect(service.joinRoom({ code, password: PW, playerName: '다른이' }, C)).resolves.toMatchObject({
         playerId: 'p2',
       });
-    });
+    }, SCRYPT_HEAVY_TIMEOUT_MS);
 
     it('IP 카운터는 방 단위다 — 다른 방 비밀번호에는 영향 없음', async () => {
       const other = (await create(D, { password: PW })).room.code;
@@ -309,7 +330,7 @@ describe('TetrisBattleRoomService', () => {
       await expect(service.joinRoom({ code: other, password: PW, playerName: '도전자' }, sameIp(99))).resolves.toMatchObject({
         playerId: 'p2',
       });
-    });
+    }, SCRYPT_HEAVY_TIMEOUT_MS);
 
     it.each([
       ['오답', { password: 'x' }, 'ROOM_WRONG_PASSWORD'],
@@ -328,10 +349,7 @@ describe('TetrisBattleRoomService', () => {
       const full = (await create(D, { maxPlayers: 2, password: PW })).room.code;
       await service.joinRoom({ code: full, password: PW, playerName: '둘째' }, C, T0);
       const beforeCommit = jest.fn();
-      const verify = jest.spyOn(
-        TetrisBattleRoomService.prototype as unknown as { passwordMatches: () => Promise<boolean> },
-        'passwordMatches',
-      );
+      const verify = jest.spyOn(roomPasswordCheck, 'matches');
 
       await expectCode(service.joinRoom({ code: full, password: PW, playerName: '셋째' }, B, T0, beforeCommit), 'ROOM_FULL');
       mock.patchRoom(code, (r) => (r.status = 'PLAYING'));
@@ -369,7 +387,7 @@ describe('TetrisBattleRoomService', () => {
       // 오답은 여전히 센다
       await expectCode(service.joinRoom({ code, password: 'x', playerName: '도전자' }, sameIp(999), T0), 'ROOM_WRONG_PASSWORD');
       expect(mock.strings.get(`tetris-battle:pwfail-ip:${code}:203.0.113.50`)).toBe('1');
-    });
+    }, SCRYPT_HEAVY_TIMEOUT_MS);
 
     it('읽을 때는 멤버(비밀번호 생략)였는데 커밋 전에 빠졌으면 새 플레이어로 추가하지 않는다 — ROOM_BUSY (리뷰 F4)', async () => {
       await service.joinRoom({ code, password: PW, playerName: '둘째' }, B, T0);
@@ -465,6 +483,197 @@ describe('TetrisBattleRoomService', () => {
         service.joinRoom({ code: room.room.code, playerName: '방장', playerToken: room.playerToken }, B),
         'INVALID_PLAYER_TOKEN',
       );
+    });
+  });
+
+  describe('joinRoom — 같은 사람 중복 방지 (tetris-audit D-003·D-007)', () => {
+    /** A와 같은 로그인 유저(userId 42)의 다른 탭·기기 */
+    const A2: SocketIdentity = { socketId: 'sock-a2', userId: 42, ip: '10.0.0.1' };
+    const B2: SocketIdentity = { socketId: 'sock-b2', userId: null, ip: '10.0.0.2' };
+
+    it('로그인 유저가 다른 소켓으로 토큰 없이 들어오면 새 자리 대신 기존 자리를 넘겨받는다 — 토큰 재발급', async () => {
+      const room = await create(A);
+      const again = await service.joinRoom({ code: room.room.code, playerName: '다른이름' }, A2, T0 + 1);
+
+      expect(again.playerId).toBe('p1');
+      expect(again.replacedSocketId).toBe(A.socketId);
+      expect(again.playerToken).not.toBe(room.playerToken);
+      expect(again.room.players).toEqual([expect.objectContaining({ playerId: 'p1', name: '방장', connected: true })]);
+      expect(again.room.hostId).toBe('p1');
+      await expectCode(service.setReady(room.room.code, A.socketId, true), 'NOT_IN_ROOM');
+      await expectCode(
+        service.joinRoom({ code: room.room.code, playerName: '방장', playerToken: room.playerToken }, B),
+        'INVALID_PLAYER_TOKEN',
+      );
+    });
+
+    it('끊긴 뒤 유예 안에 다른 탭으로 다시 들어와도 자리가 하나다 — 방장 유지(제보 시나리오)', async () => {
+      const room = await create(A);
+      await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      await service.markDisconnected(room.room.code, A.socketId, T0);
+
+      const again = await service.joinRoom({ code: room.room.code, playerName: '방장' }, A2, T0 + 1000);
+
+      expect(again.room.players.map((p) => [p.playerId, p.connected])).toEqual([
+        ['p1', true],
+        ['p2', true],
+      ]);
+      expect(again.room.hostId).toBe('p1');
+      expect(again.replacedSocketId).toBeNull();
+    });
+
+    it('넘겨받기는 정원·비밀번호를 보지 않는다(이미 들어와 있던 사람)', async () => {
+      const room = await create(A, { maxPlayers: 2, password: 'pw' });
+      await service.joinRoom({ code: room.room.code, password: 'pw', playerName: '둘째' }, B, T0);
+
+      await expect(service.joinRoom({ code: room.room.code, playerName: '방장' }, A2, T0 + 1)).resolves.toMatchObject({
+        playerId: 'p1',
+      });
+    });
+
+    it('넘겨받기를 거부하지 않으면 beforeCommit(이전 방 이탈)을 부른다 — 대기실에서는 바로 넘겨받는다', async () => {
+      const room = await create(A);
+      const beforeCommit = jest.fn(async () => undefined);
+      await service.joinRoom({ code: room.room.code, playerName: '방장' }, A2, T0 + 1, beforeCommit);
+      expect(beforeCommit).toHaveBeenCalledTimes(1);
+    });
+
+    it('게스트는 같은 사람인지 알 수 없어 새 자리가 된다(수용한 한계 — 프론트가 토큰을 브라우저 공용 저장소에 둔다)', async () => {
+      const room = await create(A);
+      await service.joinRoom({ code: room.room.code, playerName: '손님' }, B, T0);
+      const second = await service.joinRoom({ code: room.room.code, playerName: '손님' }, B2, T0 + 1);
+      expect(second.room.players).toHaveLength(3);
+    });
+
+    it('자리에 tabId를 저장하고, 넘겨받으면 새 tabId로 바꾼다', async () => {
+      const room = await service.createRoom({ name: '방', maxPlayers: 4, playerName: '방장', tabId: 'tab-1' }, A, T0);
+      expect(mock.readRoom(room.room.code)?.players[0].tabId).toBe('tab-1');
+
+      await service.joinRoom({ code: room.room.code, playerName: '방장', playerToken: room.playerToken, tabId: 'tab-2' }, C, T0 + 1);
+      expect(mock.readRoom(room.room.code)?.players[0].tabId).toBe('tab-2');
+
+      await service.joinRoom({ code: room.room.code, playerName: '방장' }, A2, T0 + 2);
+      expect(mock.readRoom(room.room.code)?.players[0].tabId).toBeNull();
+    });
+  });
+
+  describe('kickPlayer (tetris-audit D-011)', () => {
+    const roomWithGuest = async () => {
+      const room = await create(A);
+      const joined = await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      return { code: room.room.code, guestToken: joined.playerToken };
+    };
+
+    it('방장이 대기실에서 내보내면 자리를 빼고 그 소켓 id를 돌려준다 — 그 토큰은 무효, 다시 들어오면 새 자리', async () => {
+      const { code, guestToken } = await roomWithGuest();
+
+      const result = await service.kickPlayer(code, A.socketId, 'p2', T0 + 1);
+
+      expect(result.kickedSocketId).toBe(B.socketId);
+      expect(result.room?.players.map((p) => p.playerId)).toEqual(['p1']);
+      expect(result.lobbyChanged).toBe(true);
+      await expectCode(service.joinRoom({ code, playerName: '둘째', playerToken: guestToken }, B, T0 + 2), 'INVALID_PLAYER_TOKEN');
+      await expect(service.joinRoom({ code, playerName: '둘째' }, B, T0 + 3)).resolves.toMatchObject({ playerId: 'p3' });
+    });
+
+    it('결과 화면(RESULT)에서도 내보낼 수 있다', async () => {
+      const { code } = await roomWithGuest();
+      mock.patchRoom(code, (r) => (r.status = 'RESULT'));
+      await expect(service.kickPlayer(code, A.socketId, 'p2', T0 + 1)).resolves.toMatchObject({ kickedSocketId: B.socketId });
+    });
+
+    it.each([
+      ['방장이 아님', 'sock-b', 'p1', 'NOT_HOST'],
+      ['비멤버', 'sock-x', 'p2', 'NOT_IN_ROOM'],
+      ['대상 없음', 'sock-a', 'p9', 'PLAYER_NOT_FOUND'],
+      ['방장 자신', 'sock-a', 'p1', 'PLAYER_NOT_FOUND'],
+    ] as const)('%s → %s(자리 그대로)', async (_label, socketId, target, code) => {
+      const room = await roomWithGuest();
+      await expectCode(service.kickPlayer(room.code, socketId, target, T0 + 1), code);
+      expect(mock.readRoom(room.code)?.players).toHaveLength(2);
+    });
+
+    it('경기 중이면 MATCH_ALREADY_STARTED', async () => {
+      const { code } = await roomWithGuest();
+      mock.patchRoom(code, (r) => (r.status = 'PLAYING'));
+      await expectCode(service.kickPlayer(code, A.socketId, 'p2', T0 + 1), 'MATCH_ALREADY_STARTED');
+    });
+
+    it(`방·방장 단위 ${TETRIS_BATTLE_RATE_LIMITS.kick.limit}회/${TETRIS_BATTLE_RATE_LIMITS.kick.windowSec}초 넘으면 RATE_LIMITED`, async () => {
+      const { code } = await roomWithGuest();
+      for (let i = 0; i < TETRIS_BATTLE_RATE_LIMITS.kick.limit; i++) {
+        await expectCode(service.kickPlayer(code, A.socketId, 'p9', T0 + 1), 'PLAYER_NOT_FOUND');
+      }
+      await expectCode(service.kickPlayer(code, A.socketId, 'p2', T0 + 1), 'RATE_LIMITED');
+    });
+  });
+
+  describe('하트비트 판정 (tetris-audit D-010·D-012)', () => {
+    const hbKey = (code: string, socketId: string) => `tetris-battle:hb:${code}:${socketId}`;
+    const settle = () => new Promise((r) => setImmediate(r));
+
+    const heartbeatRoom = async () => {
+      const room = await service.createRoom({ name: '방', maxPlayers: 4, playerName: '방장', heartbeat: true }, A, T0);
+      await service.joinRoom({ code: room.room.code, playerName: '둘째', heartbeat: true }, B, T0);
+      await service.joinRoom({ code: room.room.code, playerName: '옛탭' }, C, T0); // 하트비트 선언 없음
+      return room.room.code;
+    };
+
+    it('하트비트를 선언하고 TTL 넘게 답이 없는 연결 자리만 끊김 표시 + 소켓 끊기 + 정리 예약', async () => {
+      const code = await heartbeatRoom();
+      const evictor = jest.fn();
+      service.setSocketEvictor(evictor);
+      const now = T0 + HEARTBEAT_TTL_MS;
+
+      await service.recordHeartbeat(code, A.socketId, now); // p1(A)만 답함
+      await settle();
+
+      expect(mock.readRoom(code)?.players.map((p) => [p.playerId, p.connected])).toEqual([
+        ['p1', true],
+        ['p2', false],
+        ['p3', true], // 선언하지 않은 옛 클라이언트는 판정하지 않는다
+      ]);
+      expect(evictor).toHaveBeenCalledWith([B.socketId]);
+      expect(mock.strings.has(hbKey(code, A.socketId))).toBe(true);
+      expect(wakes.map((w) => w.delayMs)).toContain(DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
+    });
+
+    it('연결된 지 TTL이 안 된 자리는 답이 없어도 건드리지 않는다', async () => {
+      const code = await heartbeatRoom();
+      await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS - 1);
+      await settle();
+      expect(mock.readRoom(code)?.players.every((p) => p.connected)).toBe(true);
+    });
+
+    it(`방당 ${HEARTBEAT_PROBE_INTERVAL_MS}ms에 1번만 판정한다(게이트)`, async () => {
+      const code = await heartbeatRoom();
+      const now = T0 + HEARTBEAT_TTL_MS;
+      mock.strings.set(`tetris-battle:hbprobe:${code}`, '1'); // 다른 레플리카가 방금 판정함
+      await service.recordHeartbeat(code, A.socketId, now);
+      await settle();
+      expect(mock.readRoom(code)?.players[1].connected).toBe(true);
+    });
+
+    it('답이 있으면(키가 살아 있으면) 끊지 않는다', async () => {
+      const code = await heartbeatRoom();
+      mock.strings.set(hbKey(code, B.socketId), '1'); // p2(B)는 방금 답함
+      await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS);
+      await settle();
+      expect(mock.readRoom(code)?.players[1].connected).toBe(true);
+    });
+  });
+
+  describe('하트비트는 소켓 단위 (리뷰 R1)', () => {
+    it('자리를 넘겨준 옛 소켓이 계속 답해도 넘겨받은 소켓의 생존으로 세지 않는다', async () => {
+      const room = await service.createRoom({ name: '방', maxPlayers: 4, playerName: '방장', heartbeat: true }, A, T0);
+      const code = room.room.code;
+      await service.joinRoom({ code, playerName: '방장', playerToken: room.playerToken, heartbeat: true }, C, T0); // A → C 넘겨받음
+      mock.strings.set(`tetris-battle:hb:${code}:${A.socketId}`, '1'); // 옛 탭(A)만 계속 답함
+
+      await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS);
+      await new Promise((r) => setImmediate(r));
+
+      expect(mock.readRoom(code)?.players[0]).toMatchObject({ connected: false, socketId: null });
     });
   });
 
@@ -601,6 +810,59 @@ describe('TetrisBattleRoomService', () => {
     });
   });
 
+  describe('유예 만료 깨우기 (tetris-audit D-009)', () => {
+    it('끊기면 유예 + 여유 뒤로 정리를 한 번 예약한다 · 바뀐 게 없으면 예약하지 않는다', async () => {
+      const room = await create(A);
+      await service.markDisconnected(room.room.code, 'other', T0);
+      expect(wakes).toHaveLength(0);
+
+      await service.markDisconnected(room.room.code, A.socketId, T0);
+      expect(wakes.map((w) => w.delayMs)).toEqual([DISCONNECT_GRACE_MS + WAKE_MARGIN_MS]);
+    });
+
+    it('아무도 조작하지 않아도 유예가 지나면 끊긴 자리를 빼고 방장을 넘기고 roomState를 알린다', async () => {
+      const listener = jest.fn();
+      service.setChangeListener(listener);
+      const room = await create(A);
+      await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      await service.markDisconnected(room.room.code, A.socketId, T0);
+      listener.mockClear();
+
+      await service.sweepExpired(room.room.code, T0 + DISCONNECT_GRACE_MS);
+
+      expect(mock.readRoom(room.room.code)).toMatchObject({ hostId: 'p2', players: [expect.objectContaining({ playerId: 'p2' })] });
+      expect(listener).toHaveBeenCalledWith(room.room.code, expect.objectContaining({ hostId: 'p2' }), true);
+    });
+
+    it('유예가 지난 사람만 남은 방은 지우고 (code, null, true)를 알린다', async () => {
+      const listener = jest.fn();
+      service.setChangeListener(listener);
+      const room = await create(A);
+      await service.markDisconnected(room.room.code, A.socketId, T0);
+
+      await service.sweepExpired(room.room.code, T0 + DISCONNECT_GRACE_MS);
+
+      expect(mock.hashes.has(roomKey(room.room.code))).toBe(false);
+      expect(listener).toHaveBeenLastCalledWith(room.room.code, null, true);
+    });
+
+    it('그 사이 다시 연결했으면 아무것도 바꾸지 않는다(멱등)', async () => {
+      const room = await create(A);
+      await service.markDisconnected(room.room.code, A.socketId, T0);
+      await service.joinRoom({ code: room.room.code, playerName: '방장', playerToken: room.playerToken }, C, T0 + 1);
+      mock.redis.eval.mockClear();
+
+      await service.sweepExpired(room.room.code, T0 + DISCONNECT_GRACE_MS);
+
+      expect(mock.redis.eval).not.toHaveBeenCalled();
+      expect(mock.readRoom(room.room.code)?.players).toHaveLength(1);
+    });
+
+    it('방이 없거나 Redis를 못 쓰면 조용히 끝난다', async () => {
+      await expect(service.sweepExpired('ABCDEF', T0)).resolves.toBeUndefined();
+    });
+  });
+
   describe('생존 확인 — 유령 정리 (리뷰 F3·G1)', () => {
     let probe: jest.Mock;
     let listener: jest.Mock;
@@ -667,6 +929,18 @@ describe('TetrisBattleRoomService', () => {
       await service.setReady(room.room.code, A.socketId, true, T0 + 4_999);
       await settle();
       expect(mock.readRoom(room.room.code)?.players[0].connected).toBe(true);
+    });
+
+    it('유령을 끊김으로 표시하면 유예 뒤 정리를 예약한다 — 하트비트 없는 옛 클라이언트도 남지 않게 (리뷰 R2)', async () => {
+      const room = await create(A, {}, T0);
+      mock.strings.clear();
+      probe.mockResolvedValue(new Set());
+      wakes.length = 0;
+
+      await service.setReady(room.room.code, A.socketId, true, T0 + 60_000).catch(() => undefined);
+      await settle();
+
+      expect(wakes.map((w) => w.delayMs)).toContain(DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
     });
 
     it('방당 15초에 1번만 확인한다(Redis NX 게이트)', async () => {
@@ -832,9 +1106,8 @@ describe('TetrisBattleRoomService', () => {
       await expectCode(service.prepareChat('ABCDEF', A.socketId, '안녕'), 'ROOM_NOT_FOUND');
     });
 
-    it('경기 중(PLAYING)엔 채팅 불가 — MATCH_ALREADY_STARTED, 이모트는 허용', async () => {
+    it('경기 중(PLAYING)에도 이모트는 허용 — 채팅의 생존자·탈락자 규칙은 매치 스펙(D-016)', async () => {
       mock.patchRoom(code, (r) => (r.status = 'PLAYING'));
-      await expectCode(service.prepareChat(code, A.socketId, '안녕'), 'MATCH_ALREADY_STARTED');
       await expect(service.prepareEmote(code, A.socketId, 'gg')).resolves.toMatchObject({ emoteId: 'gg' });
     });
 

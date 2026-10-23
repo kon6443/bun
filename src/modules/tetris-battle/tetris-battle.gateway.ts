@@ -1,4 +1,4 @@
-import { Injectable, Logger, UseFilters, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, UseFilters, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -10,14 +10,23 @@ import {
 } from '@nestjs/websockets';
 import { Server } from 'socket.io';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
-import { LIVENESS_PROBE_TIMEOUT_MS, LOBBY_ROOM, playerChannel, roomChannel } from './tetris-battle.constants';
+import {
+  LIVENESS_PROBE_TIMEOUT_MS,
+  LOBBY_BROADCAST_DEBOUNCE_MS,
+  LOBBY_ROOM,
+  PRESENCE_PING_INTERVAL_MS,
+  playerChannel,
+  roomChannel,
+} from './tetris-battle.constants';
 import { TetrisBattleError } from './tetris-battle.errors';
 import {
   EmptyAckData,
   EnterRoomAckData,
+  KickedPayload,
   ListRoomsAckData,
   LockAckData,
   RoomState,
+  SessionReplacedPayload,
   TETRIS_BATTLE_NAMESPACE,
   TetrisBattleAck,
   TetrisBattleClientEvents,
@@ -28,6 +37,7 @@ import {
   CreateRoomDto,
   EmoteDto,
   JoinRoomDto,
+  KickPlayerDto,
   ListRoomsDto,
   LockDto,
   RematchDto,
@@ -77,7 +87,7 @@ const EMPTY: EmptyAckData = {};
 })
 @UseFilters(TetrisBattleWsExceptionFilter)
 @Injectable()
-export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
+export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, OnModuleDestroy {
   private readonly logger = new Logger(TetrisBattleGateway.name);
 
   @WebSocketServer()
@@ -85,6 +95,10 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
 
   /** 소켓별 상태 변경 직렬화 큐 — 마지막 작업의 완료(성공·실패 무관) 약속 */
   private readonly socketQueues = new WeakMap<TetrisBattleSocket, Promise<void>>();
+  /** presencePing 타이머(D-012) — 이 레플리카의 소켓에만 보낸다. 공유 상태 없음 */
+  private presenceTimer: NodeJS.Timeout | null = null;
+  /** 예약된 로비 방송(BE-09) — 있으면 새 방송을 예약하지 않는다 */
+  private lobbyBroadcastTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly roomService: TetrisBattleRoomService) {}
 
@@ -105,6 +119,23 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
       void this.broadcastChange(code, room, lobbyChanged);
     });
     this.roomService.setMatchListener((code, events) => this.emitMatchEvents(code, events));
+    // 하트비트가 끊긴 소켓을 끊는다 — 살아 있으면 클라이언트가 재연결해 토큰으로 복귀한다(D-010).
+    // 이 namespace만 끊는다(close=false): 같은 연결을 공유하는 다른 namespace(팀 채팅 등)까지 닫지 않게(리뷰 R1).
+    // 서버가 끊으면 클라이언트는 자동 재연결하지 않으므로 사유 "io server disconnect"에서 직접 connect한다(프론트 계약)
+    this.roomService.setSocketEvictor((socketIds) => {
+      if (socketIds.length > 0) this.server.in(socketIds).disconnectSockets(false);
+    });
+    this.presenceTimer = setInterval(() => {
+      this.server.local.emit(TetrisBattleServerEvents.PRESENCE_PING);
+    }, PRESENCE_PING_INTERVAL_MS);
+    this.presenceTimer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    this.presenceTimer = null;
+    if (this.lobbyBroadcastTimer) clearTimeout(this.lobbyBroadcastTimer);
+    this.lobbyBroadcastTimer = null;
   }
 
   handleDisconnect(client: TetrisBattleSocket): Promise<void> {
@@ -215,6 +246,39 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
       await this.broadcastChange(dto.code, change.room, change.lobbyChanged);
       return ok(EMPTY);
     });
+  }
+
+  @UseGuards(TetrisBattleWsGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage(TetrisBattleClientEvents.KICK_PLAYER)
+  async handleKickPlayer(
+    @ConnectedSocket() client: TetrisBattleSocket,
+    @MessageBody() dto: KickPlayerDto,
+  ): Promise<TetrisBattleAck<EmptyAckData>> {
+    return this.serialize(client, async () => {
+      const result = await this.roomService.kickPlayer(dto.code, client.id, dto.playerId);
+      if (result.kickedSocketId) {
+        // 다른 레플리카 소켓이어도 어댑터가 전달한다. 그 소켓의 client.data.room은 남지만 이후 요청은 NOT_IN_ROOM으로 끝난다
+        this.server.in(result.kickedSocketId).socketsLeave([roomChannel(dto.code), playerChannel(dto.code, dto.playerId)]);
+        const kicked: KickedPayload = { code: dto.code };
+        this.server.to(result.kickedSocketId).emit(TetrisBattleServerEvents.KICKED, kicked);
+      }
+      await this.broadcastChange(dto.code, result.room, result.lobbyChanged);
+      return ok(EMPTY);
+    });
+  }
+
+  /**
+   * presencePing 응답(D-010·D-012) — ack 없음, 큐에 넣지 않는다(입장 처리에 밀려 늦게 기록되지 않게).
+   * 이 소켓이 그 방에 들어가 있을 때만 기록한다(멤버십 판정은 하트비트 판정이 방 기록의 socketId로 다시 한다)
+   */
+  @UseGuards(TetrisBattleWsGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage(TetrisBattleClientEvents.HEARTBEAT)
+  async handleHeartbeat(@ConnectedSocket() client: TetrisBattleSocket, @MessageBody() dto: RoomCodeDto): Promise<void> {
+    const current = client.data.room;
+    if (current?.code !== dto.code) return;
+    await this.roomService.recordHeartbeat(current.code, client.id);
   }
 
   @UseGuards(TetrisBattleWsGuard)
@@ -404,6 +468,9 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
     client.data.room = { code, playerId: result.playerId };
     if (result.replacedSocketId) {
       this.server.in(result.replacedSocketId).socketsLeave([roomChannel(code), playerChannel(code, result.playerId)]);
+      // 넘겨받힌 쪽(다른 탭·기기)이 멈춘 화면으로 남지 않고, 저장된 토큰으로 되찾으려 하지 않게 알린다(tetris-audit D-007)
+      const replaced: SessionReplacedPayload = { code };
+      this.server.to(result.replacedSocketId).emit(TetrisBattleServerEvents.SESSION_REPLACED, replaced);
     }
 
     // 끊긴 소켓은 어댑터 room에 넣지 않는다(리뷰 G2) — 입장 결과를 방송한 뒤 바로 끊김으로 표시
@@ -442,13 +509,26 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect {
 
   private async broadcastChange(code: string, room: RoomState | null, lobbyChanged: boolean): Promise<void> {
     if (room) this.server.to(roomChannel(code)).emit(TetrisBattleServerEvents.ROOM_STATE, room);
-    if (lobbyChanged) await this.broadcastLobby();
+    if (lobbyChanged) this.broadcastLobby();
   }
 
-  /** 로비 구독자에게 목록 전체. 실패해도 요청 자체는 성공시킨다(다음 변경·재조회로 회복) */
-  private async broadcastLobby(): Promise<void> {
+  /**
+   * 로비 구독자에게 목록 전체. 실패해도 요청 자체는 성공시킨다(다음 변경·재조회로 회복).
+   * 레플리카당 LOBBY_BROADCAST_DEBOUNCE_MS에 1번으로 묶는다(tetris-audit BE-09) — 방 변경마다 방 200개를 다시 읽지 않게.
+   * 묶는 동안 생긴 변경은 끝에 만드는 목록에 모두 들어간다. 다른 레플리카의 변경은 그 레플리카가 따로 방송한다(지금과 같음)
+   */
+  private broadcastLobby(): void {
+    if (this.lobbyBroadcastTimer) return;
+    this.lobbyBroadcastTimer = setTimeout(() => {
+      this.lobbyBroadcastTimer = null;
+      void this.emitLobby();
+    }, LOBBY_BROADCAST_DEBOUNCE_MS);
+    this.lobbyBroadcastTimer.unref();
+  }
+
+  private async emitLobby(): Promise<void> {
     try {
-      const rooms = await this.roomService.listRooms();
+      const rooms = await this.roomService.listRooms(undefined, { reconcile: false });
       this.server.to(LOBBY_ROOM).emit(TetrisBattleServerEvents.ROOMS_CHANGED, { rooms });
     } catch (error) {
       this.logger.warn(`로비 목록 브로드캐스트 실패: ${(error as Error).message}`);

@@ -64,7 +64,8 @@ export class TetrisBattleBrowseService {
     if (cursor !== undefined && !after) throw new ApiValidationErrorResponseDto('cursor가 올바르지 않습니다.');
 
     // 키셋: (CRTD_AT, MATCH_ID) < (커서) — 같은 시각이면 MATCH_ID로 이어 붙인다. IDX_TB_MATCHES_CRTD(CRTD_AT)를 탄다
-    const base: FindOptionsWhere<TetrisBattleMatch> = { isHidden: 0, status: 'VERIFIED' };
+    // DISPUTED도 목록에 넣는다 — 검증 실패는 참가자 단위(tetris-audit D-004)
+    const base: FindOptionsWhere<TetrisBattleMatch> = { isHidden: 0 };
     const where: FindOptionsWhere<TetrisBattleMatch>[] = after
       ? [
           { ...base, crtdAt: LessThan(new Date(after.t)) },
@@ -106,6 +107,7 @@ export class TetrisBattleBrowseService {
         roomName: m.roomName,
         playerCount: m.playerCount,
         endedAt: m.endedAt,
+        disputed: m.status === 'DISPUTED',
         winnerName: winner.name,
         players: ranked,
       });
