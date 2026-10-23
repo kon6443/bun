@@ -8,7 +8,7 @@
 | 역할 | 세션 | worktree | 브랜치 (base) |
 |---|---|---|---|
 | 메인·백엔드·문서 관리 | 메인(bun) | `bun/.claude/worktrees/games-polish` | `feat-onam-games-polish` (`origin/main` `ef9459b`) |
-| 프론트 | `next-bun-80` | `next-bun/.claude/worktrees/games-polish` | `feat-onam-games-polish` (`origin/main` `54b8c1d`, #373) |
+| 프론트 | `next-bun-35`(재부팅 전 `next-bun-80`, 같은 세션 resume) | `next-bun/.claude/worktrees/games-polish` | `feat-onam-games-polish` (`origin/main` `54b8c1d`, #373) |
 - 이 폴더는 메인만 수정한다. 프론트 세션은 결과를 메인에 보고하고, 메인이 WORKLOG에 옮긴다.
 - 로컬 `main`·`develop`은 건드리지 않는다.
 
