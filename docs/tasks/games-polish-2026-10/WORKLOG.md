@@ -254,3 +254,22 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 보류(근거): **BT-06**(보고 통계 대조) — 소비처 없음 + `pieces`(=seq)·`maxCombo` 정의가 시뮬과 같은지 미확인이라 거짓 INVALID 위험 → 통계를 쓰는 기능이 생길 때 · **BT-14**(USER_ID 우선순위) — 기존 테스트(result.spec "전원 제출하면 바로 저장")가 제출자 userId 우선을 의도로 고정하고 소비처 없음 → 정책 결정 시
 - 검증: `pnpm ci:core` lint 0 errors·경고 6(기준선 동일) · 단위 **1564/1564**(+19) · build ✅ · E2E `--testPathPatterns tetris-battle`(sandbox 밖) 49 통과·56 skip — Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT` 없어 **미실행(컴파일만 확인)**
 - 교훈: 호출처 grep을 `head`로 잘라 E2E 호출처 누락 → `docs/lessons.md` 2026-10-23
+
+## 2026-10-23 — P2 `submit` 백엔드 구현 (브랜치 `feat-onam-games-polish-submit`)
+- 프론트 P1 완료 보고(next-bun-35): 12항목·12커밋, ci:core 1369 통과(+24), build ✅. 미검증: FE-36 Firefox Space keyup·FE-01/11/33 실서버(끊김·모바일) → 최종 Playwright·실기기 항목. 메인 지시로 프론트 P1 base 머지 + P2 착수
+
+| ID | 변경 | 회귀 테스트 |
+|---|---|---|
+| BD-01 | `GameSessionService.claimVerification`(`game:session:{id}:verifying` SET NX 30초)·`releaseVerification`(finally). 못 잡으면 503 `IN_PROGRESS` | 가드 실패 시 검증 안 함·남의 가드 안 풂 · 성공/실패 모두 해제 |
+| BD-02 | `recordVerifyTimeout`(INCR, 세션 TTL) — `VerifyTimeoutError` 2회째(`GAME_VERIFY_TIMEOUT_LIMIT`) 세션 소모·422 `VERIFY_TIMEOUT` | 1회 503 TIMEOUT(유지) → 2회 422(소모) |
+| BD-03 | 저장 트랜잭션 실패 시 `restoreSession`(남은 TTL, SET NX) → 503 `SAVE_FAILED`. 되돌리지 못하면 원래 오류 | 복구 호출·503 / 복구 실패 시 원 오류 |
+| BD-04 | 409 `details.reason` ENGINE_VERSION(리플레이 버전은 세션 조회 전)·NOT_FOUND·GAME_MISMATCH / 422 ELAPSED_TIME·REPLAY_REJECTED(+engineReason)·VERIFY_TIMEOUT / 503 `{reason, retryAfterSeconds}`. Swagger 409·422·503 설명 갱신 | 사유별 4건 |
+| BD-05 | `REPLAY_HASH`(sha256: 게임·보드·seed·저장 본문) — 검증 전 `exists` 확인 → 409 `GAME_REPLAY_DUPLICATE`(세션 소모), 저장 때 ORA-00001도 409(세션 안 되돌림). Entity + 마이그레이션 `1792743022000-AddGameScoresReplayHash`(멱등·down) | 해시 결정성·seed 다르면 다름 · 사전 중복 · 유니크 위반 |
+| BD-13 | `DefenseVerifyService` — 워커 .js 없으면 error 1번 + 메인 스레드 검증 | 스크립트 없음 → 워커 0·결과 동일·error 1회 |
+| BD-14 | `VerifyUnavailableError`(풀 꺼짐) → retryAfter 30초, 컨트롤러가 `details.retryAfterSeconds`로 Retry-After | 꺼짐 30·대기열 2 |
+| BD-16 | 위 회귀 테스트로 충족 | — |
+| BD-17 | 원인 확정: 풀의 ready 대기 상한 = timeoutMs(테스트 100ms) → CPU 부하로 새 워커 기동이 100ms 초과 시 한 번 더 회수·재생성(created 3). 정상 동작 — 단정을 `≥ 2`로 | 병렬 4회 중 3회 실패 → 수정 후 병렬 6/6 통과 |
+
+- 검증: `pnpm ci:core` lint 0 errors·경고 6(기준선 동일) · 단위 **1580/1580** · build ✅ · E2E 전체(sandbox 밖) **240 통과·58 skip**(기준선 동일)
+- 프론트 계약 질문 답(Q-D1·Q-S1·Q-S2·Q-T1)과 P2 계약을 next-bun-35에 전달 — 세션은 제출 시점 로그인 사용자에 귀속(발급 토큰 미바인딩), 세션 응답에 `expiresAt` 이미 있음
+- **게이트**: 마이그레이션 `1792743022000` 실행(담당자) 전에는 이 브랜치를 배포하면 안 된다(머지 전 차단)
