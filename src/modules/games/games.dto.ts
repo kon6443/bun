@@ -156,7 +156,7 @@ export class GameSessionDto {
   @ApiProperty({ description: '세션 ID (점수 제출 시 1회 사용)', example: '3f1c2b9e-0a4d-4f7e-9a1b-2c3d4e5f6a7b' })
   sessionId: string;
 
-  @ApiProperty({ description: '블록 순서 시드 (0 ~ 4294967295)', example: 123456789 })
+  @ApiProperty({ description: '게임 시드 (0 ~ 4294967295) — 테트리스 블록 순서·디펜스 웨이브 구성. 주간 보드는 전원 같은 값', example: 123456789 })
   seed: number;
 
   @ApiProperty({ description: '서버가 받는 엔진 버전', example: 1 })

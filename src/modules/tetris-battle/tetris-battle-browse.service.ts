@@ -39,7 +39,7 @@ export const decodeMatchCursor = (raw: string): MatchCursor | null => {
 /**
  * 대전 입구용 조회 (docs/tasks/tetris-battle DESIGN §19, D-025) — 인증 없음, 스키마 변경 없음
  * - 로비 방 수: Redis 로비(방 서비스의 같은 정리 규칙) + 2초 캐시
- * - 최근 대전 목록: VERIFIED·숨김 아님, CRTD_AT DESC·MATCH_ID DESC 키셋 커서. 쿼리 2번(경기 목록 1 + 참가자 IN 1) — N+1 없음
+ * - 최근 대전 목록: 숨김 아님(DISPUTED 포함 — tetris-audit D-004, 응답 disputed로 표시), CRTD_AT DESC·MATCH_ID DESC 키셋 커서. 쿼리 2번(경기 목록 1 + 참가자 IN 1) — N+1 없음
  */
 @Injectable()
 export class TetrisBattleBrowseService {
