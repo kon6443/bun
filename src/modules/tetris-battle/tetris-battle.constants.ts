@@ -75,6 +75,10 @@ export const TETRIS_BATTLE_RATE_LIMITS = {
   emote: { limit: 6, windowSec: 5 },
   /** 강퇴 — 방·방장 단위 (tetris-audit D-011) */
   kick: { limit: 10, windowSec: 10 },
+  /** 방 목록 — 소켓 단위. 정상은 연결마다 1번 + 새로고침 버튼이라 연타만 막는다 (games-polish BT-02) */
+  listRoomsSocket: { limit: 5, windowSec: 5 },
+  /** 방 목록 — IP 단위 (소켓을 새로 열어 우회하는 것을 막는다, NAT 공유를 고려해 넉넉히) */
+  listRoomsIp: { limit: 30, windowSec: 5 },
 } as const;
 
 export type TetrisBattleRateLimitAction = keyof typeof TETRIS_BATTLE_RATE_LIMITS;

@@ -166,6 +166,8 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
   ): Promise<TetrisBattleAck<ListRoomsAckData>> {
     // 큐에 넣는다 — 입장 처리(로비 구독 해제)와 순서가 엇갈려 방 안의 소켓이 로비를 다시 구독하지 않게(리뷰 G8)
     return this.serialize(client, async () => {
+      // 목록 1번이 방 최대 200개 읽기 + 생존 확인이라 연타·반복 송신을 막는다(games-polish BT-02)
+      await this.consumeOrThrow('listRoomsSocket', 'listRoomsIp', client);
       const rooms = await this.roomService.listRooms();
       await client.join(LOBBY_ROOM);
       return ok({ rooms });
@@ -444,8 +446,8 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
   }
 
   private async consumeOrThrow(
-    socketAction: 'createRoomSocket' | 'joinRoomSocket',
-    ipAction: 'createRoomIp' | 'joinRoomIp',
+    socketAction: 'createRoomSocket' | 'joinRoomSocket' | 'listRoomsSocket',
+    ipAction: 'createRoomIp' | 'joinRoomIp' | 'listRoomsIp',
     client: TetrisBattleSocket,
   ): Promise<void> {
     const allowed =
