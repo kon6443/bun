@@ -60,6 +60,12 @@ export const GAME_REPLAY_TIME_TOLERANCE_MS = 5_000;
 /** 검증이 밀렸을 때(503 GAME_VERIFY_BUSY) 다시 시도까지 기다릴 시간 (초) — Retry-After 헤더 (defense DESIGN §B4) */
 export const GAME_VERIFY_RETRY_AFTER_SECONDS = 2;
 
+/** 검증 워커를 쓸 수 없을 때(연속 크래시로 자리가 꺼짐, 최대 60초)의 Retry-After (초) — 2초 간격 재시도로 두드리지 않게 (games-polish BD-14) */
+export const GAME_VERIFY_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
+
+/** 같은 세션의 검증이 이만큼 시간 초과하면 세션을 소모하고 422 — 결정적으로 느린 리플레이의 무한 503 재시도 차단 (games-polish BD-02) */
+export const GAME_VERIFY_TIMEOUT_LIMIT = 2;
+
 /** 디펜스 검증 워커 — 레플리카당 대기 작업 상한·작업 1건 시간 상한 (defense DESIGN §B5·§E5) */
 export const DEFENSE_VERIFY_QUEUE_LIMIT = 4;
 export const DEFENSE_VERIFY_TIMEOUT_MS = 5_000;
