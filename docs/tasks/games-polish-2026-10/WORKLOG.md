@@ -273,3 +273,11 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 검증: `pnpm ci:core` lint 0 errors·경고 6(기준선 동일) · 단위 **1580/1580** · build ✅ · E2E 전체(sandbox 밖) **240 통과·58 skip**(기준선 동일)
 - 프론트 계약 질문 답(Q-D1·Q-S1·Q-S2·Q-T1)과 P2 계약을 next-bun-35에 전달 — 세션은 제출 시점 로그인 사용자에 귀속(발급 토큰 미바인딩), 세션 응답에 `expiresAt` 이미 있음
 - **게이트**: 마이그레이션 `1792743022000` 실행(담당자) 전에는 이 브랜치를 배포하면 안 된다(머지 전 차단)
+
+## 2026-10-23 — P3 `defense` 백엔드 판정 — 코드 변경 없음
+- **BD-08 반려(측정)**: `resolveBoard` 1회 비용(dist, 200회 평균) 주간 **0.178ms**·무한 **0.036ms** — 검증 1회(약 300ms, defense WORKLOG 실측)의 0.06%. 캐시는 Stage 불변 확인 부담만 늘어 넣지 않는다(engineering §6 측정 먼저)
+- **BD-11 부분 반려**: "시즌만 올리고 엔진 사본을 안 맞추면 제출 전부 INVALID_HEADER" 위험은 기존 테스트 `defense-game-engine.spec.ts:144`(발급 기본 보드 ∈ `ENDLESS_BOARD_KEYS`, 주간 키 ∈ `isWeeklyBoardKey`)가 이미 막는다. 지난 시즌 키는 조회 전용이라 제출 경로에 없다. 남은 "판정 4곳 분산"은 동작 무변경 리팩토링 → P6로 이관
+- P3는 프론트 단독(FE-04·06·07·08·09·16·40~45). 프론트 질문 답(Q-D2·D3·D4)은 P3 착수 때 전달:
+  - Q-D2: 무한 시즌은 상수 `DEFENSE_ENDLESS_SEASON`(defense-game-engine.ts:7)을 배포로 올릴 때만 바뀐다. `/boards`는 시즌 N..1을 모두 주고 `current: true`인 무한 보드는 항상 1개. 주간 키는 KST 월요일 00:00 경계 + ISO 8601 주차(weekly-board.ts:19) — 프론트 `weeklyBoardKeyAt`이 같은 규칙이면 일치
+  - Q-D3: 세션 발급 오류는 404 GAME_NOT_FOUND · 422 VALIDATION_ERROR(지원하지 않는 방식) · 503 GAME_SESSION_UNAVAILABLE · 503 GAME_WEEKLY_UNAVAILABLE 뿐(점검 코드 없음)
+  - Q-D4: 주간 시크릿이 없으면 `/boards`에서 주간 보드가 빠지고 주간 세션은 503 → 목록에 주간이 없으면 주간 시작을 막는 것이 맞다. 목록 조회 자체가 실패했을 때는 막지 않고 세션 발급 결과(503)로 판단해도 서버 쪽 문제는 없다
