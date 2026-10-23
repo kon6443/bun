@@ -64,7 +64,7 @@ WebSocket은 namespace `/teams`(팀·채팅·태그)·`/fishing`·`/tetris-battl
 | `auth` | `/auth` | Kakao OAuth 로그인/회원가입, JWT 발급 |
 | `users` | `/users` | 프로필 조회·수정 |
 | `feedback` | `/feedbacks` | 사용자 피드백 작성·내 피드백 조회, 운영자 피드백 채널 알림 |
-| `games` | `/games` | 게임 모음집 — 세션 발급(Redis, 게임별 엔진 레지스트리), 리플레이 재실행 검증 후 랭킹 등록(검증 확정 후 세션 소모 — 검증기 실패는 503 + 세션 유지), 보드·기간별 랭킹(`BOARD_KEY` — 테트리스 `default`), 보드 목록, 기록 요약(공유 미리보기용), 리플레이 재생. 테트리스 엔진은 프론트 원본의 사본(`src/modules/games/tetris-engine/`, 직접 수정 금지) |
+| `games` | `/games` | 게임 모음집 — 세션 발급(Redis, 게임별 엔진 레지스트리), 리플레이 재실행 검증 후 랭킹 등록(검증 확정 후 세션 소모 — 검증기 실패는 503 + 세션 유지), 보드·기간별 랭킹(`BOARD_KEY` — 테트리스 `default`, 디펜스 무한 `endless-s{시즌}`·주간 `weekly-YYYY-wNN`), 보드 목록, 기록 요약(공유 미리보기용), 리플레이 재생. 엔진은 프론트 원본의 사본(`tetris-engine/`·`defense-engine/`, 직접 수정 금지 — 디펜스는 매니페스트 해시 spec이 강제). 디펜스 검증은 레플리카마다 worker thread 풀(`defense-verify.worker.ts`, 첫 제출 때 기동) |
 | `notification` | `/telegram` | Telegram 봇 webhook, Discord webhook 알림(팀·운영자 피드백 채널) |
 | `file-share` | `/files` | API Key 기반 파일 공유 |
 | `tetris-battle` | `/tetris-battle` (REST) | 테트리스 2~4인 대전 — 방·로비·채팅·매치(`/tetris-battle` WS, 상태는 Redis Hash+Lua), 경기 후 리플레이 재검증·결과 저장(`TETRIS_BATTLE_*`), 로비 방 수·최근 경기 목록(REST), 같은 사람 중복 자리 방지(토큰·로그인 userId 넘겨받기)·강퇴·하트비트 온라인 표시. 대전 래퍼는 프론트 원본의 사본(`src/modules/tetris-battle/battle-engine/`, 직접 수정 금지 — `engine-copy-hashes.json`이 사본 해시를 감시) |
@@ -123,7 +123,7 @@ docker stop bun-redis && docker rm bun-redis
 
 **검증 대상(필수)**: `ENV`, `EXPRESS_PORT`, `JWT_SECRET`, `LOG_LEVEL`, `NEXT_PUBLIC_DOMAIN`, `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `REDIS_PORT`
 
-**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음)
+**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음), `GAME_WEEKLY_SEED_SECRET`(디펜스 주간 도전 seed의 HMAC 키 — 없으면 주간 도전만 503, 무한 모드 정상), `GAME_VERIFY_WORKERS`(레플리카당 디펜스 검증 워커 수 1~8 — 없으면 1)
 
 > ⚠️ **LOCAL과 PROD가 동일한 Oracle DB를 공유한다.** 로컬에서 실행하는 쿼리가 곧 상용 데이터에 영향을 준다.
 
@@ -160,7 +160,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-23 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1388/1388**(57 스위트), E2E **225 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`, 주면 대전 105개 포함), build 통과.
+> `pnpm ci:all` 기준선(2026-10-23 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1545/1545**(65 스위트), E2E **240 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`, 주면 296 통과 · 2 skip), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션

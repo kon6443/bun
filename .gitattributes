@@ -1,0 +1,3 @@
+# 디펜스 엔진 사본·매니페스트는 줄바꿈 변환 금지 — 바이트가 바뀌면 매니페스트 해시가 깨진다(docs/tasks/defense §E0, D-025)
+src/modules/games/defense-engine/** -text
+src/modules/games/defense-engine-manifest.json -text

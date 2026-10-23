@@ -53,10 +53,16 @@ export interface GameEngine {
   sessionTtlSeconds: number;
   /** board 쿼리를 생략한 랭킹 조회가 보는 보드 */
   defaultBoardKey: string;
-  /** 세션 발급 요청의 board(플레이 방식) → 보드 키·seed. 지원하지 않으면 null(422) */
+  /** 세션 발급 요청의 board(플레이 방식) → 보드 키·seed. 지원하지 않으면 null(422). 지원하지만 지금 못 여는 방식은 도메인 에러를 던진다(디펜스 주간 503) */
   resolveSessionBoard(board: string | undefined, now: Date): SessionBoard | null;
   /** 랭킹 조회에 쓸 수 있는 보드 키인지 */
   isRankingBoard(boardKey: string, now: Date): boolean;
+  /** 랭킹 기간(일간·주간·전체) 필터를 쓰는 보드인지 — 디펜스 주간 보드는 보드 자체가 1주라 false */
+  isPeriodRanking(boardKey: string): boolean;
+  /** 리플레이 응답 최상위에도 펼치는 params 키 — 테트리스 기존 계약 das·arr (games DESIGN §3) */
+  topLevelReplayParams: readonly string[];
+  /** 이 보드 기록의 리플레이를 지금 공개하는지 — 디펜스 주간은 전원 같은 seed라 보드가 끝나기 전엔 비공개(입력 복제 방지) */
+  isReplayPublic(boardKey: string, now: Date): boolean;
   /** /boards 응답 — 현재·지난 보드 목록 */
   listBoards(now: Date): GameBoard[];
   /** 제출된 params가 이 게임의 키 집합·정수 형식인지 — 세션을 쓰기 전에 422로 거른다. 값의 범위는 verify가 판정 */

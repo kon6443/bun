@@ -28,7 +28,15 @@ describe('GamesService', () => {
   let gameReplayRepository: MockRepository<GameReplay>;
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: { createSession: jest.Mock; getSession: jest.Mock; consumeSession: jest.Mock };
-  let engine: GameEngine & { verify: jest.Mock; isValidParams: jest.Mock; resolveSessionBoard: jest.Mock; isRankingBoard: jest.Mock; listBoards: jest.Mock };
+  let engine: GameEngine & {
+    verify: jest.Mock;
+    isValidParams: jest.Mock;
+    resolveSessionBoard: jest.Mock;
+    isRankingBoard: jest.Mock;
+    isPeriodRanking: jest.Mock;
+    isReplayPublic: jest.Mock;
+    listBoards: jest.Mock;
+  };
   let env: Record<string, string | undefined>;
 
   const NOW = new Date('2026-10-21T05:00:00.000Z').getTime();
@@ -72,6 +80,9 @@ describe('GamesService', () => {
       defaultBoardKey: 'default',
       resolveSessionBoard: jest.fn((board?: string) => (board === undefined ? { boardKey: 'default', mode: null, seed: null } : null)),
       isRankingBoard: jest.fn((boardKey: string) => boardKey === 'default'),
+      isPeriodRanking: jest.fn().mockReturnValue(true),
+      isReplayPublic: jest.fn().mockReturnValue(true),
+      topLevelReplayParams: ['arr', 'das'],
       listBoards: jest.fn(() => [{ boardKey: 'default', mode: null, current: true, startsAt: null, endsAt: null }]),
       isValidParams: jest.fn().mockReturnValue(true),
       verify: jest.fn().mockResolvedValue({ ok: true, score: 12340, detail: VERIFIED_DETAIL }),
@@ -465,6 +476,89 @@ describe('GamesService', () => {
       gameReplayRepository.findOneBy.mockResolvedValue(replay);
 
       await expect(service.getReplay('tetris', 41)).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+    });
+  });
+
+  describe('기간 필터 없는 보드 · 게임별 최상위 리플레이 필드 (디펜스 주간 등)', () => {
+    beforeEach(() => {
+      engine.isPeriodRanking.mockReturnValue(false);
+      engine.isRankingBoard.mockReturnValue(true);
+    });
+
+    it('getRankings는 period를 무시하고 보드 전체를 본다', async () => {
+      gameScoreRepository.find.mockResolvedValue([]);
+
+      const result = await service.getRankings('tetris', { board: 'weekly-2026-w43', period: 'daily' });
+
+      const [options] = gameScoreRepository.find.mock.calls[0] as [{ where: Record<string, unknown> }];
+      expect(options.where).not.toHaveProperty('crtdAt');
+      expect(options.where).toMatchObject({ boardKey: 'weekly-2026-w43' });
+      expect(engine.isPeriodRanking).toHaveBeenCalledWith('weekly-2026-w43');
+      expect(result.periodStart).toBeNull();
+    });
+
+    it('등록 직후 순위는 보드 전체 순위 하나를 세 기간에 같이 싣는다', async () => {
+      gameSessionService.getSession.mockResolvedValue(session({ boardKey: 'weekly-2026-w43' }));
+      const qb = createMockQueryBuilder({ getCount: 6 });
+      gameScoreRepository.createQueryBuilder.mockReturnValue(qb as never);
+
+      const result = await service.submitScore({
+        gameTypeParam: 'tetris',
+        dto: dto(),
+        userId: null,
+        ip: undefined,
+      });
+
+      expect(result.ranks).toEqual({ daily: 7, weekly: 7, all: 7 });
+      expect(gameScoreRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(qb.andWhere).toHaveBeenCalledWith('s.boardKey = :boardKey', { boardKey: 'weekly-2026-w43' });
+      expect(qb.andWhere).not.toHaveBeenCalledWith('s.crtdAt >= :periodStart', expect.anything());
+    });
+
+    it('getReplay는 엔진이 정한 최상위 필드만 펼친다 — 없으면 params에만', async () => {
+      engine.topLevelReplayParams = [];
+      gameScoreRepository.findOne.mockResolvedValue({
+        scoreId: 41,
+        playerName: 'a',
+        score: 900,
+        detail: '{}',
+        durationMs: 1,
+        crtdAt: new Date(NOW),
+      } as GameScore);
+      gameReplayRepository.findOneBy.mockResolvedValue({
+        scoreId: 41,
+        gameType: 'TETRIS',
+        engineVersion: 1,
+        seed: 99,
+        replay: gzipSync(JSON.stringify({ frames: 600, inputs: [0, 0] })),
+        crtdAt: new Date(NOW),
+      });
+
+      const result = await service.getReplay('tetris', 41);
+
+      expect(result).toEqual(expect.objectContaining({ params: {}, frames: 600, inputs: [0, 0] }));
+      expect(result).not.toHaveProperty('das');
+      expect(result).not.toHaveProperty('arr');
+    });
+
+    it('공개하지 않는 보드(진행 중 주간)의 기록은 리플레이를 읽지 않고 404 GAME_SCORE_NOT_FOUND', async () => {
+      engine.isReplayPublic.mockReturnValue(false);
+      gameScoreRepository.findOne.mockResolvedValue({
+        scoreId: 41,
+        boardKey: 'weekly-2026-w43',
+        playerName: 'a',
+        score: 900,
+        detail: '{}',
+        durationMs: 1,
+        crtdAt: new Date(NOW),
+      } as GameScore);
+
+      await expect(service.getReplay('tetris', 41)).rejects.toMatchObject({
+        code: 'GAME_SCORE_NOT_FOUND',
+        status: 404,
+      });
+      expect(engine.isReplayPublic).toHaveBeenCalledWith('weekly-2026-w43', new Date(NOW));
+      expect(gameReplayRepository.findOneBy).not.toHaveBeenCalled();
     });
   });
 });

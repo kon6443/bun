@@ -173,7 +173,7 @@
 - **시점**: 웨이브 5·10·15… 클리어 직후(다음 웨이브 카운트다운 전). 선택하는 동안 **시뮬레이션 정지**(틱 진행 없음) — 선택은 명령 `PICK_AUGMENT(index 0~2)`로 그 틱에 기록. 선택 전에는 다음 명령을 받지 않는다
 - **후보 3장**: 세션 seed의 엔진 PRNG로 뽑는다(같은 seed·같은 선택 이력 = 같은 후보). 리롤 없음(1차)
   - 희귀도 가중치: 일반 70 · 희귀 25 · 전설 5 (정수 가중치)
-  - **보장 규칙**(운 편차 완화): 3장 중 최소 1장은 "현재 보유 타워 종류"에 관련된 카드(**무한 모드만** — 주간은 전원 동일 후보를 위해 끈다, §E1) · 같은 카드 중복 제시 없음 · 전설은 15웨이브 이후만 · 희귀 이상이 3회 연속 안 나오면 다음 제시에 1장 보장
+  - **보장 규칙**(운 편차 완화): 3장 중 최소 1장은 "현재 보유 타워 종류"에 관련된 카드(**무한 모드만** — 주간은 전원 동일 후보를 위해 끈다, §E1) · 같은 카드 중복 제시 없음 · 전설은 **(제시 순번 + 1) × 제시 주기 ≥ 15**일 때만(클리어 순서와 무관하게 순번 기준) · 희귀 이상이 3회 연속 안 나오면 다음 제시에 1장 보장 · **후보는 목숨과 무관**(누수로 후보를 바꾸는 리롤 방지) · 보장 규칙은 마지막 장을 교체(희귀 보장 장은 유지) (E2 구현, D-028)
 - **카드 종류**(1차 24장 목표 — 수치·목록은 §C에서 확정):
 
 | 분류 | 예 | 장수 |
@@ -187,8 +187,8 @@
 - **효과 엔진**: 카드는 데이터(`effects: [{ target, stat, op, value }]` 정수 ‰) — 주간 규칙 변형(§L11)과 같은 엔진. 정의 스키마는 §C/§E
 
 ### §L11. 주간 도전 (D-011)
-- **주기**: 매주 KST 월요일 00:00 시작(기존 주간 랭킹 경계 `ranking-period.ts`와 같은 기준). 보드 `BOARD_KEY = 'weekly-YYYY-Www'`(ISO 주차, KST)
-- **판 구성**(전원 동일): 주간 seed = `HMAC-SHA256(서버 비밀, 'defense-weekly:' + 주차)` 하위 32비트(리서치 04 §5-4) — 서버만 계산, 세션 발급 시 내려준다
+- **주기**: 매주 KST 월요일 00:00 시작(기존 주간 랭킹 경계 `ranking-period.ts`와 같은 기준). 보드 `BOARD_KEY = 'weekly-YYYY-wNN'`(ISO 주차, KST)
+- **판 구성**(전원 동일): 주간 seed = `HMAC-SHA256(서버 비밀, 'defense-weekly:' + 보드 키)` 앞 4바이트(빅엔디언, `weekly-board.ts` `weeklySeed`) — 서버만 계산, 세션 발급 시 내려준다
   - **맵**: 캠페인 맵 8개 + 무한 맵 중 seed로 1개(무한 램프 규칙 적용 — 캠페인 맵을 재활용해 콘텐츠 비용 0)
   - **규칙 변형 2~3개**: 아래 풀에서 seed로 뽑되 상충 조합 금지 표 적용
   - **증강**: 같은 주간 seed로 후보가 결정 → 모두 같은 카드 제시(선택은 각자). 보유 타워 보장 규칙은 끈다(§E1)
@@ -396,7 +396,8 @@
 - **문법**: ES2020까지(백엔드 `tsconfig.json:3` target, 테트리스와 같은 문구) · **비트 연산은 PRNG·해시 함수 안에서만**(`| 0`·`>>>`는 2³¹ 이상을 잘라먹는다) · 음수가 될 수 있는 나눗셈 피연산자는 `Math.max(0, …)`로 클램프하고 테스트로 고정
 - **ESLint 규칙**(프론트 실측 — 금지 15종 검출, 허용 코드 오검출 0): `no-restricted-globals`(Date·performance·Map·Set·WeakMap·WeakSet·window·document) · `no-restricted-properties`(Object.keys/values/entries) · `no-restricted-syntax`(Math 허용목록 외 · 부동소수 리터럴 · `Math.floor` 밖의 `/`·`/=`·`**` · 인자 없는 `sort` · 상대경로 외 import). lint가 못 잡는 우회(`const M = Math` 별칭·`globalThis`·엔진 루트 밖 `../../` import)는 토큰 스캔 테스트가 잡는다
 - **좌표**: 1칸 = 1000 밀리타일. 경로는 정수 웨이포인트 폴리라인 + **구간 길이를 맵 데이터에 미리 계산해 정수로 저장**(런타임 sqrt 없음). 적 위치 = (경로 ID, 누적 이동 거리) → 화면 좌표는 구간 내 정수 선형 보간 `x0 + ⌊(x1−x0) × d / len⌋`. 사거리 판정은 거리 제곱 비교
-- **확률**: 시드 PRNG(mulberry32). **용도별 독립 스트림 3개** — `waveRng`(무한 모드 적 구성) · `augmentRng`(증강 후보) · `combatRng`(규칙 R5 분열 등 전투 중 확률). 각 스트림 시드 = `FNV-1a(seed, 용도 상수)`. 전투 확률이 증강 후보를 흔들지 않게 분리(주간 도전 전원 동일 후보 보장)
+- **나머지 연산 `%`**: 음수가 아닌 피연산자에만(음수면 부호가 언어마다 달라진다 — D-028)
+- **확률**: 시드 PRNG(mulberry32). **용도별 독립 스트림 3개** — `waveRng`(무한 모드 적 구성) · `augmentRng`(증강 후보) · `combatRng`(규칙 R5 분열 등 전투 중 확률). 각 스트림 시드 = `FNV-1a(seed, 용도 상수)`. 전투 확률이 증강 후보를 흔들지 않게 분리(주간 도전 전원 동일 후보 보장). **증강 제시는 제시마다 독립 시드** `FNV-1a(seed, AUGMENT, 제시 순번)` — 앞 제시의 선택·상태가 다음 후보를 바꾸지 않는다(E2 구현, D-028)
 - **주간 도전 증강**: 모두 같은 후보를 보도록 **"보유 타워 관련 1장 보장" 규칙은 주간에서 끈다**(플레이 상태에 따라 후보가 갈리지 않게) — §L10 보장 규칙은 무한 모드 한정
 
 ### §E2. 틱 처리 순서 (고정 — 바꾸면 버전 상승)
@@ -434,7 +435,8 @@
 ### §E4. `simulateReplay` 계약
 ```
 simulateReplay({ mode, boardKey, seed, ticks, inputs }): ReplayResult
-성공: { ok: true, score, wave, progress, kills, livesLeft, goldEarned, augments: number[], endTick, stateHash }
+성공: { ok: true, score, wave, progress, kills, livesLeft, goldEarned, wavesStarted, augments: number[], endTick, stateHash }
+  wavesStarted = 시작한 웨이브 수(1웨이브 호출·조기 호출·카운트다운 자동 시작 모두) — 0이면 서버가 NOT_STARTED로 거부(D-026)
 실패: { ok: false, reason }  reason ∈
   INVALID_HEADER   — mode·boardKey·seed·ticks 범위
   INVALID_INPUT    — 형식(홀짝·음수 delta·알 수 없는 op·인자 범위)
@@ -617,7 +619,7 @@ export interface GameEngine {
 }
 ```
 - 구현(I0-B1·I0-B2, `src/modules/games/game-engine.registry.ts`)과 같다. `ReplayInput.boardKey`는 세션 값(보드 도입 전 세션은 `defaultBoardKey`)
-- **B1으로 넘김**(I0-B2 리뷰): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로
+- **B1으로 넘김**(I0-B2 리뷰 — **B1-b에서 구현**: ① `isPeriodRanking(boardKey)` ② `topLevelReplayParams` ③ `defense-verify.ts`·`defense-verify.worker.ts`): ① 주간 보드는 기간(`period`) 필터를 쓰지 않는 규칙 — 보드별 플래그로 ② `getReplay`의 `gameType === 'TETRIS'` 분기(최상위 das·arr)를 엔진 쪽 선택 필드로 ③ (브랜치 최종 리뷰) **엔진이 던진 예외 = 재현 실패(`ok: false`, 세션 소모)**, 워커 인프라 오류(대기열·시간 초과·워커 크래시·워커 처리 실패)만 throw → 503 — 결정적 예외가 503 + 세션 유지로 무한 재시도되지 않게. **워커 답 규약**: 디펜스 워커 스크립트는 `simulateReplay` 결과와 엔진 예외를 잡아 항상 `{ id, ok: true, result: VerifiedReplay }`(재현 실패면 `result.ok === false`)로 답하고, `{ ok: false }`는 워커 자체 처리 실패에만 쓴다(`verify-worker-pool.ts` 머리 주석)
 - `VerifiedReplay`·`detail: Record<string, number>`는 유지(디펜스 detail: `wave·progress·kills·livesLeft·goldEarned·engineVersion`, 증강·주간 규칙 ID는 재생 응답에서 엔진이 다시 계산)
 - 테트리스: `resolveSessionBoard`는 본문 없을 때 `default`만, `params`는 DTO 최상위 `das`·`arr`를 서비스가 옮겨 담는다
 
@@ -625,7 +627,7 @@ export interface GameEngine {
 - `GameSession`에 `boardKey` 추가. Redis 키·GETDEL 방식은 그대로(`game-session.service.ts`)
 - `POST /games/:gameType/sessions` — 본문 선택 `{ board?: 'endless' | 'weekly' }`(테트리스는 본문 없음 그대로, 보내면 422). 서버가 엔진 `resolveSessionBoard(board, now)`로 키·seed 결정(I0-B2 구현 — 레지스트리 `defaultBoardKey`·`resolveSessionBoard`·`isRankingBoard`·`listBoards`):
   - 무한: `boardKey = 'endless-s{현재 시즌}'`, seed = `randomInt`(현행)
-  - 주간: `boardKey = 'weekly-{KST ISO 주차}'`, seed = `HMAC-SHA256(GAME_WEEKLY_SEED_SECRET, 'defense-weekly:' + 주차)` 하위 32비트 — 전원 동일(§L11). **env 미설정이면 주간만 503 `GAME_WEEKLY_UNAVAILABLE`**(무한·테트리스 영향 없음)
+  - 주간: `boardKey = 'weekly-{KST ISO 주차}'`, seed = `HMAC-SHA256(GAME_WEEKLY_SEED_SECRET, 'defense-weekly:' + 보드 키)` 앞 4바이트(BE, `weeklySeed`) — 전원 동일(§L11). **env 미설정이면 주간만 503 `GAME_WEEKLY_UNAVAILABLE`**(무한·테트리스 영향 없음)
   - 주차 경계는 `ranking-period.ts`와 같은 KST 월요일 00:00. **세션 발급 시점의 주 보드**로 등록(자정 넘어 끝나도 그 주)
 - 응답 필드 추가: `boardKey`·`mode`(테트리스는 `default`·`null` — 추가만, 기존 필드 불변)
 - **TTL(벽시계)**: 디펜스 4시간 — 게임 시간 상한 90분(§E5) + 일시정지·증강 대기 여유. 판 도중 세션 갱신은 불가(seed가 판에 묶임) → 프론트가 만료 30분 전 "등록하려면 시간 안에 끝내야 해요" 안내(§F). Redis 키 약 200B — 퇴출 위험 수용 판단은 테트리스와 같음(games D-015)
@@ -669,9 +671,10 @@ export interface GameEngine {
 - 서버 `.env`에 담당자가 추가(`docker-stack.app.yml` `env_file`) — 시크릿 값은 문서·코드·커밋에 쓰지 않는다
 
 ### §B8. 남은 항목 게이트 (DoD 6)
-- **머지 전 차단**: M1~M3 실행(담당자) · `GAME_WEEKLY_SEED_SECRET` 서버 반영(없으면 주간 비활성으로 배포는 가능 — 사용자 판단)
+- **머지 전 차단**: M1~M3 실행(담당자) ✅ 2026-10-21 · `GAME_WEEKLY_SEED_SECRET` 서버 반영 ✅ 2026-10-22(사용자 — fs-01 `.env`, 로컬 worktree `.env`와 같은 값. 다음 배포 때 적용)
 - **배포 직후 조치**: 운영 Redis로 디펜스 세션 발급·제출 1회 · 워커 검증 시간 실측(WORKLOG) · 테트리스 제출·랭킹 회귀 1회
 - **후속**: 오래된 주간 보드 리플레이 보관 정책(용량 실측 후)
+- **(B1-b 리뷰 추가)** 머지 전 판단: B1-b만 배포하면 DEFENSE 세션·제출 API가 열리지만 S1 전 엔진은 무한·주간을 재현하지 못해 제출이 전부 422(세션 소모) — **S1 사본 동기화 후 함께 배포**가 기본 · 배포 직후: 결정적으로 5초를 넘는 리플레이는 503 + 세션 유지로 재시도가 반복된다(워커 점유) — §E5 (b) 백엔드 실측으로 상한 2초 이내 확인, 넘으면 같은 세션 타임아웃 반복 시 소모·422 도입 · ✅ 진행 중인 주간 보드의 리플레이는 보드 종료 + 세션 TTL(4시간) 전까지 404(D-027·D-032, 레지스트리 `isReplayPublic`) — 랭킹·기록 요약(입력 없음)은 그대로 공개
 
 ---
 
@@ -742,6 +745,7 @@ export interface GameEngine {
 ### §F9. 사운드 (WebAudio 합성)
 - 효과음: 발사(타워별 6) · 명중(물리·마법) · 폭발 · 원소 효과 4 · 적 사망 · 누수 경고 · 웨이브 시작 · 보스 등장 · 건설·업그레이드·판매 · 증강 카드 · 승리·패배
 - 같은 소리 동시 재생 상한·볼륨 자동 감쇠(대량 발사 시 소음 방지), 배속에 따라 발사음 솎아내기. 음소거·볼륨은 설정 저장
+- **기본 꺼짐**(사용자 결정 2026-10-22): 플레이 HUD 상단(배속·일시정지 옆)에 음소거 토글 상시 노출, 선택은 로컬 저장·설정의 효과음과 같은 값. WebAudio는 사용자가 켤 때 처음 만든다(꺼진 상태에선 오디오 리소스·autoplay 경고 없음)
 
 ### §F9b. 세션·이어하기 (프론트 §B 확인 반영)
 - **세션 발급 시점**: "모드 선택(무한/주간) → 세션 발급 → 시작"(본문 `board`가 모드를 정하므로 화면 진입 시 미리 받지 않는다). `/boards`의 `weekly`가 null이면 주간 버튼 비활성
@@ -752,7 +756,7 @@ export interface GameEngine {
 ### §F10. 기술 설계 (`next-bun-1b` 제안 2026-10-21 — 근거 파일:라인은 WORKLOG 같은 날 절)
 **라우트** (BNB 보임 / 숨김)
 - 보임: `/games/defense`(허브) · `/campaign`(지도·브리핑) · `/rankings?board=` · `/codex`(도감)
-- 숨김 `(fullscreen)/`: `play/stage/[stageId]` · `play/endless` · `play/weekly` · `replays/[scoreId]`(서버 기록) · `replays/local/[stageId]`(캠페인 로컬)
+- 숨김 `(fullscreen)/`: `play/stage/[boardKey]` · `play/endless` · `play/weekly` · `replays/[scoreId]`(서버 기록) · `replays/local/[stageId]`(캠페인 로컬)
 - `/games/defense/dev` 성능 측정 화면 — 운영 빌드에선 `notFound()`(D-020)
 - BNB 숨김 판정 `gamesPaths.ts`를 `/^\/games\/[^/]+\/(play|replays)(\/|$)/` + `/fishing`으로 일반화(I0)
 
@@ -817,9 +821,10 @@ export interface GameEngine {
 | I0-B2 | 스키마·보드 | 백 | 마이그레이션 M1~M3(§B1) + Entity `boardKey` + 세션·랭킹·요약·리플레이 `boardKey`·`board` 파라미터 · `/boards`(테트리스는 `default`) | 단위·E2E · 마이그레이션 tsc | **머지 전 차단: 담당자 M1~M3 실행** |
 | E1 | 엔진 뼈대(수직 1조각) | 프(원본) | 엔진 폴더·ESLint 한정 규칙·토큰 스캔·매니페스트 · 9×15 맵 1개·경로·슬롯 · PRNG 3스트림 · 틱 10단계 · 명령 로그 · `simulateReplay` · 궁수탑 Lv1~3 + 졸개만 · 골든 최소 | 결정성·골든·매니페스트·실패 6종 · perf (a) 초기 실측 | — |
 | R1 | 렌더러 프로토 + 실기기 측정 | 프 | 2캔버스·toRenderView·보간·파티클 풀 · `/games/defense/dev` 합성 장면·계측 오버레이 | **실기기(아이폰·저사양 안드로이드) FPS·그리기 ms → WORKLOG** · 예산 미달이면 자동 품질 단계 조정 | E1과 병렬 가능 |
-| E2 | 엔진 전투 전체 | 프 | 타워 6(분기·궁극) · 적 11(보스 페이즈) · 상태효과 6 · 효과 엔진 · 증강 24 · 주간 규칙 15 · `earlyCallBonus`·`sellRefund` | 효과별 단위 · `tower_curve_check` 대응 실측 · 골든 확장 · perf (a)(b) | — |
+| E2 ✅ | 엔진 전투 전체 (ENGINE_VERSION 2, D-028) | 프 | 타워 6(분기·궁극) · 적 11(보스 페이즈) · 상태효과 6 · 효과 엔진 · 증강 24 · 주간 규칙 15 · `earlyCallBonus`·`sellRefund` | 효과별 단위 · `tower_curve_check` 대응 실측 · 골든 확장 · perf (a)(b) | — |
 | S1 | 시뮬레이터·웨이브 생성 | 프 | 러너·봇 4종·임계 배율 탐색 · 캠페인 8스테이지 맵·웨이브 데이터 · 무한 설계 웨이브 1~30 · 주간 허용 목록 | §L8 지표 대역 보고서(WORKLOG) · CI 스모크 | 사용자에게 밸런스 보고서 공유 |
 | B1 | 백엔드 디펜스 | 백 | 엔진 사본 + 매니페스트 spec + 골든 spec · 검증 워커(§B5) · 보드 해석·주간 seed(env) | 골든 백·프 일치 · 워커 E2E·타임아웃·대기열 · 실측 검증 시간 | 머지 전: `GAME_WEEKLY_SEED_SECRET` 서버 반영(또는 주간 비활성 배포 판단) |
+| O1 | 엔진 성능 최적화 (D-028) | 프(원본) | perf (b) ≤ 2.0초 — 적 데이터 배치·표적 탐색 버킷 등. 결과 불변(골든 해시 동일 또는 버전 정책) | perf (a)(b) 재측정 · 골든 · **백엔드 사본으로 (b) ≤ 워커 타임아웃(5초)의 절반**(B1-c 리뷰 — 타임아웃은 503·세션 유지라 상한 근처 입력 반복 제출이 워커를 묶는다) | **서버 디펜스 배포 전 차단** |
 | F1 | 캠페인 플레이 | 프 | useDefensePlay·HUD·링 메뉴·브리핑·튜토리얼·결과·로컬 다시보기·이어하기·사운드·설정·허브·지도 | 훅·컴포넌트 단위 · 메인 Playwright(S1 클리어) · 실기기 체크리스트 | — |
 | F2 | 무한·주간·등록·랭킹 | 프 | 세션 흐름·만료 안내·증강 UI·등록(BUSY 재시도)·랭킹(보드·시즌·주간) | 실API(세션→제출→순위) · Playwright | B1 배포 선행 |
 | F3 | 재생기·공유 | 프 | 재생기(스냅샷·명령 타임라인·구버전 동적 import 구조) · 공유(재생기·결과 화면)·OG 카드 | Playwright(공유·OG 200) · 실기기 카톡 카드(사용자) | — |

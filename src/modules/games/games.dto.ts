@@ -42,7 +42,10 @@ const BOARD_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 
 /** 세션 발급 — 본문 없이 보내면 게임 기본 보드 (defense DESIGN §B3) */
 export class CreateGameSessionDto {
-  @ApiPropertyOptional({ description: '플레이 방식 — DEFENSE: endless·weekly. TETRIS는 보내지 않는다(보내면 422)', example: 'endless' })
+  @ApiPropertyOptional({
+    description: '플레이 방식 — DEFENSE: endless(생략 시 기본)·weekly. TETRIS는 보내지 않는다(보내면 422)',
+    example: 'endless',
+  })
   @IsOptional()
   @IsString()
   @Matches(/^[a-z]{1,20}$/, { message: 'board는 영문 소문자 1~20자여야 합니다.' })
@@ -75,7 +78,10 @@ export class ReplayDto {
   @IsObject()
   params?: Record<string, number>;
 
-  @ApiProperty({ description: `게임 종료 틱 수 (1~${GAME_REPLAY_MAX_FRAMES}, 게임별 틱레이트 — TETRIS 60fps). 게임별 상한은 서버가 다시 검사`, example: 7200 })
+  @ApiProperty({
+    description: `게임 종료 틱 수 (1~${GAME_REPLAY_MAX_FRAMES}, 게임별 틱레이트 — TETRIS 60fps · DEFENSE 30틱/초). 게임별 상한은 서버가 다시 검사`,
+    example: 7200,
+  })
   @IsInt()
   @Min(1)
   @Max(GAME_REPLAY_MAX_FRAMES)
@@ -116,12 +122,21 @@ export class SubmitGameScoreDto {
 }
 
 export class GetRankingsQueryDto {
-  @ApiPropertyOptional({ description: '기간 — daily(KST 오늘)·weekly(KST 이번 주 월요일부터)·all', enum: RANKING_PERIODS, example: 'weekly' })
+  @ApiPropertyOptional({
+    description:
+      '기간 — daily(KST 오늘)·weekly(KST 이번 주 월요일부터)·all. 보드 자체가 1주인 DEFENSE 주간 보드는 무시',
+    enum: RANKING_PERIODS,
+    example: 'weekly',
+  })
   @IsOptional()
   @IsIn(RANKING_PERIODS, { message: `period는 ${RANKING_PERIODS.join(', ')} 중 하나여야 합니다.` })
   period?: RankingPeriod;
 
-  @ApiPropertyOptional({ description: '랭킹 보드 키 — 생략하면 게임 기본 보드(TETRIS default). 목록은 GET /games/:gameType/boards', example: 'default' })
+  @ApiPropertyOptional({
+    description:
+      '랭킹 보드 키 — 생략하면 게임 기본 보드(TETRIS default · DEFENSE 현재 무한 시즌). 목록은 GET /games/:gameType/boards',
+    example: 'default',
+  })
   @IsOptional()
   @IsString()
   @Matches(BOARD_KEY_PATTERN, { message: 'board는 소문자·숫자·하이픈 1~40자여야 합니다.' })
@@ -147,7 +162,10 @@ export class GameSessionDto {
   @ApiProperty({ description: '서버가 받는 엔진 버전', example: 1 })
   engineVersion: number;
 
-  @ApiProperty({ description: '이 판이 등록될 랭킹 보드 (TETRIS default)', example: 'default' })
+  @ApiProperty({
+    description: '이 판이 등록될 랭킹 보드 (TETRIS default · DEFENSE endless-s{N}·weekly-YYYY-wNN)',
+    example: 'default',
+  })
   boardKey: string;
 
   @ApiProperty({ description: '플레이 방식 — TETRIS null, DEFENSE endless·weekly', type: String, nullable: true, example: null })
@@ -157,10 +175,17 @@ export class GameSessionDto {
   expiresAt: Date;
 }
 
+/** 기간 필터를 쓰지 않는 보드(DEFENSE 주간)는 세 값 모두 보드 전체 순위로 같다 */
 export class GameRanksDto {
-  @ApiProperty({ example: 3 }) daily: number;
-  @ApiProperty({ example: 12 }) weekly: number;
-  @ApiProperty({ example: 120 }) all: number;
+  @ApiProperty({
+    description: '기간별 순위 — DEFENSE 주간 보드는 daily·weekly·all 모두 보드 전체 순위(같은 값)',
+    example: 3,
+  })
+  daily: number;
+  @ApiProperty({ description: 'DEFENSE 주간 보드는 보드 전체 순위(daily와 같은 값)', example: 12 })
+  weekly: number;
+  @ApiProperty({ description: 'DEFENSE 주간 보드는 보드 전체 순위(daily와 같은 값)', example: 120 })
+  all: number;
 }
 
 export class GameScoreSubmittedDto {
@@ -170,7 +195,11 @@ export class GameScoreSubmittedDto {
   @ApiProperty({ description: '서버가 리플레이로 계산한 점수', example: 12340 })
   score: number;
 
-  @ApiProperty({ description: '게임별 상세 값 — TETRIS: lines·level·pieces·tSpins·tetrises·maxCombo·engineVersion·das·arr', type: Object })
+  @ApiProperty({
+    description:
+      '게임별 상세 값 — TETRIS: lines·level·pieces·tSpins·tetrises·maxCombo·engineVersion·das·arr · DEFENSE: wave·progress·kills·livesLeft·goldEarned·engineVersion',
+    type: Object,
+  })
   detail: Record<string, unknown>;
 
   @ApiProperty({ description: '등록 직후 기간별 순위 — 순위 계산만 실패하면 null(등록은 성공)', type: GameRanksDto, nullable: true })
@@ -200,7 +229,12 @@ export class GameReplayDetailDto extends RankingItemDto {
   @ApiProperty({ description: '시드', example: 123456789 }) seed: number;
   @ApiPropertyOptional({ description: 'TETRIS 전용 — DAS (프레임)', example: 10 }) das?: number;
   @ApiPropertyOptional({ description: 'TETRIS 전용 — ARR (프레임)', example: 2 }) arr?: number;
-  @ApiProperty({ description: '게임별 리플레이 설정 — TETRIS { das, arr }', type: Object, example: { das: 10, arr: 2 } }) params: Record<string, number>;
+  @ApiProperty({
+    description: '게임별 리플레이 설정 — TETRIS { das, arr } · DEFENSE {}',
+    type: Object,
+    example: { das: 10, arr: 2 },
+  })
+  params: Record<string, number>;
   @ApiProperty({ description: '게임 종료 틱 수 (게임별 틱레이트)', example: 7200 }) frames: number;
   @ApiProperty({ description: '입력 로그 [deltaFrame, actionCode, ...]', type: [Number] }) inputs: number[];
 }
