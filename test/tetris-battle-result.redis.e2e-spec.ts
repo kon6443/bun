@@ -21,6 +21,9 @@ import {
 import golden from '../src/modules/tetris-battle/battle-engine/__fixtures__/golden-battle-replays.json';
 import { createMockRepository } from '../src/common/__spec__/mock-repository';
 
+/** 공격 상한 검사(games-polish BT-01)를 넉넉히 통과하는 고정(공격표 14) — 이 스펙은 Lua 라우팅·기록만 본다 */
+const LOCK_ATTACK_ROOM = { lines: 4, tSpin: 'none' as const, pc: true };
+
 /**
  * 실제 Redis 대상 경기 후 검증(P5) — **opt-in** (`TETRIS_BATTLE_REDIS_TEST_PORT`).
  * 로컬: `TETRIS_BATTLE_REDIS_TEST_PORT=6380 npx jest --config ./test/jest-e2e.json --testPathPatterns 'test/tetris-battle-'`
@@ -118,7 +121,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
   it('lock Lua가 sent > 0인 lock만 "seq:sent"로 기록한다 — 중복·거부 lock은 기록하지 않는다, TTL 있음', async () => {
     const { code, matchId } = await start();
     const lock = (seq: number, frame: number, sent: number) =>
-      room.lock(code, who(1).socketId, { matchId, seq, frame, sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+      room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq, frame, sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
 
     await lock(1, 10, 0);
     await lock(2, 20, 3);
@@ -135,7 +138,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
 
   it('가비지 로그에 보낸 Redis 시각(at)을 남기고, 탈락 Redis 시각(koClock)을 남긴다 — 재연결 missedGarbage에는 at이 없다 (D-022)', async () => {
     const { code, matchId } = await start();
-    await room.lock(code, who(1).socketId, { matchId, seq: 1, frame: 10, sent: 2, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+    await room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq: 1, frame: 10, sent: 2, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
     const [sec] = await client.time();
 
     const log = await store.garbageLog(client, matchId, 'p2');
@@ -213,7 +216,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     const { code, matchId, tokens } = await start();
     await client.hset(matchKey(matchId), 'seed', String(replay.seed)); // 골든 seed로 맞춘다
     for (const l of locks) {
-      await room.lock(code, who(1).socketId, { matchId, seq: l.seq, frame: l.frame, sent: l.sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+      await room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq: l.seq, frame: l.frame, sent: l.sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
     }
     await room.topOut(code, who(1).socketId, { matchId, frame: topOutFrame as number }, T0); // p1 탈락 → p2 우승·종료
 
