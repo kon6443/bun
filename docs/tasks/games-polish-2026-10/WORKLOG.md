@@ -281,3 +281,15 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
   - Q-D2: 무한 시즌은 상수 `DEFENSE_ENDLESS_SEASON`(defense-game-engine.ts:7)을 배포로 올릴 때만 바뀐다. `/boards`는 시즌 N..1을 모두 주고 `current: true`인 무한 보드는 항상 1개. 주간 키는 KST 월요일 00:00 경계 + ISO 8601 주차(weekly-board.ts:19) — 프론트 `weeklyBoardKeyAt`이 같은 규칙이면 일치
   - Q-D3: 세션 발급 오류는 404 GAME_NOT_FOUND · 422 VALIDATION_ERROR(지원하지 않는 방식) · 503 GAME_SESSION_UNAVAILABLE · 503 GAME_WEEKLY_UNAVAILABLE 뿐(점검 코드 없음)
   - Q-D4: 주간 시크릿이 없으면 `/boards`에서 주간 보드가 빠지고 주간 세션은 503 → 목록에 주간이 없으면 주간 시작을 막는 것이 맞다. 목록 조회 자체가 실패했을 때는 막지 않고 세션 발급 결과(503)로 판단해도 서버 쪽 문제는 없다
+
+## 2026-10-23 — P5 `ux`·P6 `refactor` 백엔드 구현 (프론트 P2 진행 중 병행)
+| ID | 변경 | 검증 |
+|---|---|---|
+| BD-07 | `computeRanks` 기간별 COUNT 3개 `Promise.all` | 기존 순위 테스트 그대로 통과(동작 무변경) |
+| BD-06 | 리플레이 GET **성공 응답만** `Cache-Control: public, max-age=60`(`GAME_REPLAY_CACHE_MAX_AGE_SECONDS`). 랭킹·보드는 등록 직후 내 기록이 보여야 해서 캐시 안 함, 공개 전 404도 캐시 안 함 | E2E: 200에 헤더 · 주간 공개 전 404엔 없음 |
+| BD-10 | 세션 `boardKey` 필수, `?? defaultBoardKey` 폴백·테스트 제거(보드 도입 직후 세션용, 도달 불가). `userId`는 기록용 주석 | 단위 통과 |
+| BT-09 | `finalizeIfDue`가 `isSaved`(HEXISTS) 먼저 → 저장된 경기 조회는 HGETALL 안 함. 클래스 JSDoc 위치 정정 | 단위: 저장된 경기 → snapshot 미호출 |
+| BD-15·BT-12 | Entity·Swagger 주석 정정(리플레이 본문·DURATION 틱레이트·seed·DISPUTED 공개) | — |
+
+- 이번 태스크에서 하지 않음(근거): **BT-10**(대전 저장 bulk insert — 재저장 UPDATE 경로 때문에 save 사용, 측정 없이 바꾸지 않음) · **BT-11**(소켓 상태 에러코드 신설 — 계약 추가 대비 이득 작음) · **BD-11 판정 일원화**(4곳 정규식 — 기존 테스트가 실제 위험을 막음) · **BD-09**(엔진 사본 핫패스 — 원본·매니페스트·골든 동기화 필요, 실측 여유 큼) · **BD-12**(테트리스 인프로세스 검증 — 최악 실측 먼저) · DB 컬럼 코멘트 정정(새 COMMENT 마이그레이션이 필요해 이득 대비 실행 부담) · BT-06·BT-14(P1 절)
+- 검증: lint 0 errors·경고 6 · 단위 1581/1581 · E2E games 58/58(sandbox 밖)
