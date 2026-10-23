@@ -117,6 +117,11 @@ export const LOCK_FRAME_SLACK = 120;
 /** 리플레이 제출 마감 — 경기 종료 후 이 시간이 지나면 410, 미제출자는 MISSING으로 저장 (DESIGN §17-1) */
 export const REPLAY_SUBMIT_DEADLINE_MS = 60_000;
 
+/** 저장 대기 스윕(games-polish BT-05) — 1회에 확인하는 최대 매치 수. 주기는 result.service의 @Cron(30초) */
+export const PENDING_SAVE_SWEEP_LIMIT = 20;
+/** 스윕을 돌리는 ENV — scheduler.service와 같은 화이트리스트(LOCAL은 메모리 깨우기만) */
+export const PENDING_SAVE_SWEEP_ENVS: readonly string[] = ['QA', 'PROD'];
+
 /**
  * 경기 후 검증의 가비지 누락 허용 폭(D-022·리뷰 L4) — 탈락·종료 시각 이 시간 전부터 보낸 가비지만 리플레이에서 빠져도 된다.
  * 근거: 서버 시각은 "탈락 보고·종료 판정이 서버에 도착한 때"라 실제 클라이언트 판이 끝난 때보다 **왕복 지연만큼 늦다**.

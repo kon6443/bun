@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { createHash } from 'crypto';
 import { DataSource } from 'typeorm';
@@ -233,6 +234,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const submit = (token: string, r: BattleReplayInput) =>
       result.submitReplay({ matchId, playerToken: token, replay: r, userId: null, now: T0 + 1_000 });
@@ -264,6 +266,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
 
@@ -314,6 +317,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
     // 리플레이 내용은 이 경기와 무관해 INVALID지만, 인증(토큰)은 통과해야 한다

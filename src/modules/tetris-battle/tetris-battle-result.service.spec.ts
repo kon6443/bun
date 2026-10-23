@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -83,7 +84,11 @@ describe('TetrisBattleResultService', () => {
     | 'releaseSave'
     | 'isClosed'
     | 'claimVerification'
-    | 'releaseVerification',
+    | 'releaseVerification'
+    | 'markPendingSave'
+    | 'duePendingSaves'
+    | 'clearPendingSave'
+    | 'exists',
     jest.SpyInstance
   >;
   let subs: Record<string, string>;
@@ -131,6 +136,10 @@ describe('TetrisBattleResultService', () => {
       isClosed: jest.spyOn(proto, 'isClosed').mockImplementation(async () => closed),
       claimVerification: jest.spyOn(proto, 'claimVerification').mockResolvedValue(true),
       releaseVerification: jest.spyOn(proto, 'releaseVerification').mockResolvedValue(undefined),
+      markPendingSave: jest.spyOn(proto, 'markPendingSave').mockResolvedValue(undefined),
+      duePendingSaves: jest.spyOn(proto, 'duePendingSaves').mockResolvedValue([]),
+      clearPendingSave: jest.spyOn(proto, 'clearPendingSave').mockResolvedValue(undefined),
+      exists: jest.spyOn(proto, 'exists').mockResolvedValue(true),
     };
 
     matchRepository = createMockRepository<TetrisBattleMatch>();
@@ -156,15 +165,19 @@ describe('TetrisBattleResultService', () => {
       setMatchFinishedListener: (listener: (matchId: string) => void) => (matchFinished = listener),
       scheduleWake: (task: () => Promise<void>, delayMs: number) => wakes.push({ task, delayMs }),
     } as unknown as TetrisBattleRoomService;
-    service = new TetrisBattleResultService(
+    service = createService(roomService, { ENV: 'PROD', TASK_SLOT: 1 });
+  });
+
+  const createService = (roomService: TetrisBattleRoomService, env: Record<string, unknown>) =>
+    new TetrisBattleResultService(
       roomService,
       matchRepository as never,
       playerRepository as never,
       replayRepository as never,
       userRepository as never,
       { transaction } as unknown as DataSource,
+      { get: (key: string) => env[key] } as unknown as ConfigService,
     );
-  });
 
   afterEach(() => jest.restoreAllMocks());
 
@@ -179,6 +192,58 @@ describe('TetrisBattleResultService', () => {
 
       expect(store.claimSave).toHaveBeenCalled();
       expect(transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('저장 대기 스윕 (games-polish BT-05 — 깨우기 타이머가 레플리카 재시작으로 사라져도 저장)', () => {
+    const due = T_END + REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS;
+
+    it('매치가 끝나면 Redis 저장 대기에도 마감 시각으로 올린다', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T_END);
+      matchFinished?.(MATCH);
+      now.mockRestore();
+      await Promise.resolve();
+      expect(store.markPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH, due);
+    });
+
+    it('마감 지난 대기 매치를 저장하고, 저장됐으면 대기에서 뺀다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      store.isSaved.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(transaction).toHaveBeenCalled();
+      expect(store.clearPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH);
+    });
+
+    it('저장이 실패하면 대기에 남겨 다음 스윕이 다시 시도한다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      transaction.mockRejectedValueOnce(new Error('ORA-12516'));
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(store.releaseSave).toHaveBeenCalled();
+      expect(store.clearPendingSave).not.toHaveBeenCalled();
+    });
+
+    it('매치가 TTL로 사라졌으면 저장 없이 대기에서 뺀다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      store.snapshot.mockResolvedValueOnce(null);
+      store.exists.mockResolvedValueOnce(false);
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(transaction).not.toHaveBeenCalled();
+      expect(store.clearPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH);
+    });
+
+    it.each([
+      ['LOCAL', { ENV: 'local', TASK_SLOT: 1 }],
+      ['TASK_SLOT 2', { ENV: 'PROD', TASK_SLOT: 2 }],
+    ])('%s 레플리카는 스윕하지 않는다(2단 가드)', async (_label, env) => {
+      const roomService = { readyRedisClient: () => ({}) as never, setMatchFinishedListener: () => undefined } as unknown as TetrisBattleRoomService;
+      await createService(roomService, env).sweepPendingSaves(due + 1);
+      expect(store.duePendingSaves).not.toHaveBeenCalled();
     });
   });
 
