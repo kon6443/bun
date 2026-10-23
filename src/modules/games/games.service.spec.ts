@@ -461,7 +461,7 @@ describe('GamesService', () => {
       });
     });
 
-    it('기록의 보드는 세션이 정한 값 — 보드 도입 전 세션(boardKey 없음)은 게임 기본 보드', async () => {
+    it('기록의 보드는 세션이 정한 값', async () => {
       gameSessionService.getSession.mockResolvedValue(session({ boardKey: 'weekly-2026-w43' }));
       const qb = createMockQueryBuilder({ getCount: 0 });
       gameScoreRepository.createQueryBuilder.mockReturnValue(qb as never);
@@ -471,10 +471,6 @@ describe('GamesService', () => {
       expect(engine.verify).toHaveBeenCalledWith(expect.objectContaining({ boardKey: 'weekly-2026-w43' }));
       expect(qb.andWhere).toHaveBeenCalledWith('s.boardKey = :boardKey', { boardKey: 'weekly-2026-w43' });
 
-      manager.save.mockClear();
-      gameSessionService.getSession.mockResolvedValue(session({ boardKey: undefined }));
-      await submit();
-      expect(savedScore().boardKey).toBe('default');
     });
 
     it('순위 계산만 실패하면 ranks: null로 201을 지켜야 함 (기록은 이미 커밋, 세션 소모됨)', async () => {

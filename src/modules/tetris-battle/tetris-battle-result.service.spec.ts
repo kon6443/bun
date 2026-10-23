@@ -208,7 +208,7 @@ describe('TetrisBattleResultService', () => {
 
     it('마감 지난 대기 매치를 저장하고, 저장됐으면 대기에서 뺀다', async () => {
       store.duePendingSaves.mockResolvedValueOnce([MATCH]);
-      store.isSaved.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      store.isSaved.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
       await service.sweepPendingSaves(due + 1);
 
@@ -244,6 +244,15 @@ describe('TetrisBattleResultService', () => {
       const roomService = { readyRedisClient: () => ({}) as never, setMatchFinishedListener: () => undefined } as unknown as TetrisBattleRoomService;
       await createService(roomService, env).sweepPendingSaves(due + 1);
       expect(store.duePendingSaves).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('조회 계기 저장 (games-polish BT-09)', () => {
+    it('이미 저장된 경기는 매치 Hash를 읽지 않는다', async () => {
+      store.isSaved.mockResolvedValue(true);
+      matchRepository.findOne.mockResolvedValue(null);
+      await service.getMatch(MATCH, T_END + REPLAY_SUBMIT_DEADLINE_MS + 1).catch(() => undefined);
+      expect(store.snapshot).not.toHaveBeenCalled();
     });
   });
 

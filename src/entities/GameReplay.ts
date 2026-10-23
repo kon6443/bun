@@ -23,7 +23,7 @@ export class GameReplay {
   @Column({ name: 'SEED', type: 'number' })
   seed: number;
 
-  // das·arr·frames·inputs JSON을 gzip한 바이너리
+  // 리플레이 본문 JSON을 gzip한 바이너리 — 게임별 params(테트리스 das·arr) + frames·inputs. seed·엔진 버전은 컬럼에 따로
   @Column({ name: 'REPLAY', type: 'blob' })
   replay: Buffer;
 

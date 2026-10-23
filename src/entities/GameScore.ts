@@ -36,6 +36,7 @@ export class GameScore {
   @Column({ name: 'USER_ID', type: 'number', nullable: true })
   userId: number | null;
 
+  // 게임 시간(ms) = 리플레이 프레임 수 × 1000 / 엔진 틱레이트(테트리스 60·디펜스 30). DB 컬럼 코멘트의 '/ 60'은 테트리스 기준 서술
   @Column({ name: 'DURATION_MS', type: 'number' })
   durationMs: number;
 

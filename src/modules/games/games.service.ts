@@ -193,8 +193,8 @@ export class GamesService {
       throw new GameReplayInvalidErrorResponseDto({ details: { reason: 'ELAPSED_TIME' } });
     }
 
-    // 보드는 세션이 정한 값 — 보드 도입 전에 발급된 세션은 게임 기본 보드
-    const boardKey = session.boardKey ?? engine.defaultBoardKey;
+    // 보드는 세션이 정한 값
+    const boardKey = session.boardKey;
     const storedReplay: StoredReplay = { ...params, frames, inputs };
     // 같은 보드에 같은 리플레이는 한 번만(D-003) — 검증(CPU) 전에 걸러 낸다. 동시 제출은 유니크 인덱스가 막는다
     const replayHash = hashReplay(gameType, boardKey, session.seed, storedReplay);

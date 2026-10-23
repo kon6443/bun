@@ -61,6 +61,11 @@ interface StoredReplayBody {
 const PLAYER_ID_PATTERN = /^p\d{1,6}$/;
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
 
+/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
+const isForeignKeyViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
+
+
 /**
  * 테트리스 대전 경기 후 검증·결과 저장·조회 (docs/tasks/tetris-battle DESIGN §17, D-021)
  *
@@ -70,10 +75,6 @@ const sha256Hex = (value: string) => createHash('sha256').update(value).digest('
  *   미제출은 MISSING. INVALID가 하나라도 있으면 경기 DISPUTED(표시용). 저장 실패면 가드를 풀어 다음 계기에 다시 시도한다
  * - 조회: 숨김 아님이면 DISPUTED도 공개(tetris-audit D-004 — 검증 실패는 참가자 단위). 재생은 VERIFIED 참가자만
  */
-/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
-const isForeignKeyViolation = (error: unknown): boolean =>
-  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
-
 @Injectable()
 export class TetrisBattleResultService {
   private readonly logger = new Logger(TetrisBattleResultService.name);
@@ -346,6 +347,8 @@ export class TetrisBattleResultService {
     const redis = this.roomService.readyRedisClient();
     if (!redis) return;
     try {
+      // 이미 저장된 경기의 조회가 대부분이다 — 매치 Hash 전체(HGETALL) 대신 저장 표시(HEXISTS)부터 본다(games-polish BT-09)
+      if (await this.matches.isSaved(redis, matchId)) return;
       const snap = await this.matches.snapshot(redis, matchId);
       if (snap && snap.status === 'ENDED' && this.isPastDeadline(snap, now)) await this.finalize(redis, snap);
     } catch (error) {
