@@ -160,7 +160,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-22 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1313/1313**(56 스위트), E2E **225 통과 · 57 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`), build 통과.
+> `pnpm ci:all` 기준선(2026-10-22 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1470/1470**(64 스위트), E2E **240 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션
