@@ -11,6 +11,7 @@ import {
 import { Server } from 'socket.io';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 import {
+  HEARTBEAT_MIN_INTERVAL_MS,
   LIVENESS_PROBE_TIMEOUT_MS,
   LOBBY_BROADCAST_DEBOUNCE_MS,
   LOBBY_ROOM,
@@ -280,6 +281,11 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
   async handleHeartbeat(@ConnectedSocket() client: TetrisBattleSocket, @MessageBody() dto: RoomCodeDto): Promise<void> {
     const current = client.data.room;
     if (current?.code !== dto.code) return;
+    // 핑마다 1번이 정상 — 반복 송신은 소켓 로컬에서 버린다(레플리카 공유 상태 아님, games-polish BT-07)
+    const now = Date.now();
+    const last = client.data.lastHeartbeatAt;
+    if (last !== undefined && now - last < HEARTBEAT_MIN_INTERVAL_MS) return;
+    client.data.lastHeartbeatAt = now;
     await this.roomService.recordHeartbeat(current.code, client.id);
   }
 

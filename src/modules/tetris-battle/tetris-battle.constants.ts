@@ -30,6 +30,8 @@ export const PRESENCE_PING_INTERVAL_MS = 4_000;
 export const HEARTBEAT_TTL_MS = 10_000;
 /** 방당 하트비트 판정 간격(Redis SET NX 게이트) */
 export const HEARTBEAT_PROBE_INTERVAL_MS = 5_000;
+/** 소켓당 heartbeat 처리 최소 간격 — 정상은 핑(4초)마다 1번, 반복 송신의 Redis 쓰기만 막는다(games-polish BT-07) */
+export const HEARTBEAT_MIN_INTERVAL_MS = 1_000;
 
 /** 같은 방 동시 변경 충돌(CAS 실패) 시 재시도 횟수 */
 export const ROOM_CAS_MAX_ATTEMPTS = 8;

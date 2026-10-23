@@ -21,6 +21,8 @@ export interface TetrisBattleSocket extends Socket {
     /** 로그인 유저면 userId, 게스트면 null */
     userId?: number | null;
     room?: TetrisBattleSocketRoom;
+    /** 마지막으로 처리한 heartbeat 시각(ms) — 소켓 로컬 빈도 제한용 */
+    lastHeartbeatAt?: number;
   };
 }
 

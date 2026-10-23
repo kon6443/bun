@@ -540,6 +540,23 @@ describe('TetrisBattleGateway', () => {
 
       expect(recordHeartbeat.mock.calls).toEqual([[CODE, 'sock-a']]);
     });
+
+    it('같은 소켓의 heartbeat는 1초 안에 다시 오면 버린다 (BT-07)', async () => {
+      Object.assign(service, { recordHeartbeat: jest.fn().mockResolvedValue(undefined) });
+      const recordHeartbeat = (service as unknown as { recordHeartbeat: jest.Mock }).recordHeartbeat;
+      const client = createClient({ authResolved: true, userId: null, room: { code: CODE, playerId: 'p2' } });
+      const now = jest.spyOn(Date, 'now');
+
+      now.mockReturnValue(10_000);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockReturnValue(10_999);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockReturnValue(11_000);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockRestore();
+
+      expect(recordHeartbeat).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('강퇴 (tetris-audit D-011)', () => {
