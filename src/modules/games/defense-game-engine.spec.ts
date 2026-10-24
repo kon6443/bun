@@ -146,4 +146,29 @@ describe('createDefenseGameEngine — 보드·세션·형식 규칙', () => {
       expect(isWeeklyBoardKey(weeklyBoardAt(now).boardKey)).toBe(true);
     }
   });
+
+  describe('hallOfFamePeriods — 공개된 지난 주간 보드 8주 (games-growth D-010)', () => {
+    it('목요일: 지난주(w42)부터 8주', () => {
+      const periods = engineWith('s').hallOfFamePeriods(NOW);
+
+      expect(periods.map((p) => p.boardKey)).toEqual([
+        'weekly-2026-w42',
+        'weekly-2026-w41',
+        'weekly-2026-w40',
+        'weekly-2026-w39',
+        'weekly-2026-w38',
+        'weekly-2026-w37',
+        'weekly-2026-w36',
+        'weekly-2026-w35',
+      ]);
+      expect(periods[0]).toEqual({ kind: 'weekly', ...weeklyBoardAt(new Date('2026-10-14T03:00:00.000Z')) });
+    });
+
+    it('주가 바뀐 직후 4시간은 지난주가 아직 비공개라 빠진다', () => {
+      const periods = engineWith('s').hallOfFamePeriods(new Date('2026-10-25T16:00:00.000Z')); // w44 월 01:00 KST
+
+      expect(periods[0].boardKey).toBe('weekly-2026-w42');
+      expect(periods).toHaveLength(7);
+    });
+  });
 });

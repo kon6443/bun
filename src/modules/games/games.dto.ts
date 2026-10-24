@@ -21,15 +21,21 @@ import {
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 import {
   GAME_PLAYER_NAME_MAX_LENGTH,
+  GAME_POPULAR_DEFAULT_LIMIT,
   GAME_RANKING_DEFAULT_LIMIT,
   GAME_RANKING_MAX_LIMIT,
   GAME_REPLAY_MAX_FRAMES,
   GAME_REPLAY_MAX_INPUT_LENGTH,
+  GAME_WATCH_REPORT_MAX_MS,
 } from '../../common/constants/app.constants';
 
 /** 랭킹 기간 (D-004) — 일간·주간은 KST 경계 */
 export const RANKING_PERIODS = ['daily', 'weekly', 'all'] as const;
 export type RankingPeriod = (typeof RANKING_PERIODS)[number];
+
+/** 인기 리플레이 정렬 (docs/tasks/replay-views D-005) — 기간 안 조회수 · 시청시간 합 */
+export const POPULAR_SORTS = ['views', 'watch'] as const;
+export type PopularSort = (typeof POPULAR_SORTS)[number];
 
 // 변환은 검증보다 먼저 돈다 — 앞뒤 공백 제거 + 연속 공백을 1개로
 const normalizePlayerName = ({ value }: { value: unknown }) =>
@@ -43,13 +49,23 @@ const BOARD_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 /** 세션 발급 — 본문 없이 보내면 게임 기본 보드 (defense DESIGN §B3) */
 export class CreateGameSessionDto {
   @ApiPropertyOptional({
-    description: '플레이 방식 — DEFENSE: endless(생략 시 기본)·weekly. TETRIS는 보내지 않는다(보내면 422)',
+    description: '플레이 방식 — DEFENSE: endless(생략 시 기본)·weekly · TETRIS: 생략(기본)·daily(오늘의 테트리스, 전원 같은 seed)',
     example: 'endless',
   })
   @IsOptional()
   @IsString()
   @Matches(/^[a-z]{1,20}$/, { message: 'board는 영문 소문자 1~20자여야 합니다.' })
   board?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '도전장 — 이 기록과 같은 seed로 플레이하고 결과는 `challenge-{원본 ID}` 보드에 등록(메인 랭킹 아님). 도전장 기록을 주면 그 원본으로. board와 함께 보내면 422. TETRIS만 (docs/tasks/games-growth D-005)',
+    example: 41,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  challengeScoreId?: number;
 }
 
 /** 리플레이 본문 (DESIGN §4-1) — 점수는 받지 않는다. 범위·재현 가능 여부는 엔진이 최종 판정 */
@@ -150,6 +166,46 @@ export class GetRankingsQueryDto {
   limit?: number;
 }
 
+/**
+ * 시청시간 보고 — 본문 대신 쿼리로 받는다: 이탈 때 keepalive·sendBeacon으로 보내는 본문 없는 POST는
+ * CORS preflight가 없어(단순 요청) 페이지가 닫혀도 나간다 (docs/tasks/replay-views D-004)
+ */
+export class WatchReportQueryDto {
+  @ApiProperty({ description: `지난 보고 뒤 재생이 진행된 벽시계 시간 증분 (밀리초, 1~${GAME_WATCH_REPORT_MAX_MS}) — 배속 미반영`, example: 30000 })
+  @IsInt()
+  @Min(1)
+  @Max(GAME_WATCH_REPORT_MAX_MS)
+  ms: number;
+}
+
+export class GetPopularReplaysQueryDto {
+  @ApiPropertyOptional({ description: '기간 — daily(KST 오늘)·weekly(KST 이번 주 월요일부터, 기본)·all', enum: RANKING_PERIODS, example: 'weekly' })
+  @IsOptional()
+  @IsIn(RANKING_PERIODS, { message: `period는 ${RANKING_PERIODS.join(', ')} 중 하나여야 합니다.` })
+  period?: RankingPeriod;
+
+  @ApiPropertyOptional({ description: '정렬 — views(기간 안 조회수, 기본)·watch(기간 안 시청시간 합)', enum: POPULAR_SORTS, example: 'views' })
+  @IsOptional()
+  @IsIn(POPULAR_SORTS, { message: `sort는 ${POPULAR_SORTS.join(', ')} 중 하나여야 합니다.` })
+  sort?: PopularSort;
+
+  @ApiPropertyOptional({
+    description: '랭킹 보드 키 — 생략하면 게임 기본 보드(TETRIS default · DEFENSE 현재 무한 시즌). 진행 중인 DEFENSE 주간 보드는 빈 목록',
+    example: 'default',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(BOARD_KEY_PATTERN, { message: 'board는 소문자·숫자·하이픈 1~40자여야 합니다.' })
+  board?: string;
+
+  @ApiPropertyOptional({ description: `개수 (1~${GAME_RANKING_MAX_LIMIT}, 기본 ${GAME_POPULAR_DEFAULT_LIMIT})`, example: GAME_POPULAR_DEFAULT_LIMIT })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(GAME_RANKING_MAX_LIMIT)
+  limit?: number;
+}
+
 // ==================== Response DTOs ====================
 
 export class GameSessionDto {
@@ -163,12 +219,12 @@ export class GameSessionDto {
   engineVersion: number;
 
   @ApiProperty({
-    description: '이 판이 등록될 랭킹 보드 (TETRIS default · DEFENSE endless-s{N}·weekly-YYYY-wNN)',
+    description: '이 판이 등록될 랭킹 보드 (TETRIS default·daily-YYYY-MM-DD·challenge-{원본 ID} · DEFENSE endless-s{N}·weekly-YYYY-wNN)',
     example: 'default',
   })
   boardKey: string;
 
-  @ApiProperty({ description: '플레이 방식 — TETRIS null, DEFENSE endless·weekly', type: String, nullable: true, example: null })
+  @ApiProperty({ description: '플레이 방식 — TETRIS null(기본)·daily·challenge, DEFENSE endless·weekly', type: String, nullable: true, example: null })
   mode: string | null;
 
   @ApiProperty({ description: '세션 만료 시각 (ISO, UTC)', example: '2026-10-21T08:00:00.000Z' })
@@ -215,6 +271,12 @@ export class GameScoreSubmittedDto {
   ranks: GameRanksDto | null;
 }
 
+export class TrophiesDto {
+  @ApiProperty({ description: '1위 횟수', example: 1 }) gold: number;
+  @ApiProperty({ description: '2위 횟수', example: 0 }) silver: number;
+  @ApiProperty({ description: '3위 횟수', example: 2 }) bronze: number;
+}
+
 export class RankingItemDto {
   @ApiProperty({ description: '순위 (1부터)', example: 1 }) rank: number;
   @ApiProperty({ description: '기록 ID', example: 41 }) scoreId: number;
@@ -223,6 +285,15 @@ export class RankingItemDto {
   @ApiProperty({ description: '점수', example: 12340 }) score: number;
   @ApiProperty({ description: '게임별 상세 값', type: Object }) detail: Record<string, unknown>;
   @ApiProperty({ description: '플레이 시간 (밀리초)', example: 182000 }) durationMs: number;
+  @ApiProperty({ description: '누적 리플레이 조회수 — 재생 API 응답은 최대 60초 캐시라 조회 기록 응답(POST .../views)의 값이 더 최신', example: 12 })
+  viewCount: number;
+  @ApiProperty({ description: '누적 시청시간 (밀리초) — 재생이 진행된 벽시계 시간 합', example: 540000 }) watchMs: number;
+  @ApiProperty({
+    description: '명예의 전당 배지 — 로그인 사용자 기록이고 최근 입상(지난 8주·7일)이 있을 때만, 그 외 null (docs/tasks/games-growth D-007)',
+    type: TrophiesDto,
+    nullable: true,
+  })
+  trophies: TrophiesDto | null;
   @ApiProperty({ description: '등록 시각 (ISO, UTC)', example: '2026-10-21T06:00:00.000Z' }) createdAt: Date;
 }
 
@@ -248,9 +319,53 @@ export class GameReplayDetailDto extends RankingItemDto {
   @ApiProperty({ description: '입력 로그 [deltaFrame, actionCode, ...]', type: [Number] }) inputs: number[];
 }
 
+export class GameReplayViewDto {
+  @ApiProperty({ description: '기록 ID', example: 41 }) scoreId: number;
+  @ApiProperty({ description: '이번 조회를 반영한 조회수', example: 13 }) viewCount: number;
+  @ApiProperty({ description: '이번 요청이 조회수에 반영됐는지 — 같은 IP의 하루 상한을 넘으면 false(200은 그대로)', example: true })
+  counted: boolean;
+}
+
+export class GameReplayWatchDto {
+  @ApiProperty({ description: '기록 ID', example: 41 }) scoreId: number;
+  @ApiProperty({ description: '이번 보고를 반영한 누적 시청시간 (밀리초)', example: 570000 }) watchMs: number;
+  @ApiProperty({ description: '이번 보고 중 반영된 밀리초 — 같은 IP의 하루 상한을 넘은 부분은 빠진다(0이어도 200)', example: 30000 })
+  countedMs: number;
+}
+
+export class PopularReplayItemDto extends RankingItemDto {
+  @ApiProperty({ description: '기간 안 조회수', example: 7 }) periodViewCount: number;
+  @ApiProperty({ description: '기간 안 시청시간 (밀리초)', example: 300000 }) periodWatchMs: number;
+}
+
+export class PopularReplayListDto {
+  @ApiProperty({ description: '조회한 랭킹 보드 키', example: 'default' }) boardKey: string;
+  @ApiProperty({ description: '기간', enum: RANKING_PERIODS, example: 'weekly' }) period: RankingPeriod;
+  @ApiProperty({ description: '정렬', enum: POPULAR_SORTS, example: 'views' }) sort: PopularSort;
+  @ApiProperty({ description: '기간 시작 시각 (ISO, UTC) — all이면 null', type: Date, nullable: true, example: '2026-10-19T15:00:00.000Z' })
+  periodStart: Date | null;
+  @ApiProperty({
+    description: '인기순 — rank는 이 목록 안 순서(점수 순위 아님). viewCount·watchMs는 누적, period* 는 기간 안 값',
+    type: [PopularReplayItemDto],
+  })
+  items: PopularReplayItemDto[];
+}
+
+export class HallOfFamePeriodDto {
+  @ApiProperty({ description: '기간 종류 — weekly(주간)·daily(오늘의 테트리스)', enum: ['weekly', 'daily'], example: 'weekly' }) kind: 'weekly' | 'daily';
+  @ApiProperty({ description: '랭킹 보드 키', example: 'default' }) boardKey: string;
+  @ApiProperty({ description: '기간 시작 (ISO, UTC)', example: '2026-10-11T15:00:00.000Z' }) startsAt: Date;
+  @ApiProperty({ description: '기간 끝(미포함) (ISO, UTC)', example: '2026-10-18T15:00:00.000Z' }) endsAt: Date;
+  @ApiProperty({ description: '1~3위 — rank는 그 기간 안 순위', type: [RankingItemDto] }) podium: RankingItemDto[];
+}
+
+export class HallOfFameDto {
+  @ApiProperty({ description: '끝난 기간별 시상대 (최근 먼저, 기록 없는 기간 제외)', type: [HallOfFamePeriodDto] }) periods: HallOfFamePeriodDto[];
+}
+
 export class GameBoardDto {
   @ApiProperty({ description: '랭킹 보드 키', example: 'default' }) boardKey: string;
-  @ApiProperty({ description: '플레이 방식 — TETRIS null, DEFENSE endless·weekly', type: String, nullable: true, example: null }) mode: string | null;
+  @ApiProperty({ description: '플레이 방식 — TETRIS null(기본)·daily·challenge, DEFENSE endless·weekly', type: String, nullable: true, example: null }) mode: string | null;
   @ApiProperty({ description: '지금 등록받는 보드인지 (지난 시즌·지난 주는 false)', example: true }) current: boolean;
   @ApiProperty({ description: '보드 시작 시각 (ISO, UTC) — 기간 없는 보드는 null', type: Date, nullable: true, example: null }) startsAt: Date | null;
   @ApiProperty({ description: '보드 종료 시각 (ISO, UTC) — 기간 없는 보드는 null', type: Date, nullable: true, example: null }) endsAt: Date | null;
@@ -278,6 +393,22 @@ export class RankingListResponseDto extends ApiSuccessResponseDto {
 
 export class GameScoreSummaryResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: RankingItemDto }) data: RankingItemDto;
+}
+
+export class GameReplayViewResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: GameReplayViewDto }) data: GameReplayViewDto;
+}
+
+export class GameReplayWatchResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: GameReplayWatchDto }) data: GameReplayWatchDto;
+}
+
+export class PopularReplayListResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: PopularReplayListDto }) data: PopularReplayListDto;
+}
+
+export class HallOfFameResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: HallOfFameDto }) data: HallOfFameDto;
 }
 
 export class GameReplayResponseDto extends ApiSuccessResponseDto {

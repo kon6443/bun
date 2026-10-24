@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-10-24 — 시각 컬럼을 PK에 넣은 DDL이 운영 실행에서 실패했다
+
+- **실패 양상**: 리플레이 조회 일별 집계 테이블의 PK를 `(SCORE_ID, BUCKET_START TIMESTAMP WITH TIME ZONE)`로 썼다. 담당자 실행에서 `ORA-02329`(TIMESTAMP WITH TIME ZONE은 PK·유니크 불가)로 실패했다. CREATE TABLE 한 문장이 통째로 거부돼 부분 적용은 없었다(`db:select`로 테이블 0·이력 0 확인). 키를 KST 날짜 문자열 `STAT_DATE VARCHAR2(10)`로 바꿨다(replay-views D-006).
+- **탐지 신호**: 새 테이블의 PK·유니크·인덱스 키에 시각 컬럼이 들어간다 · 단위·E2E 테스트는 DB에 붙지 않아 DDL 제약 위반을 잡지 못한다(통과 ≠ DDL 유효).
+- **근본 원인**: 프로젝트 규약 "시각 컬럼은 전부 TIMESTAMP WITH TIME ZONE"(`datetime.md`)을 **키 컬럼에도** 그대로 적용했다. 그 타입의 Oracle 제약은 확인하지 않았다. AI는 DDL을 실행할 수 없으니 담당자 실행이 첫 검증이 된다.
+- **예방 규칙**: 집계 단위(하루·주)처럼 시각을 키로 쓰는 경우는 시각 타입 대신 **경계가 고정된 문자열 키**(KST `YYYY-MM-DD`)를 쓴다. 새 DDL의 키 컬럼 타입은 `.claude/rules/schema-migrations.md` 함정 목록과 대조하고, 표현식·정규식은 `pnpm db:select`로 실행할 수 있는 부분(SELECT … FROM DUAL)만이라도 미리 확인한다.
+
 ## 2026-10-24 — 계약 질문에 기억으로 답했다가 DTO 변환을 놓쳤다
 
 - **실패 양상**: 프론트 질문 "제출 응답에 서버가 정규화한 이름을 넣을 수 있나"(games-polish Q-S2)에 "서버는 이름을 검사만 하고 정규화하지 않는다"고 답했다. 실제로는 제출 DTO의 `@Transform(normalizePlayerName)`이 앞뒤 공백 제거·연속 공백 1개로 정리해 저장한다. 실API 검증 스크립트를 쓰려고 DTO를 열었을 때 Swagger 설명("…정리 후 1~12자")을 보고 알았다.

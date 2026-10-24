@@ -73,6 +73,32 @@ export const DEFENSE_VERIFY_TIMEOUT_MS = 5_000;
 /** 리플레이 조회 응답의 브라우저 캐시 (초) — 입력 기록은 불변, 순위·숨김 반영 지연을 이 안으로 묶는다 (games-polish BD-06) */
 export const GAME_REPLAY_CACHE_MAX_AGE_SECONDS = 60;
 
+/**
+ * 리플레이 조회수 — 같은 시청자 키(IP 해시)가 24시간 안에 올릴 수 있는 최대 횟수 (docs/tasks/replay-views D-002).
+ * 브라우저당 하루 1회는 프론트가 거르고, 이 값은 스크립트 반복 호출의 상한이다. 같은 IP 뒤 여러 사람(NAT)을 위해 1보다 크게
+ */
+export const GAME_VIEW_DAILY_LIMIT_PER_VIEWER = 5;
+
+/** 시청시간 보고 1회 상한 (밀리초) — 프론트는 30초마다 증분을 보낸다. 지연·이탈 flush 여유로 2분 (docs/tasks/replay-views D-004) */
+export const GAME_WATCH_REPORT_MAX_MS = 120_000;
+
+/**
+ * 시청시간 시청자(IP 해시)별 24시간 누적 상한 = max(리플레이 길이 × 배수, 최소값).
+ * 0.5배속 완주가 길이의 2배라 배수는 2보다 크게, 아주 짧은 리플레이도 다시 보기가 들어가게 최소값을 둔다
+ */
+export const GAME_WATCH_DAILY_CAP_MULTIPLIER = 3;
+export const GAME_WATCH_DAILY_CAP_MIN_MS = 60_000;
+
+/** 명예의 전당 범위 — 지난 주 수 · 지난 날 수(테트리스 데일리). 배지(trophies)도 이 범위 안 입상만 센다 (games-growth D-010) */
+export const GAME_HALL_OF_FAME_WEEKS = 8;
+export const GAME_HALL_OF_FAME_DAYS = 7;
+
+/** 명예의 전당 Redis 캐시 (초) — 랭킹 목록 배지 계산이 매 요청 기간 수만큼 쿼리하지 않게 */
+export const GAME_HALL_OF_FAME_CACHE_SECONDS = 600;
+
+/** 인기 리플레이 목록 기본 개수 (최대는 GAME_RANKING_MAX_LIMIT) */
+export const GAME_POPULAR_DEFAULT_LIMIT = 10;
+
 /** 랭킹 조회 기본·최대 개수 */
 export const GAME_RANKING_DEFAULT_LIMIT = 50;
 export const GAME_RANKING_MAX_LIMIT = 100;

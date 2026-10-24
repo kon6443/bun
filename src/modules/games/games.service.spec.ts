@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -6,10 +6,13 @@ import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, FindOperator, QueryFailedError } from 'typeorm';
 import { GamesService } from './games.service';
 import { GameSessionService, GameSession } from './game-session.service';
+import { GameViewService } from './game-view.service';
+import { GameHallOfFameService } from './game-hall-of-fame.service';
 import { GAME_ENGINE_REGISTRY, GameEngine } from './game-engine.registry';
 import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError } from './verify-worker-pool';
 import { GameScore } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
+import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { SubmitGameScoreDto } from './games.dto';
 
@@ -27,6 +30,9 @@ describe('GamesService', () => {
   let service: GamesService;
   let gameScoreRepository: MockRepository<GameScore>;
   let gameReplayRepository: MockRepository<GameReplay>;
+  let viewStatRepository: MockRepository<GameReplayViewStat>;
+  let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
+  let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: {
     createSession: jest.Mock;
@@ -70,6 +76,12 @@ describe('GamesService', () => {
     jest.useFakeTimers({ now: NOW });
     gameScoreRepository = createMockRepository<GameScore>();
     gameReplayRepository = createMockRepository<GameReplay>();
+    viewStatRepository = createMockRepository<GameReplayViewStat>();
+    // 집계 없음 — 누적 조회수·시청시간 0
+    viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
+    // 입상자 없음 — 배지 null
+    hallOfFameService = { getPodiums: jest.fn().mockResolvedValue([]), trophiesByUser: jest.fn().mockResolvedValue(new Map()) };
+    gameViewService = { claimView: jest.fn().mockResolvedValue(true), claimWatchMs: jest.fn((_id, _key, ms: number) => Promise.resolve(ms)) };
     manager = {
       create: jest.fn((_entity: unknown, data: unknown) => data),
       save: jest.fn((data: Record<string, unknown>) => Promise.resolve('gameType' in data && 'score' in data ? { ...data, scoreId: 41 } : data)),
@@ -91,6 +103,8 @@ describe('GamesService', () => {
       maxInputLength: 120_000,
       sessionTtlSeconds: 7200,
       defaultBoardKey: 'default',
+      supportsChallenge: true,
+      hallOfFamePeriods: jest.fn().mockReturnValue([]),
       resolveSessionBoard: jest.fn((board?: string) => (board === undefined ? { boardKey: 'default', mode: null, seed: null } : null)),
       isRankingBoard: jest.fn((boardKey: string) => boardKey === 'default'),
       isPeriodRanking: jest.fn().mockReturnValue(true),
@@ -107,6 +121,9 @@ describe('GamesService', () => {
         GamesService,
         { provide: getRepositoryToken(GameScore), useValue: gameScoreRepository },
         { provide: getRepositoryToken(GameReplay), useValue: gameReplayRepository },
+        { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
+        { provide: GameViewService, useValue: gameViewService },
+        { provide: GameHallOfFameService, useValue: hallOfFameService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)) } as unknown as DataSource,
@@ -150,6 +167,7 @@ describe('GamesService', () => {
         engineVersion: 1,
         userId: 7,
         ttlSeconds: 7200,
+        challengeOf: null,
       });
       expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, ttlSeconds: 7200, boardKey: 'default', mode: null });
     });
@@ -168,6 +186,122 @@ describe('GamesService', () => {
     it('엔진이 지원하지 않는 플레이 방식이면 422 VALIDATION_ERROR — 세션을 만들지 않아야 함', async () => {
       await expect(service.createSession('tetris', null, 'weekly')).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 422 });
       expect(gameSessionService.createSession).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 도전장 (docs/tasks/games-growth D-005·D-009) — 원본 기록의 seed로 `challenge-{원본 ID}` 보드 세션.
+   * 원본은 재생 공개 기록이어야 하고, 엔진 버전이 같아야 하며, 원본 리플레이를 그대로 낸 제출은 거른다.
+   */
+  describe('도전장', () => {
+    const root = (overrides: Partial<GameScore> = {}) =>
+      ({ scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1000, crtdAt: new Date(NOW), ...overrides }) as GameScore;
+
+    beforeEach(() => {
+      gameScoreRepository.findOne.mockResolvedValue(root());
+      gameReplayRepository.findOne = jest.fn().mockResolvedValue({ seed: 777, engineVersion: 1 });
+      gameSessionService.createSession.mockResolvedValue({
+        sessionId: SESSION_ID,
+        session: session({ boardKey: 'challenge-41', seed: 777, challengeOf: 41 }),
+        expiresAt: new Date(NOW),
+      });
+    });
+
+    it('원본의 seed로 challenge-{원본 ID} 보드 세션을 연다', async () => {
+      const result = await service.createSession('tetris', null, undefined, 41);
+
+      expect(gameSessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ boardKey: 'challenge-41', seed: 777, challengeOf: 41 }),
+      );
+      expect(engine.resolveSessionBoard).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ boardKey: 'challenge-41', mode: 'challenge', seed: 777 }));
+    });
+
+    it('도전장 기록으로 열면 그 원본으로 묶는다 — 보드가 갈라지지 않게', async () => {
+      gameScoreRepository.findOne
+        .mockResolvedValueOnce(root({ scoreId: 50, boardKey: 'challenge-41' }))
+        .mockResolvedValueOnce(root());
+
+      await service.createSession('tetris', null, undefined, 50);
+
+      expect(gameReplayRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { scoreId: 41, gameType: 'TETRIS' } }));
+      expect(gameSessionService.createSession).toHaveBeenCalledWith(expect.objectContaining({ boardKey: 'challenge-41', challengeOf: 41 }));
+    });
+
+    it('원본 엔진 버전이 다르면 409 GAME_CHALLENGE_EXPIRED', async () => {
+      gameReplayRepository.findOne = jest.fn().mockResolvedValue({ seed: 777, engineVersion: 0 });
+
+      await expect(service.createSession('tetris', null, undefined, 41)).rejects.toMatchObject({ code: 'GAME_CHALLENGE_EXPIRED', status: 409 });
+      expect(gameSessionService.createSession).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['없거나 숨긴 원본', () => gameScoreRepository.findOne.mockResolvedValue(null)],
+      ['재생 공개 전 원본(진행 중 데일리·주간)', () => engine.isReplayPublic.mockReturnValue(false)],
+      ['리플레이 없는 원본', () => (gameReplayRepository.findOne = jest.fn().mockResolvedValue(null))],
+    ])('%s → 404 GAME_SCORE_NOT_FOUND', async (_name, arrange) => {
+      arrange();
+
+      await expect(service.createSession('tetris', null, undefined, 41)).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+      expect(gameSessionService.createSession).not.toHaveBeenCalled();
+    });
+
+    it('board와 함께 보내면 422', async () => {
+      await expect(service.createSession('tetris', null, 'daily', 41)).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 422 });
+    });
+
+    it('도전장을 지원하지 않는 게임이면 422', async () => {
+      engine.supportsChallenge = false;
+
+      await expect(service.createSession('tetris', null, undefined, 41)).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 422 });
+    });
+
+    describe('제출 — 원본 리플레이 복제 차단', () => {
+      // 서비스 hashReplay와 같은 규칙(게임·원본 보드·seed·정렬한 params·frames·inputs) — 원본은 같은 seed라 같은 입력이면 같은 해시
+      const rootHash = (replay: SubmitGameScoreDto['replay']) =>
+        createHash('sha256')
+          .update(
+            JSON.stringify({
+              gameType: 'TETRIS',
+              boardKey: 'default',
+              seed: 777,
+              params: [['arr', replay.arr], ['das', replay.das]],
+              frames: replay.frames,
+              inputs: replay.inputs,
+            }),
+          )
+          .digest('hex');
+
+      beforeEach(() => {
+        gameSessionService.getSession.mockResolvedValue(session({ boardKey: 'challenge-41', seed: 777, challengeOf: 41 }));
+      });
+
+      // 원본 보드에 같은 해시가 있는지는 exists로 본다 — 원본 1건이 아니라 보드 전체(데일리면 그날 전체, D-013)
+      const existsOnRootBoard = (hash: string) =>
+        gameScoreRepository.exists.mockImplementation((options) => Promise.resolve((options?.where as { replayHash?: string } | undefined)?.replayHash === hash));
+
+      it('원본 보드에 같은 리플레이가 있으면(원본·같은 날 다른 기록) 검증 전에 409 GAME_REPLAY_DUPLICATE + 세션 소모', async () => {
+        const body = dto();
+        gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, boardKey: 'default' } as GameScore);
+        existsOnRootBoard(rootHash(body.replay));
+
+        await expect(service.submitScore({ gameTypeParam: 'tetris', dto: body, userId: null, ip: undefined })).rejects.toMatchObject({
+          code: 'GAME_REPLAY_DUPLICATE',
+          status: 409,
+        });
+        expect(engine.verify).not.toHaveBeenCalled();
+        expect(gameSessionService.consumeSession).toHaveBeenCalledWith(SESSION_ID);
+      });
+
+      it('다른 리플레이면 도전장 보드로 검증·저장한다', async () => {
+        gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, boardKey: 'default' } as GameScore);
+        existsOnRootBoard('other');
+
+        await service.submitScore({ gameTypeParam: 'tetris', dto: dto(), userId: null, ip: undefined });
+
+        expect(engine.verify).toHaveBeenCalledWith(expect.objectContaining({ seed: 777, boardKey: 'challenge-41' }));
+        expect(savedScore()).toEqual(expect.objectContaining({ boardKey: 'challenge-41' }));
+      });
     });
   });
 
@@ -556,7 +690,7 @@ describe('GamesService', () => {
       expect(gameReplayRepository.findOneBy).not.toHaveBeenCalled();
       expect(qb.andWhere).not.toHaveBeenCalledWith('s.crtdAt >= :periodStart', expect.anything());
       expect(qb.andWhere).toHaveBeenCalledWith('s.boardKey = :boardKey', { boardKey: 'default' });
-      expect(result).toEqual({ rank: 5, scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, createdAt: new Date(NOW) });
+      expect(result).toEqual({ rank: 5, scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, createdAt: new Date(NOW) });
     });
 
     it('없거나 숨긴 기록은 404 GAME_SCORE_NOT_FOUND', async () => {
@@ -682,6 +816,277 @@ describe('GamesService', () => {
       });
       expect(engine.isReplayPublic).toHaveBeenCalledWith('weekly-2026-w43', new Date(NOW));
       expect(gameReplayRepository.findOneBy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 리플레이 조회수·시청시간·인기 목록 (docs/tasks/replay-views).
+   * 집계는 기록 × KST 하루 1행에 더하고, 누적 값은 SUM으로 읽는다. 시청자(IP 해시)별 하루 상한은 GameViewService(Redis)가 정한다.
+   */
+  describe('리플레이 조회 집계 (replay-views)', () => {
+    const TODAY_KST = '2026-10-21'; // NOW(10-21 14:00 KST)의 KST 날짜
+    const TODAY_START = new Date('2026-10-20T15:00:00.000Z'); // 그날 KST 00:00
+    const visible = (overrides: Partial<GameScore> = {}) =>
+      ({ scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 100_000, crtdAt: new Date(NOW), ...overrides }) as GameScore;
+    const totals = (rows: { scoreId: number; viewCount: number; watchMs: number }[]) =>
+      viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: rows }) as never);
+    const oraError = (errorNum: number) => new QueryFailedError('INSERT', [], Object.assign(new Error(`ORA-${errorNum}`), { errorNum }));
+    const viewerKey = createHmac('sha256', 'test-secret').update('1.2.3.4').digest('hex');
+
+    beforeEach(() => {
+      gameScoreRepository.findOne.mockResolvedValue(visible());
+      viewStatRepository.increment.mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+    });
+
+    describe('recordView', () => {
+      it('오늘(KST) 행에 조회 1을 더하고 누적 값을 돌려준다 — 시청자 키는 IP 해시', async () => {
+        totals([{ scoreId: 41, viewCount: 13, watchMs: 0 }]);
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).resolves.toEqual({ scoreId: 41, viewCount: 13, counted: true });
+        expect(gameViewService.claimView).toHaveBeenCalledWith(41, viewerKey);
+        expect(viewStatRepository.increment).toHaveBeenCalledWith({ scoreId: 41, statDate: TODAY_KST }, 'viewCount', 1);
+        expect(viewStatRepository.insert).not.toHaveBeenCalled();
+      });
+
+      it('오늘 행이 없으면 새로 넣는다 — 게임 종류와 함께', async () => {
+        viewStatRepository.increment.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+
+        await service.recordView('tetris', 41, '1.2.3.4');
+
+        expect(viewStatRepository.insert).toHaveBeenCalledWith({ scoreId: 41, statDate: TODAY_KST, gameType: 'TETRIS', viewCount: 1, watchMs: 0 });
+      });
+
+      it('같은 순간 다른 요청이 오늘 행을 먼저 넣었으면(ORA-00001) 다시 더한다', async () => {
+        viewStatRepository.increment.mockResolvedValueOnce({ affected: 0, raw: [], generatedMaps: [] });
+        viewStatRepository.insert.mockRejectedValue(oraError(1));
+
+        await service.recordView('tetris', 41, '1.2.3.4');
+
+        expect(viewStatRepository.increment).toHaveBeenCalledTimes(2);
+      });
+
+      it('유니크·FK 위반이 아닌 DB 오류는 그대로 던진다', async () => {
+        viewStatRepository.increment.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+        viewStatRepository.insert.mockRejectedValue(oraError(1400));
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).rejects.toBeInstanceOf(QueryFailedError);
+      });
+
+      it('확인과 저장 사이에 기록이 지워졌으면(FK 위반 ORA-02291) 404 GAME_SCORE_NOT_FOUND', async () => {
+        viewStatRepository.increment.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+        viewStatRepository.insert.mockRejectedValue(oraError(2291));
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+      });
+
+      it('같은 IP의 하루 상한을 넘으면 더하지 않고 counted false (200)', async () => {
+        gameViewService.claimView.mockResolvedValue(false);
+        totals([{ scoreId: 41, viewCount: 5, watchMs: 0 }]);
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).resolves.toEqual({ scoreId: 41, viewCount: 5, counted: false });
+        expect(viewStatRepository.increment).not.toHaveBeenCalled();
+      });
+
+      it('IP 해시 시크릿이 없으면 서버 상한 없이 센다', async () => {
+        delete env.GAME_IP_HASH_SECRET;
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).resolves.toEqual({ scoreId: 41, viewCount: 0, counted: true });
+        expect(gameViewService.claimView).not.toHaveBeenCalled();
+        expect(viewStatRepository.increment).toHaveBeenCalled();
+      });
+
+      it.each([
+        ['없거나 숨긴 기록', () => gameScoreRepository.findOne.mockResolvedValue(null)],
+        ['공개 전 보드(진행 중 주간)', () => engine.isReplayPublic.mockReturnValue(false)],
+      ])('%s → 404 GAME_SCORE_NOT_FOUND, 집계하지 않음', async (_name, arrange) => {
+        arrange();
+
+        await expect(service.recordView('tetris', 41, '1.2.3.4')).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+        expect(gameViewService.claimView).not.toHaveBeenCalled();
+        expect(viewStatRepository.increment).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('recordWatch', () => {
+      it('상한 안의 증분을 오늘 행에 더한다 — 하루 상한은 리플레이 길이 × 3', async () => {
+        totals([{ scoreId: 41, viewCount: 1, watchMs: 30_000 }]);
+
+        await expect(service.recordWatch('tetris', 41, 30_000, '1.2.3.4')).resolves.toEqual({ scoreId: 41, watchMs: 30_000, countedMs: 30_000 });
+        expect(gameViewService.claimWatchMs).toHaveBeenCalledWith(41, viewerKey, 30_000, 300_000);
+        expect(viewStatRepository.increment).toHaveBeenCalledWith({ scoreId: 41, statDate: TODAY_KST }, 'watchMs', 30_000);
+      });
+
+      it('짧은 리플레이도 하루 상한은 최소 1분', async () => {
+        gameScoreRepository.findOne.mockResolvedValue(visible({ durationMs: 5_000 }));
+
+        await service.recordWatch('tetris', 41, 10_000, '1.2.3.4');
+
+        expect(gameViewService.claimWatchMs).toHaveBeenCalledWith(41, viewerKey, 10_000, 60_000);
+      });
+
+      it('상한을 넘어 반영할 몫이 0이면 더하지 않는다', async () => {
+        gameViewService.claimWatchMs.mockResolvedValue(0);
+
+        await expect(service.recordWatch('tetris', 41, 30_000, '1.2.3.4')).resolves.toEqual({ scoreId: 41, watchMs: 0, countedMs: 0 });
+        expect(viewStatRepository.increment).not.toHaveBeenCalled();
+      });
+
+      it('공개 전 보드면 404', async () => {
+        engine.isReplayPublic.mockReturnValue(false);
+
+        await expect(service.recordWatch('tetris', 41, 30_000, '1.2.3.4')).rejects.toMatchObject({ code: 'GAME_SCORE_NOT_FOUND', status: 404 });
+      });
+    });
+
+    describe('누적 값을 랭킹 항목에 싣는다', () => {
+      it('getRankings — 목록 기록들의 집계를 한 번에 SUM으로 읽고, 집계 없는 기록은 0', async () => {
+        gameScoreRepository.find.mockResolvedValue([visible({ scoreId: 41 }), visible({ scoreId: 42 })]);
+        const qb = createMockQueryBuilder({ getRawMany: [{ scoreId: '41', viewCount: '3', watchMs: '9000' }] });
+        viewStatRepository.createQueryBuilder.mockReturnValue(qb as never);
+
+        const { items } = await service.getRankings('tetris', {});
+
+        expect(viewStatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
+        expect(qb.groupBy).toHaveBeenCalledWith('v.scoreId');
+        expect(items.map(({ scoreId, viewCount, watchMs }) => ({ scoreId, viewCount, watchMs }))).toEqual([
+          { scoreId: 41, viewCount: 3, watchMs: 9000 },
+          { scoreId: 42, viewCount: 0, watchMs: 0 },
+        ]);
+      });
+
+      it('빈 랭킹이면 집계를 읽지 않는다', async () => {
+        gameScoreRepository.find.mockResolvedValue([]);
+
+        await service.getRankings('tetris', {});
+
+        expect(viewStatRepository.createQueryBuilder).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('getPopularReplays', () => {
+      it('기간 안 합으로 정렬한 순서대로 항목을 만든다 — rank는 인기 순서, 누적·기간 값을 함께', async () => {
+        const popularQb = createMockQueryBuilder({
+          getRawMany: [
+            { scoreId: '42', viewCount: '5', watchMs: '1000' },
+            { scoreId: '41', viewCount: '2', watchMs: '500' },
+          ],
+        });
+        const totalsQb = createMockQueryBuilder({
+          getRawMany: [
+            { scoreId: '41', viewCount: '10', watchMs: '9000' },
+            { scoreId: '42', viewCount: '6', watchMs: '2000' },
+          ],
+        });
+        viewStatRepository.createQueryBuilder.mockReturnValueOnce(popularQb as never).mockReturnValueOnce(totalsQb as never);
+        gameScoreRepository.find.mockResolvedValue([visible({ scoreId: 41 }), visible({ scoreId: 42 })]);
+
+        const result = await service.getPopularReplays('tetris', { period: 'daily', sort: 'views' });
+
+        expect(popularQb.andWhere).toHaveBeenCalledWith('v.statDate >= :fromDate', { fromDate: TODAY_KST });
+        expect(popularQb.andWhere).toHaveBeenCalledWith('s.isHidden = 0');
+        expect(popularQb.orderBy).toHaveBeenCalledWith('SUM(v.viewCount)', 'DESC');
+        expect(popularQb.limit).toHaveBeenCalledWith(10);
+        expect(result).toEqual(expect.objectContaining({ boardKey: 'default', period: 'daily', sort: 'views', periodStart: TODAY_START }));
+        expect(result.items.map(({ rank, scoreId, viewCount, periodViewCount, periodWatchMs }) => ({ rank, scoreId, viewCount, periodViewCount, periodWatchMs }))).toEqual([
+          { rank: 1, scoreId: 42, viewCount: 6, periodViewCount: 5, periodWatchMs: 1000 },
+          { rank: 2, scoreId: 41, viewCount: 10, periodViewCount: 2, periodWatchMs: 500 },
+        ]);
+      });
+
+      it('기본값 — 주간·조회수순·기본 보드. sort=watch는 시청시간 합으로, all은 기간 필터 없음', async () => {
+        const qb = createMockQueryBuilder({ getRawMany: [] });
+        viewStatRepository.createQueryBuilder.mockReturnValue(qb as never);
+
+        await expect(service.getPopularReplays('tetris', {})).resolves.toEqual(
+          expect.objectContaining({ period: 'weekly', sort: 'views', boardKey: 'default', items: [] }),
+        );
+        await service.getPopularReplays('tetris', { period: 'all', sort: 'watch' });
+
+        expect(qb.orderBy).toHaveBeenLastCalledWith('SUM(v.watchMs)', 'DESC');
+        expect(qb.andWhere).toHaveBeenCalledTimes(2 + 1 + 2); // 주간: 보드·숨김 + 기간 / 전체: 보드·숨김
+        expect(gameScoreRepository.find).not.toHaveBeenCalled();
+      });
+
+      it('두 조회 사이에 숨겨진 기록은 빼고 남은 순서로 다시 매긴다', async () => {
+        viewStatRepository.createQueryBuilder.mockReturnValue(
+          createMockQueryBuilder({ getRawMany: [{ scoreId: '42', viewCount: '5', watchMs: '0' }, { scoreId: '41', viewCount: '2', watchMs: '0' }] }) as never,
+        );
+        gameScoreRepository.find.mockResolvedValue([visible({ scoreId: 41 })]);
+
+        const { items } = await service.getPopularReplays('tetris', {});
+
+        expect(items.map(({ rank, scoreId }) => ({ rank, scoreId }))).toEqual([{ rank: 1, scoreId: 41 }]);
+      });
+
+      it('재생을 공개하지 않는 보드(진행 중 주간)는 집계를 읽지 않고 빈 목록', async () => {
+        engine.isReplayPublic.mockReturnValue(false);
+
+        await expect(service.getPopularReplays('tetris', {})).resolves.toEqual(expect.objectContaining({ items: [] }));
+        expect(viewStatRepository.createQueryBuilder).not.toHaveBeenCalled();
+      });
+
+      it('랭킹 보드가 아니면 422 VALIDATION_ERROR', async () => {
+        await expect(service.getPopularReplays('tetris', { board: 'nope' })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 422 });
+      });
+    });
+  });
+
+  /** 명예의 전당·배지 (docs/tasks/games-growth D-007·D-010) — 사용자 ID는 배지 계산에만 쓰고 응답에 싣지 않는다 */
+  describe('명예의 전당·배지', () => {
+    const scoreRow = (scoreId: number) =>
+      ({ scoreId, boardKey: 'default', playerName: `p${scoreId}`, score: 900, detail: '{}', durationMs: 1, crtdAt: new Date(NOW) }) as GameScore;
+
+    it('랭킹 — 입상한 로그인 사용자의 기록에만 trophies, USER_ID는 배지 계산용으로 따로 읽는다', async () => {
+      hallOfFameService.trophiesByUser.mockResolvedValue(new Map([[7, { gold: 1, silver: 0, bronze: 2 }]]));
+      gameScoreRepository.find
+        .mockResolvedValueOnce([scoreRow(41), scoreRow(42)])
+        .mockResolvedValueOnce([
+          { scoreId: 41, userId: 7 },
+          { scoreId: 42, userId: null },
+        ] as GameScore[]);
+
+      const { items } = await service.getRankings('tetris', {});
+
+      expect(gameScoreRepository.find).toHaveBeenLastCalledWith({ select: { scoreId: true, userId: true }, where: { scoreId: expect.anything(), gameType: 'TETRIS' } });
+      expect(items.map(({ scoreId, trophies }) => ({ scoreId, trophies }))).toEqual([
+        { scoreId: 41, trophies: { gold: 1, silver: 0, bronze: 2 } },
+        { scoreId: 42, trophies: null },
+      ]);
+      expect(items[0]).not.toHaveProperty('userId');
+    });
+
+    it('입상자가 없으면 기록의 USER_ID를 읽지 않는다', async () => {
+      gameScoreRepository.find.mockResolvedValue([scoreRow(41)]);
+
+      await service.getRankings('tetris', {});
+
+      expect(gameScoreRepository.find).toHaveBeenCalledTimes(1);
+    });
+
+    it('배지 계산이 실패해도 랭킹은 배지 없이 돌려준다', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      hallOfFameService.trophiesByUser.mockRejectedValue(new Error('db'));
+      gameScoreRepository.find.mockResolvedValue([scoreRow(41)]);
+
+      const { items } = await service.getRankings('tetris', {});
+
+      expect(items[0].trophies).toBeNull();
+    });
+
+    it('getHallOfFame — 기간별 시상대를 랭킹 항목으로, 순위는 기간 안 순위', async () => {
+      const period = { kind: 'weekly' as const, boardKey: 'default', startsAt: new Date('2026-10-11T15:00:00.000Z'), endsAt: new Date('2026-10-18T15:00:00.000Z') };
+      hallOfFameService.getPodiums.mockResolvedValue([{ ...period, rows: [{ ...scoreRow(41), userId: 7 }, { ...scoreRow(42), userId: null }] }]);
+      hallOfFameService.trophiesByUser.mockResolvedValue(new Map([[7, { gold: 1, silver: 0, bronze: 0 }]]));
+
+      const { periods } = await service.getHallOfFame('tetris');
+
+      expect(periods).toHaveLength(1);
+      expect(periods[0]).toEqual(expect.objectContaining(period));
+      expect(periods[0].podium.map(({ rank, scoreId, trophies }) => ({ rank, scoreId, trophies }))).toEqual([
+        { rank: 1, scoreId: 41, trophies: { gold: 1, silver: 0, bronze: 0 } },
+        { rank: 2, scoreId: 42, trophies: null },
+      ]);
+      expect(periods[0].podium[0]).not.toHaveProperty('userId');
     });
   });
 });

@@ -123,7 +123,7 @@ docker stop bun-redis && docker rm bun-redis
 
 **검증 대상(필수)**: `ENV`, `EXPRESS_PORT`, `JWT_SECRET`, `LOG_LEVEL`, `NEXT_PUBLIC_DOMAIN`, `ORACLE_DB_USER`, `ORACLE_DB_PW`, `ORACLE_DB_CONNECT_STR`, `REDIS_PORT`
 
-**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않음), `GAME_WEEKLY_SEED_SECRET`(디펜스 주간 도전 seed의 HMAC 키 — 없으면 주간 도전만 503, 무한 모드 정상), `GAME_VERIFY_WORKERS`(레플리카당 디펜스 검증 워커 수 1~8 — 없으면 1)
+**그 외 사용 변수**: `ORACLE_WALLET_PATH`, `ORACLE_LIB_DIR`(Oracle thick client), `REDIS_HOST`, `JWT_ACCESS_TOKEN_EXPIRES_IN`, `BOT_TOKEN_TELEGRAM`, `BOT_USERNAME_TELEGRAM`, `TASK_SLOT`(스케줄러 단일 실행 보장), `FEEDBACK_DISCORD_WEBHOOK_URL`·`FEEDBACK_TELEGRAM_CHAT_ID`(운영자 피드백 알림 대상 — 없으면 그 채널은 보내지 않음), `GAME_IP_HASH_SECRET`(게임 랭킹 등록 IP의 HMAC 키 — 없으면 IP 해시를 저장하지 않고, 리플레이 조회수·시청시간의 IP당 하루 상한도 꺼진다), `GAME_WEEKLY_SEED_SECRET`(디펜스 주간 도전·테트리스 오늘의 테트리스 seed의 HMAC 키 — 없으면 그 둘만 503, 무한·기본 모드 정상), `GAME_VERIFY_WORKERS`(레플리카당 디펜스 검증 워커 수 1~8 — 없으면 1)
 
 > ⚠️ **LOCAL과 PROD가 동일한 Oracle DB를 공유한다.** 로컬에서 실행하는 쿼리가 곧 상용 데이터에 영향을 준다.
 
@@ -160,7 +160,7 @@ pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (�
 
 > **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` → `pnpm ci:core` → `pnpm test:e2e`를 돌린다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: ci`) 통과해야 이미지 빌드·배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
-> `pnpm ci:all` 기준선(2026-10-24 실측): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1587/1587**(65 스위트), E2E **240 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`, 주면 296 통과 · 2 skip), build 통과.
+> `pnpm ci:all` 기준선(2026-10-24 실측, replay-views·games-growth 반영): lint 0 errors / 경고 6건, 스텁 0건, 단위 **1673/1673**(68 스위트), E2E **266 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`, 주면 skip이 2건으로 준다 — 통과 수는 이번 변경 전 실측 기준이라 재측정 필요), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.
 
 ## DB 마이그레이션

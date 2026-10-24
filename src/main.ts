@@ -14,6 +14,8 @@ import { OnlineUserService } from './modules/team/online-user.service';
 import { FishingOnlineService } from './modules/fishing/fishing-online.service';
 import { TeamChatService } from './modules/team/team-chat.service';
 import { GameSessionService } from './modules/games/game-session.service';
+import { GameViewService } from './modules/games/game-view.service';
+import { GameHallOfFameService } from './modules/games/game-hall-of-fame.service';
 import { TetrisBattleRoomService } from './modules/tetris-battle/tetris-battle-room.service';
 import { ConfigService } from '@nestjs/config';
 import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
@@ -94,6 +96,12 @@ async function bootstrap() {
     // Redis 클라이언트를 GameSessionService에 주입 (게임 세션 seed — 레플리카 간 공유·1회용)
     const gameSessionService = app.get(GameSessionService);
     gameSessionService.setRedisClient(redisAdapter.getPubClient());
+
+    // Redis 클라이언트를 GameViewService에 주입 (리플레이 조회수 IP당 하루 상한)
+    app.get(GameViewService).setRedisClient(redisAdapter.getPubClient());
+
+    // Redis 클라이언트를 GameHallOfFameService에 주입 (명예의 전당·배지 캐시)
+    app.get(GameHallOfFameService).setRedisClient(redisAdapter.getPubClient());
 
     // Redis 클라이언트를 TetrisBattleRoomService에 주입 (대전 방 상태 — 레플리카 간 공유, 원자 변경은 CAS Lua)
     app.get(TetrisBattleRoomService).setRedisClient(redisAdapter.getPubClient());

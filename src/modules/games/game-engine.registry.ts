@@ -28,6 +28,17 @@ export interface GameBoard {
   endsAt: Date | null;
 }
 
+/**
+ * 명예의 전당 기간 — 끝났고 재생이 공개된 기간 하나 (docs/tasks/games-growth D-010).
+ * 기간 필터를 쓰는 보드(isPeriodRanking)면 등록 시각 [startsAt, endsAt)로, 아니면 보드 전체로 1~3위를 뽑는다
+ */
+export interface HallOfFamePeriod {
+  kind: 'weekly' | 'daily';
+  boardKey: string;
+  startsAt: Date;
+  endsAt: Date;
+}
+
 /** 세션 발급 시 정해지는 보드 — seed가 null이면 세션 서비스가 무작위로 정한다 */
 export interface SessionBoard {
   boardKey: string;
@@ -53,6 +64,8 @@ export interface GameEngine {
   sessionTtlSeconds: number;
   /** board 쿼리를 생략한 랭킹 조회가 보는 보드 */
   defaultBoardKey: string;
+  /** 도전장(원본 기록과 같은 seed, `challenge-{scoreId}` 보드)을 열 수 있는지 — 세션은 서비스가 원본에서 연다 (games-growth D-005) */
+  supportsChallenge: boolean;
   /** 세션 발급 요청의 board(플레이 방식) → 보드 키·seed. 지원하지 않으면 null(422). 지원하지만 지금 못 여는 방식은 도메인 에러를 던진다(디펜스 주간 503) */
   resolveSessionBoard(board: string | undefined, now: Date): SessionBoard | null;
   /** 랭킹 조회에 쓸 수 있는 보드 키인지 */
@@ -65,6 +78,8 @@ export interface GameEngine {
   isReplayPublic(boardKey: string, now: Date): boolean;
   /** /boards 응답 — 현재·지난 보드 목록 */
   listBoards(now: Date): GameBoard[];
+  /** 명예의 전당 기간 목록(최근 순) — 끝났고 재생이 공개된 기간만 (games-growth D-010) */
+  hallOfFamePeriods(now: Date): HallOfFamePeriod[];
   /** 제출된 params가 이 게임의 키 집합·정수 형식인지 — 세션을 쓰기 전에 422로 거른다. 값의 범위는 verify가 판정 */
   isValidParams(params: Record<string, number>): boolean;
   /**
