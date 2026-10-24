@@ -94,3 +94,9 @@
 - `pnpm db:select`(읽기 전용) — 운영 DEFENSE 기록은 여전히 3건(46 endless-s1 · 47·79 weekly-2026-w43), 모두 ENGINE_VERSION 3, 숨김 0
 - 리플레이 본문(GAME_REPLAYS.REPLAY BLOB)은 `db:select`가 LOB을 문자열로 꺼내지 못하고 내장 패키지(DBMS_LOB)는 가드가 거부 → 공개 API(`GET /games/:gameType/scores/:scoreId/replay`)로 받아야 한다. 주간 w43 2건은 그 주가 끝나고 4시간 뒤까지 404
 - 재검증은 D-002대로 배포 직전에 공개 API로 받아 리팩토링 엔진 `verifyDefenseReplay`로 돌린다(점수·결과 일치 확인)
+
+## 2026-10-24 — 1단계 리뷰 완료 (프론트 4라운드 → 백엔드 재동기화)
+- 프론트: review-front + Opus 4라운드, 마지막 확정 0. 최종 cdda053(엔진 변경은 0e683ed effects.ts 주석 2줄 — 효과 배열 push 전용 계약). Opus 독립 검증: base·HEAD 엔진 72판 틱 단위 교대 해시 비교 275만 틱 불일치 0, statValue 무작위 대조 40만 회 0. 3R에서 격리 테스트 가드의 거짓 통과(표본 순서에 따라 길이만 비교 퇴행을 못 잡음)를 찾아 실제 step 순서 기준 가드로 수정(37005bc), 4R 실측 400·350 표본 어긋남 0
+- 프론트 최종 게이트: DEFENSE_CORPUS=full 537 tests(4000판) · lint · typecheck · test:run 1516
+- 백엔드 재동기화: effects.ts·매니페스트(루트 e6b2977d…) 바이트 복사, interleave spec은 머리 3줄(import·출처 주석·cases)만 다르게 다시 이식. 변이(길이만 비교) → interleave 실패(c2 tick 0) 확인 후 원복. `defense-engine|defense-verify` 171 · ci:core 1667 · lint 경고 6
+- 1단계 코드 확정: R1·R2 + 계약 주석. ENGINE_VERSION 3·getStateHash 무변경
