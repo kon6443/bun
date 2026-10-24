@@ -28,3 +28,9 @@
 - **실효 증명**: 엔진 사본 `data/towers.ts:108` 궁수탑 damage 8→9 임시 변경 → 코퍼스 50판·골든 실패, 메시지에 첫 차이 위치("checkpoint #21 (tick 6300): 8cf662cd ≠ a33bc239") → 원복(git 변경 0)
 - ci:core: 단위 1663/1663(+76), lint 0 errors·경고 6, build ✅
 - 다른 메인 세션(bun-c4, 리플레이 조회수 기능)의 충돌 질의에 답함 — 겹치는 파일·스키마 없음, 주의: 리플레이 GET 60초 캐시·진행 중 주간 리플레이 404
+
+## 2026-10-24 — 프론트 리뷰 R1 반영 픽스처로 백엔드 갱신
+- 프론트 76321f6(엔진 diff 0): 픽스처 v2 + 헤더 `engineVersion` 3 · 이식용 72판(캠페인 36·무한 18·주간 18, **seed 0~2³²−1 전 범위 — 72판 중 34판 ≥ 2³¹**, 캠페인 10% 시험 스테이지) sha256 `7bb6b4fc…` · 러너 `30a29bb3…`(replayCheckpoints가 끝 해시·틱도 돌려 simulateReplay와 자기대조, 형식 깨진 로그 null) · 프론트 4,000판 `b08c3e32…` · 같은 ENGINE_VERSION 재생성 가드(DEFENSE_CORPUS_FORCE=1)
+- 프론트 실효 증명(새 픽스처): A 데미지 8→9 이식 37/72·코퍼스 3,462/4,000 · B 증강 난수 1회 추가 28/72·1,537 · C streamSeed `seed|0` 34/72·2,035(seed ≥ 2³¹ 전부 — 옛 코퍼스였으면 0)
+- 백엔드: 사본 재복사(import 한 줄만) · copy-hashes 갱신 · spec에 `corpus.engineVersion === ENGINE_VERSION`·seed ≥ 2³¹ 포함 단정 추가 → 79 tests 통과, 18.4초 · lint 경고 6
+- 백엔드 실효 증명 C(`random.ts:53` `seed | 0`) → 34/79 실패(프론트 34/72와 일치) → 원복(git 변경 0)
