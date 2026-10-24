@@ -62,6 +62,7 @@
 - **탐지 신호**: build 직후 같은 포트의 페이지가 500·무한 로딩, dev 로그에 `.next/…` ENOENT.
 - **근본 원인**: `next dev`와 `next build`가 같은 `.next` 디렉토리를 쓴다. build가 dev 산출물을 덮어썼다(dev 종료 → `.next` 삭제 → 재기동으로 복구·재현 확인).
 - **예방 규칙**: build는 dev를 끈 뒤 돌리거나 다른 디렉토리(별도 worktree)에서 돌린다. 리뷰 서브에이전트·다른 세션에도 "dev 실행 중이면 build 금지"를 프롬프트에 명시한다.
+- **재발(2026-10-24, games-polish P9)**: 메인이 사용자 시연용 `pnpm dev`를 프론트 worktree에 띄운 뒤, 같은 worktree에서 작업 중인 프론트 세션에 "dev 실행 중 build 금지"를 알리지 않았다 — 프론트 `ci:core`(next build)가 `.next`를 덮어써 사용자 화면이 Internal Server Error. 보강: **다른 세션이 쓰는 worktree에 dev를 띄우는 순간** 그 세션에 "build·ci:core 전 메인 확인" 규칙을 보낸다(또는 시연은 별도 worktree에서).
 
 ## 2026-10-20 — Playwright `setOffline`으로 소켓 재연결을 시험해 "복구 안 됨"으로 오판할 뻔했다
 

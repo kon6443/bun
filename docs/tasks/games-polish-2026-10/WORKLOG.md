@@ -405,3 +405,54 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 미검증: 실기기(iOS 소리 unlock·모바일 프레임·터치·스크린리더) · 2인 모두 브라우저 실플레이 · 디펜스 다시보기 끝 소리(헤드리스 오디오 확인 불가)
 - 사소한 관찰(후속 후보): 다시보기에서 기록 없는 판이 공격자면 혜성이 "기록 없음" 문구 위에서 출발
 - 최종 백엔드 `ci:all` exit 0(단위 1587 · E2E 240/58 skip · Redis 스펙 296/2 skip) → README 기준선 갱신
+
+## 2026-10-24 — 머지·배포(사용자 지시 "main < develop < ft 머지까지 진행")
+- 백엔드: `feat-onam-games-polish` 푸시 → **bun#289**(→develop, CI verify pass 1m7s, 머지 `8c051e5`) → **bun#290**(develop→main, CI pass 45s, 머지 `d96f8f1`) → 배포 워크플로 "Deploy NestJS to Docker Swarm" 성공(run 40061862706)
+- 운영 API 스모크: 운영 백엔드 주소를 레포에서 알 수 없어(문서에 도메인 미기입 정책) 미확인 — 프론트 세션에 운영 환경으로 확인 요청
+- 프론트: next-bun-35에 같은 순서 지시, main 머지는 백엔드 배포 성공 통보 후
+- 프론트: next-bun#374(→develop, verify pass, 머지 `9bb8747`) → next-bun#375(develop→main, verify pass, 머지 `f654d6e`) → "Deploy Next to Docker Swarm" 성공(run 40062822101)
+- 운영 확인(프론트 세션, 운영 env): /games·/games/tetris 200 · lobby 응답 rooms 필드 있음(대기 방 0이라 미리보기 화면은 운영 미확인) · 세션 응답 ttlSeconds = 7200(테스트 세션 1개 발급, 등록 안 함·TTL 만료)
+- 정리: 검증용 로컬 dev 서버(:3500·:3000) 종료. Redis 컨테이너 `bun-redis`·`bun-redis-test`와 원격·로컬 기능 브랜치는 남김(삭제는 사용자 지시 후)
+- **태스크 완료** — 후속 후보는 STATUS
+
+## 2026-10-24 — P8 `ux` 진행 중 결정
+- 사용자 승인: 프론트 파일 이동 2(테트리스 soundSettings(+test)·useSoundSettings → `_shared`, git mv)·삭제 2(`SoundSettingsPanel`·`BattleRoomsTeaser`) — CLAUDE.md Ask(파일 삭제)
+- Safari 중간 결과(프론트): Playwright WebKit에서 자동재생 제한은 재현되나(제스처 밖 resume → suspended), 현재 소리 경로 4개는 제스처 안 resume → running까지 정상. 유력 원인은 브라우저별 localStorage(Safari는 기본 OFF 그대로) + 설정 위치(피드백 ⑤). 하드닝: 제스처 안 무음 1샘플 재생·공통 모달 토글이 제스처 안에서 모든 플레이어 resume·단위 테스트. 실제 Safari 앱 확인은 배포 후 사용자
+- 사용자 승인: `SoundToggle`(+test) 삭제(사용처 4곳 → `_shared/components/SoundButton`) + **P8·P9 일괄 승인** — 공통 컴포넌트로 대체돼 참조 0이 된 파일 삭제는 grep 0 확인·보고 조건으로 건별 확인 없이 진행(범위 밖은 여전히 질문)
+
+## 2026-10-24 — 프론트 P8 `ux` 완료 보고
+- 3커밋(로컬), ci:core 1498 통과, build ✅. 리뷰 R1 확정 지적 수정 → R2 두 리뷰어 확정 0
+- A 진입점: /games 카드는 링크 1개 + "열린 방 N" 배지 → `/games/tetris#battle` · 테트리스 홈 헤더 바로 아래 대전 섹션(방 목록 상시, 0개 빈 상태·받는 중 자리, 빠른 참가·방 만들기·전체 보기), lobby REST 10초 주기·숨김 중지
+- B 공통 소리 모달: `_shared/lib/soundSettings`(기본 모두 OFF, sfx·sfxVolume·music·musicVolume, 옛 키에서 켠 값만 1회 이전) · `SoundSettingsModal`(useDialog·포털) · 소리 버튼은 누르면 모달(음소거 토글 없음 — 한곳 제어·320px HUD·Safari unlock 경로 일원화), 모달 동안 싱글·디펜스 일시정지
+- C Safari: WebKit에서 자동재생 제한 재현, 기존 경로 4개는 정상 → 원인은 브라우저별 저장값 기본 OFF + 설정 위치로 판단. 하드닝: 모달의 켜는 클릭 안에서 등록된 플레이어 생성·resume·무음 1샘플(`soundUnlock`·`primeAudioContext`), WebKit에서 모달 켜기 → running·소리 재생 확인. 실기기 Safari는 배포 후 사용자
+- 삭제(일괄 승인·grep 0): BattleRoomsTeaser · SoundToggle(+test) · SoundSettingsPanel · 이동: soundSettings·useSoundSettings → `_shared`
+- 보류: 테트리스 싱글톤 unlock 등록이 SPA 이동 후 남음(ctx 최대 1개 추가, 동작 오류 없음) · 연속 실패 문구 · 음량 100% 청취
+- 메인 Playwright 검증은 P9 완료 후 함께(프론트가 같은 브랜치에서 P9 진행 중 — 작업 중인 worktree에서 시연하지 않음)
+
+## 2026-10-24 — P9 `pad` 착수: 씹힘 전수조사 결과·설계
+| # | 심각도 | 위치 | 현상 | 조치 |
+|---|---|---|---|---|
+| 1 | M | TouchControls.tsx:84-91 | ◀ 누른 채 ▶로 미끄러져도 ◀ 유지(버튼별 pointer capture) | D-pad 한 영역·각도 판정·히스테리시스 12° |
+| 2 | M | useInputQueue.ts:18 · useBattlePlay 카운트다운 | 카운트다운·일시정지 중 누른 이동이 시작 뒤 안 먹음(터치는 키 반복 없음) | 패드가 눌림 상태 보유 → playing 전환 순간 재전송 |
+| 3 | L | useInputQueue release + 엔진 SOFT_DROP | 16ms 안의 ▼ 탭 무시 | 래치 — 누름이 큐에 있으면 뗌을 다음 틱으로 |
+| 4 | M | useBattlePlay.ts:212 | 대전 이동 누른 채 앱 전환 시 고착 가능(blur만) | blur·visibilitychange·pagehide·pointercancel 해제, 대전 키보드에도 visibilitychange |
+| 5 | L | TouchControls hold | 같은 버튼 두 손가락 중 하나 떼면 해제 | D-pad는 첫 포인터 하나만 |
+| 6 | L | TouchControls | iOS 길게 누르기 콜아웃 가능 | touch-callout·user-select·tap-highlight |
+- 정상 확인: touch-action none·overscroll none·viewport-fit cover·ref 큐·pointerdown·엔진 프레임당 입력 제한 없음
+- 설계: 싱글·대전 공통 `GamePad`("게임보이형") — D-pad ←→ ±55°·↑ ±30°·데드존 20%, ↑ 하드 드롭은 새로 누를 때만·가로 이동 후 100ms 무시, A⟳·B⟲ 25° 대각·HOLD 알약(같은 즉시·슬라이드 무시 규칙), 일시정지는 머리줄. 다이아몬드형 설정은 제외. `TouchControls`는 대체 후 삭제(일괄 승인)
+
+## 2026-10-24 — P8·P9 1차 Playwright(Chromium, 390×844 hasTouch)
+- /games: `#battle` 링크 1 · 방 만들기 0 ✅ · 테트리스 홈 대전 섹션 top 349px(첫 화면) ✅ · 빈 상태 "지금 열린 방이 없어요" ✅ · 소리 버튼 → 모달, 기본 [false,false] ✅ · Esc 닫힘 ✅ · 21초간 lobby 요청 3회(10초 주기) ✅
+- 패드: 세로·가로(844×390)·320×640 모두 버튼(홀드·A·B) 렌더, 가로 넘침 없음 ✅ · 페이지 오류 0
+- WebKit: Playwright 1.63과 캐시 webkit-2215(1.56용) 프로토콜 불일치로 멈춤 → scratchpad `pw156`에 playwright-core 1.56.1 설치, D-012 반영 후 재검증
+- 사용자 추가 요청(D-012) 반영 중이라 패드 배치는 재검증 예정
+
+## 2026-10-24 — D-012 패드 반영·검증 · 길게 누르기 차단 요청
+- 프론트 D-012 완료(bdf463a·892d92c, 리뷰 R1 두 리뷰어 확정 0): `_shared/components/GamePad`(게임 무관, layout props) + `tetris/lib/tetrisPadLayout` · ↑ 무동작(팔 비표시) · ⤓ 드롭 전용 키(강조색, 높이 64) · HOLD 왼쪽 알약 · 옛 tetris GamePad 삭제(grep 0). 최종 build는 PR 직전(시연 dev 보호)
+- Playwright(Chromium 1.63 · **WebKit 1.56**, hasTouch) 375×812·320×640·812×375: 버튼 HOLD·소프트 드롭·하드 드롭·A·B 렌더, 가로 넘침 0, 페이지 오류 0 ✅ (스크린샷 scratchpad `shots/pad-*.png`). 화면 왼쪽 아래 "N"은 Next dev 표시기(운영 빌드엔 없음)
+- 사용자: 새 모바일 키 만족. 추가 요청 — 게임 화면 길게 누르기 시 선택·복사 메뉴 차단 → 프론트 지시(게임 레이아웃 전체 user-select·touch-callout·contextmenu 차단, 입력칸 예외)
+
+## 2026-10-24 — 길게 누르기 차단 검증
+- 프론트 08262cc: `_shared/components/GameSurface`(테트리스·디펜스 전체화면 레이아웃 전부) + globals.css `[data-game-surface]` — UA 판별 없이 항상. 입력칸·선택 허용 글은 예외
+- 처음 검증에서 규칙이 안 보임(user-select auto/text) → 제공 CSS에 규칙 0 → dev 서버가 CSS 변경을 못 집은 상태(stale). 재시작 후 규칙 4개 로드
+- 재검증(Chromium=안드로이드 대응 · WebKit=iOS 대응, 375×812 hasTouch): 판(canvas)·HUD 글 user-select none · contextmenu 취소 ✅ / 로비 이름 입력칸 user-select text · contextmenu 미취소 · 입력 정상 ✅. `-webkit-touch-callout`은 데스크톱 엔진이 계산값을 노출하지 않아 실기기 iOS에서 확인 필요
