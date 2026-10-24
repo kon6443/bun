@@ -169,6 +169,8 @@ describe('E2E 게임', () => {
       expect(res.body.data).toEqual({
         scoreId: 41,
         score: SUCCESS.expected.score,
+        // 보낸 '  테트리스   왕 '을 DTO가 정리해 저장한 값 — 공유 카드는 이 값을 쓴다(games-polish Q-S2)
+        playerName: '테트리스 왕',
         detail: expect.objectContaining({ lines: SUCCESS.expected.lines, level: SUCCESS.expected.level }),
         ranks: { daily: 3, weekly: 3, all: 3 },
       });

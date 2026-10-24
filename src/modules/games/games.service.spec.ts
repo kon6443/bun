@@ -199,7 +199,7 @@ describe('GamesService', () => {
           isHidden: 0,
         }),
       );
-      expect(result).toEqual({ scoreId: 41, score: 12340, detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
     });
 
     it('리플레이는 세션 seed와 함께 gzip으로 저장해야 함 (같은 트랜잭션) — 테트리스는 이전과 같은 본문 형식', async () => {
@@ -487,7 +487,7 @@ describe('GamesService', () => {
 
       const result = await submit();
 
-      expect(result).toEqual({ scoreId: 41, score: 12340, detail: VERIFIED_DETAIL, ranks: null });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: null });
       expect(savedScore()).toBeDefined();
     });
   });

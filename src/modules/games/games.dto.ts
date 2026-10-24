@@ -195,6 +195,9 @@ export class GameScoreSubmittedDto {
   @ApiProperty({ description: '서버가 리플레이로 계산한 점수', example: 12340 })
   score: number;
 
+  @ApiProperty({ description: '랭킹에 저장된 이름 — 보낸 이름의 앞뒤 공백 제거·연속 공백 1개로 정리한 값(공유 카드·화면 표시는 이 값을 쓴다)', example: '테트리스왕' })
+  playerName: string;
+
   @ApiProperty({
     description:
       '게임별 상세 값 — TETRIS: lines·level·pieces·tSpins·tetrises·maxCombo·engineVersion·das·arr · DEFENSE: wave·progress·kills·livesLeft·goldEarned·engineVersion',
