@@ -1,6 +1,6 @@
 {
   "engineVersion": 3,
-  "sha256": "e5564b03197199fd83920326739e02bfbd45ff0acbeef0e3cd4f5e7d1ceeb881",
+  "sha256": "e6b2977d379acc67a5b0df559f756f206558a4ee28f145505086faefaf2629f3",
   "files": [
     {
       "path": "__fixtures__/golden-replays.json",
@@ -12,7 +12,7 @@
     },
     {
       "path": "combat.ts",
-      "sha256": "001d296e9effd8f5ca7082d0f6e27d9920cc009914958670e85b3a2914b8a5b9"
+      "sha256": "a49dffd97a837812ead317b254d408959c89f7967ead74b65602da8ee8ab690f"
     },
     {
       "path": "constants.ts",
@@ -56,7 +56,7 @@
     },
     {
       "path": "effects.ts",
-      "sha256": "27bce80f166c342476ff2991e2e20f60264cb41b0b2db9e4eea68745441189fd"
+      "sha256": "ffc87a1605b31d559462c1f5ad4ebc8ddeb9918f97367480760178d661878876"
     },
     {
       "path": "game.ts",
@@ -84,7 +84,7 @@
     },
     {
       "path": "state.ts",
-      "sha256": "95386dd66e1c39ee4008fac85b3b76f3a054dc0cc18a682aff095052b61860e0"
+      "sha256": "c39d80eb79df046909c65691944342bdc35408a26a2e3bc9fd27be284ed2d129"
     },
     {
       "path": "status.ts",

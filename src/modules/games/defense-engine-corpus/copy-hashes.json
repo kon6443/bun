@@ -1,0 +1,5 @@
+{
+  "$comment": "프론트 원본(next-bun src/app/games/defense/engine-dev/corpus/) sha256 — portableRunner.ts는 엔진 import 한 줄을 프론트 경로('../../engine')로 되돌려 잰다. 원본이 바뀌면 다시 복사하고 이 값을 갱신한다",
+  "portable.json": "7bb6b4fc9ed4279805d0752614a290029386c6161abcec97fd5e2d40413c6052",
+  "portableRunner.ts": "a3c10927a2a10bbaaec9c865fa131db12fb50dee0ebf207cdc0e8b9265f6398f"
+}

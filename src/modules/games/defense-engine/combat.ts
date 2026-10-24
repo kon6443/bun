@@ -113,6 +113,30 @@ function groundShot(state: GameState, kindId: number, stage: TowerStage): boolea
   return kindId === TOWER_ID.CROSSBOW && !stage.hitsGround && hasFlag(state.effects, FLAG.CROSSBOW_GROUND);
 }
 
+/**
+ * 공격 1회의 수치 — 공격·궁극기·투사체 착탄마다 고쳐 쓰는 작업 객체 하나(리팩토링 1단계 R2 — 공격마다 객체 2개를 만들던 할당)
+ * 매번 모든 필드를 다시 채운다 → 앞 공격·다른 판의 값이 남지 않는다
+ * 불변 조건: 쓰는 쪽(attack·runUltimate·impact)은 다음 makeStrike 전에 다 쓰고 담아 두지 않는다 — 공격 처리 안에서 다른 공격을 부르지 않는다
+ * (applyStatus는 출처의 값만 읽는다 — status.ts)
+ */
+const strikeSource: StatusSource = { subject: towerSubject(TOWER_ID.ARCHER, ELEMENT.NONE), sourceKey: 0, plague: false, curseExplode: 0 };
+const strikeScratch: Strike = {
+  towerId: 0,
+  towerKind: 0,
+  stage: towerStage(TOWERS[TOWER_ID.ARCHER], 1, 0),
+  subject: strikeSource.subject,
+  damageType: 0,
+  element: 0,
+  hitsGround: false,
+  hitsAir: false,
+  groundPenalty: false,
+  nthStatus: null,
+  statusSource: strikeSource,
+  shatterDamage: 0,
+  shatterRadius: 0,
+  rankBonus: null,
+};
+
 function makeStrike(state: GameState, towerId: number, slot: number, kindId: number, level: number, branch: number, nth: boolean): Strike {
   const kind = TOWERS[kindId];
   const stage = towerStage(kind, level, branch);
@@ -121,27 +145,25 @@ function makeStrike(state: GameState, towerId: number, slot: number, kindId: num
   const nthSpecial = findSpecial(stage, SPECIAL.EVERY_NTH_STATUS);
   const curse = findSpecial(stage, SPECIAL.CURSE_EXPLODE);
   const shatter = findSpecial(stage, SPECIAL.SHATTER);
-  return {
-    towerId,
-    towerKind: kindId,
-    stage,
-    subject,
-    damageType: kind.damageType,
-    element: stage.element,
-    hitsGround: stage.hitsGround || ground,
-    hitsAir: stage.hitsAir,
-    groundPenalty: ground,
-    nthStatus: nth && nthSpecial && nthSpecial.status ? nthSpecial.status : null,
-    statusSource: {
-      subject,
-      sourceKey: slot + 1,
-      plague: findSpecial(stage, SPECIAL.PLAGUE) !== null,
-      curseExplode: curse ? (curse.value ?? 0) : 0,
-    },
-    shatterDamage: shatter ? (shatter.value ?? 0) : 0,
-    shatterRadius: shatter ? (shatter.radius ?? 0) : 0,
-    rankBonus: findSpecial(stage, SPECIAL.RANK_BONUS),
-  };
+  const strike = strikeScratch;
+  strike.towerId = towerId;
+  strike.towerKind = kindId;
+  strike.stage = stage;
+  strike.subject = subject;
+  strike.damageType = kind.damageType;
+  strike.element = stage.element;
+  strike.hitsGround = stage.hitsGround || ground;
+  strike.hitsAir = stage.hitsAir;
+  strike.groundPenalty = ground;
+  strike.nthStatus = nth && nthSpecial && nthSpecial.status ? nthSpecial.status : null;
+  strike.statusSource.subject = subject;
+  strike.statusSource.sourceKey = slot + 1;
+  strike.statusSource.plague = findSpecial(stage, SPECIAL.PLAGUE) !== null;
+  strike.statusSource.curseExplode = curse ? (curse.value ?? 0) : 0;
+  strike.shatterDamage = shatter ? (shatter.value ?? 0) : 0;
+  strike.shatterRadius = shatter ? (shatter.radius ?? 0) : 0;
+  strike.rankBonus = findSpecial(stage, SPECIAL.RANK_BONUS);
+  return strike;
 }
 
 function canHit(enemy: Enemy, hitsGround: boolean, hitsAir: boolean): boolean {
