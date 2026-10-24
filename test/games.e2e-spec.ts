@@ -132,7 +132,7 @@ describe('E2E 게임', () => {
       const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).expect(201);
 
       expect(res.body.data).toEqual(
-        expect.objectContaining({ engineVersion: 1, seed: expect.any(Number), expiresAt: expect.any(String), boardKey: 'default', mode: null }),
+        expect.objectContaining({ engineVersion: 1, seed: expect.any(Number), expiresAt: expect.any(String), ttlSeconds: 7200, boardKey: 'default', mode: null }),
       );
       // 본문 없이 보내도(테트리스 기존 클라이언트) 기본 보드로 세션을 저장한다
       expect(JSON.parse(redis.store.get(`game:session:${res.body.data.sessionId}`)!)).toEqual(expect.objectContaining({ boardKey: 'default' }));

@@ -133,7 +133,16 @@ export class GamesService {
       userId,
       ttlSeconds: engine.sessionTtlSeconds,
     });
-    return { sessionId, seed: session.seed, engineVersion: engine.engineVersion, expiresAt, boardKey: resolved.boardKey, mode: resolved.mode };
+    return {
+      sessionId,
+      seed: session.seed,
+      engineVersion: engine.engineVersion,
+      expiresAt,
+      // 절대 시각(expiresAt)은 기기 시계가 빠르면 짧게 보인다 — 클라이언트가 받은 시각 기준으로 셀 수 있게 길이도 준다(games-polish 프론트 리뷰)
+      ttlSeconds: engine.sessionTtlSeconds,
+      boardKey: resolved.boardKey,
+      mode: resolved.mode,
+    };
   }
 
   /** 랭킹 보드 목록 — 현재·지난 보드 */

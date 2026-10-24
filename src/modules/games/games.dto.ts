@@ -173,6 +173,12 @@ export class GameSessionDto {
 
   @ApiProperty({ description: '세션 만료 시각 (ISO, UTC)', example: '2026-10-21T08:00:00.000Z' })
   expiresAt: Date;
+
+  @ApiProperty({
+    description: '세션 유효 시간(초) — 발급 시점부터. 기기 시계가 서버와 달라도 남은 시간을 계산할 수 있게 받은 시각 + 이 값으로 쓴다',
+    example: 7200,
+  })
+  ttlSeconds: number;
 }
 
 /** 기간 필터를 쓰지 않는 보드(DEFENSE 주간)는 세 값 모두 보드 전체 순위로 같다 */
