@@ -410,3 +410,7 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 백엔드: `feat-onam-games-polish` 푸시 → **bun#289**(→develop, CI verify pass 1m7s, 머지 `8c051e5`) → **bun#290**(develop→main, CI pass 45s, 머지 `d96f8f1`) → 배포 워크플로 "Deploy NestJS to Docker Swarm" 성공(run 40061862706)
 - 운영 API 스모크: 운영 백엔드 주소를 레포에서 알 수 없어(문서에 도메인 미기입 정책) 미확인 — 프론트 세션에 운영 환경으로 확인 요청
 - 프론트: next-bun-35에 같은 순서 지시, main 머지는 백엔드 배포 성공 통보 후
+- 프론트: next-bun#374(→develop, verify pass, 머지 `9bb8747`) → next-bun#375(develop→main, verify pass, 머지 `f654d6e`) → "Deploy Next to Docker Swarm" 성공(run 40062822101)
+- 운영 확인(프론트 세션, 운영 env): /games·/games/tetris 200 · lobby 응답 rooms 필드 있음(대기 방 0이라 미리보기 화면은 운영 미확인) · 세션 응답 ttlSeconds = 7200(테스트 세션 1개 발급, 등록 안 함·TTL 만료)
+- 정리: 검증용 로컬 dev 서버(:3500·:3000) 종료. Redis 컨테이너 `bun-redis`·`bun-redis-test`와 원격·로컬 기능 브랜치는 남김(삭제는 사용자 지시 후)
+- **태스크 완료** — 후속 후보는 STATUS
