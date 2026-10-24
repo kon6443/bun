@@ -370,3 +370,11 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - Q-B4: `ServerEvents.ERROR` 타입 삭제·미구독(ack 없는 heartbeat 실패만 오고, 재연결이 복구 — 화면 동작 없음)
 - 남김: formatFullDateTime(dateUtils에 대응 없음) · 랭킹 링크 쿼리 순서만 바뀜(의미 동일)
 - 미검증: 실기기 소리·진동
+
+## 2026-10-24 — 프론트 P7 `fx` 완료 보고 · 프론트 리뷰 루프 지시
+- 4커밋, ci:core 1480 통과, build ✅, 엔진 파일 무변경. 회귀: 싱글 seek 뒤 drain 제거 시 실패(입력 촘촘한 구간으로 테스트 보강) · 대전 궤적·KO 2건 · 로비·입구 5건 — 되돌리면 실패
+- 반영: 다시보기 소리(싱글 replayCues·4× 큰 사건만·탐색 구간 버림 / 디펜스 `useDefenseSfx` 공용 훅 / 대전 크게 보기 판·KO) · 대전 다시보기 공격 궤적(`garbageFrom`, 숨은 판 관여 시 "+N"만) · 방 목록 노출(로비 목록 상단+빠른 참가, 홈·/games 카드 미리보기 `BattleRoomsPreview`·`BattleRoomsTeaser`)
+- 지시 밖 추가(메인 승인): 대전 다시보기 배경음·SoundToggle(싱글과 일관)
+- 계약 확인 답: garbageFrom[k] = 리플레이 garbage k번째 4개 묶음의 공격자(`garbageSenders`) · rooms = WAITING·빈자리·locked 포함·최대 3
+- 미검증: 실기기 소리(iOS unlock)·실제 경기 데이터 궤적 화면 → Playwright 단계
+- 프론트 리뷰 루프 지시: origin/main...base 전체, 리뷰 스킬 + Opus 매 라운드, 확정 0까지
