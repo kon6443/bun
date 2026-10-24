@@ -418,3 +418,4 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 ## 2026-10-24 — P8 `ux` 진행 중 결정
 - 사용자 승인: 프론트 파일 이동 2(테트리스 soundSettings(+test)·useSoundSettings → `_shared`, git mv)·삭제 2(`SoundSettingsPanel`·`BattleRoomsTeaser`) — CLAUDE.md Ask(파일 삭제)
 - Safari 중간 결과(프론트): Playwright WebKit에서 자동재생 제한은 재현되나(제스처 밖 resume → suspended), 현재 소리 경로 4개는 제스처 안 resume → running까지 정상. 유력 원인은 브라우저별 localStorage(Safari는 기본 OFF 그대로) + 설정 위치(피드백 ⑤). 하드닝: 제스처 안 무음 1샘플 재생·공통 모달 토글이 제스처 안에서 모든 플레이어 resume·단위 테스트. 실제 Safari 앱 확인은 배포 후 사용자
+- 사용자 승인: `SoundToggle`(+test) 삭제(사용처 4곳 → `_shared/components/SoundButton`) + **P8·P9 일괄 승인** — 공통 컴포넌트로 대체돼 참조 0이 된 파일 삭제는 grep 0 확인·보고 조건으로 건별 확인 없이 진행(범위 밖은 여전히 질문)
