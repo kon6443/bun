@@ -83,3 +83,9 @@
 - 판 간 격리 테스트: 프론트 `interleave.test.ts` → 백엔드 `defense-engine.corpus.interleave.spec.ts`(jest) — 8판 틱 단위 교대, 단독 기대값과 일치. 변이(버킷 메모 신원 검사 제거) 시 실패 확인 후 원복
 - 게이트: 프론트 전체 4,000판·이식 72·골든·매니페스트·tokenScan 537 tests · 백엔드 엔진 테스트 138 · ci:core 1667 · lint 경고 6
 - 성능(R1 → R2): 프론트 무한 c2093 145.4→138.0ms(−5.1%, 스캐빈지 14→0.4) · 주간 136.6→128.8(−5.7%, 16→0.2) · 골든 62.5→60.2 · 복원 148.6→144.3(14.6→1) · 서버 최장 판 62.3→61.6ms · 힙 증가 4.0→0.6MB — CPU 이득은 작고 GC가 사실상 사라짐(연속 검증·프론트 GC 멈춤 제거)
+
+## 2026-10-24 — 1단계 리뷰 라운드 1 (백엔드)
+- 범위: origin/main..HEAD `src/`·`eslint.config.mjs`(엔진 사본 3파일·매니페스트·코퍼스 사본·spec 5)
+- 리뷰어 A(메인, review-flow): 엔진 호출처 `defense-verify.ts`·`defense-game-engine.ts` 2곳 — `simulateReplay` 동기 호출, 워커 스레드는 모듈 인스턴스 분리 → 판 교차 경로 없음. 확정 0
+- 리뷰어 B(Opus 서브에이전트): 확정 0. effects 변경은 push 2곳뿐(augment.ts:125·state.ts:261-262, 같은 길이 내용 변경 0건 grep) · subject 필드 대입·identity 비교 0건 · strike 재진입 경로 없음(damage·status가 combat 미import) · 변이 재확인(길이 비교 제거 → 코퍼스 26건 실패, 신원 검사 제거 → interleave 실패). `defense-engine|defense-verify` 171 tests 통과
+- 사소(버그 아님, 기각/후속): interleave의 캠페인 판 수 미단정(증강 판 ≥3 단정이 있어 격리 검사는 공허하지 않음 — 프론트 원본 테스트와 같이 바꿔야 해 프론트에 선택 제안) · effects "push만" 전제는 주석으로만 보장(효과 제거 기능이 생기면 코퍼스에 그런 판 추가 필요 — 후속 메모)
