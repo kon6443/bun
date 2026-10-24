@@ -405,3 +405,8 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 미검증: 실기기(iOS 소리 unlock·모바일 프레임·터치·스크린리더) · 2인 모두 브라우저 실플레이 · 디펜스 다시보기 끝 소리(헤드리스 오디오 확인 불가)
 - 사소한 관찰(후속 후보): 다시보기에서 기록 없는 판이 공격자면 혜성이 "기록 없음" 문구 위에서 출발
 - 최종 백엔드 `ci:all` exit 0(단위 1587 · E2E 240/58 skip · Redis 스펙 296/2 skip) → README 기준선 갱신
+
+## 2026-10-24 — 머지·배포(사용자 지시 "main < develop < ft 머지까지 진행")
+- 백엔드: `feat-onam-games-polish` 푸시 → **bun#289**(→develop, CI verify pass 1m7s, 머지 `8c051e5`) → **bun#290**(develop→main, CI pass 45s, 머지 `d96f8f1`) → 배포 워크플로 "Deploy NestJS to Docker Swarm" 성공(run 40061862706)
+- 운영 API 스모크: 운영 백엔드 주소를 레포에서 알 수 없어(문서에 도메인 미기입 정책) 미확인 — 프론트 세션에 운영 환경으로 확인 요청
+- 프론트: next-bun-35에 같은 순서 지시, main 머지는 백엔드 배포 성공 통보 후
