@@ -1,5 +1,6 @@
 import { ENGINE_VERSION, MAX_INPUT_LENGTH, MAX_TICKS, TICKS_PER_SECOND } from './defense-engine';
-import type { GameBoard, GameEngine, ReplayInput, VerifiedReplay } from './game-engine.registry';
+import type { GameBoard, GameEngine, HallOfFamePeriod, ReplayInput, VerifiedReplay } from './game-engine.registry';
+import { GAME_HALL_OF_FAME_WEEKS } from '../../common/constants/app.constants';
 import { weeklyBoardAt, weeklySeed } from './weekly-board';
 import { GameWeeklyUnavailableErrorResponseDto } from './games-error.dto';
 
@@ -39,6 +40,8 @@ export function createDefenseGameEngine({ getWeeklySecret, verify }: DefenseGame
     maxInputLength: MAX_INPUT_LENGTH,
     sessionTtlSeconds: DEFENSE_SESSION_TTL_SECONDS,
     defaultBoardKey: currentEndless,
+    // 검증이 보드 키로 모드·맵을 정해 도전장(순위 보드 ≠ 규칙 보드)을 아직 지원하지 않는다(games-growth D-012)
+    supportsChallenge: false,
     topLevelReplayParams: [],
     resolveSessionBoard(board, now) {
       // 생략하면 무한 — 랭킹 기본 보드와 같다
@@ -92,6 +95,18 @@ export function createDefenseGameEngine({ getWeeklySecret, verify }: DefenseGame
         );
       }
       return boards;
+    },
+    hallOfFamePeriods(now) {
+      // 지난 주간 보드(공개된 것만) — 주가 바뀐 직후 4시간은 지난주도 아직 비공개
+      const periods: HallOfFamePeriod[] = [];
+      const thisWeek = weeklyBoardAt(now).startsAt.getTime();
+      for (let i = 1; i <= GAME_HALL_OF_FAME_WEEKS; i++) {
+        const week = weeklyBoardAt(new Date(thisWeek - i * 7 * DAY_MS));
+        if (this.isReplayPublic(week.boardKey, now)) {
+          periods.push({ kind: 'weekly', ...week });
+        }
+      }
+      return periods;
     },
     isValidParams(params) {
       // 디펜스 리플레이는 게임별 설정이 없다

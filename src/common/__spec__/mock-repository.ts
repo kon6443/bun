@@ -33,6 +33,7 @@ const MOCKED_METHODS = [
   'remove',
   'count',
   'exists',
+  'increment',
   'createQueryBuilder',
 ] as const;
 
@@ -84,6 +85,7 @@ export const createMockQueryBuilder = (
     'orderBy',
     'addOrderBy',
     'groupBy',
+    'having',
     'skip',
     'take',
     'limit',

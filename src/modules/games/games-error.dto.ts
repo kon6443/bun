@@ -52,6 +52,20 @@ export const GameWeeklyUnavailableErrorResponseDto = defineDomainError({
   message: '지금은 주간 도전을 이용할 수 없습니다.',
 });
 
+/** 오늘의 테트리스를 열 수 없음 (503) — 데일리 seed 시크릿 미설정. 기본 보드는 영향 없음 (docs/tasks/games-growth D-004) */
+export const GameDailyUnavailableErrorResponseDto = defineDomainError({
+  code: 'GAME_DAILY_UNAVAILABLE',
+  status: 503,
+  message: '지금은 오늘의 테트리스를 이용할 수 없습니다.',
+});
+
+/** 도전장을 열 수 없음 (409) — 원본 기록의 엔진 버전이 현재와 달라 같은 seed로도 같은 판이 되지 않는다 (docs/tasks/games-growth D-009) */
+export const GameChallengeExpiredErrorResponseDto = defineDomainError({
+  code: 'GAME_CHALLENGE_EXPIRED',
+  status: 409,
+  message: '게임 버전이 바뀌어 이 도전장은 더 이상 플레이할 수 없습니다.',
+});
+
 /** 리플레이를 재현할 수 없음 (422) — 형식·게임 오버 불일치·실제 경과 시간 초과 */
 export const GameReplayInvalidErrorResponseDto = defineDomainError({
   code: 'GAME_REPLAY_INVALID',

@@ -24,7 +24,7 @@ paths:
 - **PK 선언은 DB의 IDENTITY 종류와 맞춘다** — `GENERATED ALWAYS AS IDENTITY` 컬럼에 값을 넣으면 ORA-32795로 거부된다. `@PrimaryGeneratedColumn`으로 ID를 생략한다 (예: `TASK_COMMENTS.COMMENT_ID`, `TEAM_TELEGRAM_LINKS.LINK_ID`).
 - **문자열 컬럼을 number로 선언하지 않는다** — Oracle이 컬럼 쪽을 숫자로 암묵 변환해 비교하므로 비숫자 값이 하나라도 생기면 ORA-01722로 기능 전체가 깨진다 (`USERS.KAKAO_ID` 사례). 외부 API 값은 도메인 진입 경계에서 한 번만 변환한다.
 - **민감정보 컬럼은 Entity에 선언하지 않는다** — TypeORM은 선언된 컬럼을 모든 `find`에서 SELECT해 응답·로그로 샐 수 있다. 꼭 필요하면 `select: false` (`USERS.KAKAO_REFRESH_TOKEN`은 미선언 유지).
-- 시각 컬럼 타입은 `datetime.md`.
+- 시각 컬럼 타입은 `datetime.md`. 단 **`TIMESTAMP WITH TIME ZONE`은 PK·유니크 키에 쓸 수 없다**(ORA-02329). 하루·주 단위 집계 키는 KST `YYYY-MM-DD` 문자열로 쓴다 — 시간대 없는 TIMESTAMP·DATE는 세션 시간대(로컬 KST·운영 UTC)에 따라 저장값이 달라진다 (`GAME_REPLAY_VIEW_STATS.STAT_DATE`, docs/lessons.md 2026-10-24)
 
 ## DB 스키마 변경 체크리스트
 
