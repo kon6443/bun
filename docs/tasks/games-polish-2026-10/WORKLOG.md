@@ -451,3 +451,8 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 프론트 D-012 완료(bdf463a·892d92c, 리뷰 R1 두 리뷰어 확정 0): `_shared/components/GamePad`(게임 무관, layout props) + `tetris/lib/tetrisPadLayout` · ↑ 무동작(팔 비표시) · ⤓ 드롭 전용 키(강조색, 높이 64) · HOLD 왼쪽 알약 · 옛 tetris GamePad 삭제(grep 0). 최종 build는 PR 직전(시연 dev 보호)
 - Playwright(Chromium 1.63 · **WebKit 1.56**, hasTouch) 375×812·320×640·812×375: 버튼 HOLD·소프트 드롭·하드 드롭·A·B 렌더, 가로 넘침 0, 페이지 오류 0 ✅ (스크린샷 scratchpad `shots/pad-*.png`). 화면 왼쪽 아래 "N"은 Next dev 표시기(운영 빌드엔 없음)
 - 사용자: 새 모바일 키 만족. 추가 요청 — 게임 화면 길게 누르기 시 선택·복사 메뉴 차단 → 프론트 지시(게임 레이아웃 전체 user-select·touch-callout·contextmenu 차단, 입력칸 예외)
+
+## 2026-10-24 — 길게 누르기 차단 검증
+- 프론트 08262cc: `_shared/components/GameSurface`(테트리스·디펜스 전체화면 레이아웃 전부) + globals.css `[data-game-surface]` — UA 판별 없이 항상. 입력칸·선택 허용 글은 예외
+- 처음 검증에서 규칙이 안 보임(user-select auto/text) → 제공 CSS에 규칙 0 → dev 서버가 CSS 변경을 못 집은 상태(stale). 재시작 후 규칙 4개 로드
+- 재검증(Chromium=안드로이드 대응 · WebKit=iOS 대응, 375×812 hasTouch): 판(canvas)·HUD 글 user-select none · contextmenu 취소 ✅ / 로비 이름 입력칸 user-select text · contextmenu 미취소 · 입력 정상 ✅. `-webkit-touch-callout`은 데스크톱 엔진이 계산값을 노출하지 않아 실기기 iOS에서 확인 필요
