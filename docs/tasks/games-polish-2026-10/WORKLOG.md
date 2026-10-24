@@ -428,3 +428,15 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 삭제(일괄 승인·grep 0): BattleRoomsTeaser · SoundToggle(+test) · SoundSettingsPanel · 이동: soundSettings·useSoundSettings → `_shared`
 - 보류: 테트리스 싱글톤 unlock 등록이 SPA 이동 후 남음(ctx 최대 1개 추가, 동작 오류 없음) · 연속 실패 문구 · 음량 100% 청취
 - 메인 Playwright 검증은 P9 완료 후 함께(프론트가 같은 브랜치에서 P9 진행 중 — 작업 중인 worktree에서 시연하지 않음)
+
+## 2026-10-24 — P9 `pad` 착수: 씹힘 전수조사 결과·설계
+| # | 심각도 | 위치 | 현상 | 조치 |
+|---|---|---|---|---|
+| 1 | M | TouchControls.tsx:84-91 | ◀ 누른 채 ▶로 미끄러져도 ◀ 유지(버튼별 pointer capture) | D-pad 한 영역·각도 판정·히스테리시스 12° |
+| 2 | M | useInputQueue.ts:18 · useBattlePlay 카운트다운 | 카운트다운·일시정지 중 누른 이동이 시작 뒤 안 먹음(터치는 키 반복 없음) | 패드가 눌림 상태 보유 → playing 전환 순간 재전송 |
+| 3 | L | useInputQueue release + 엔진 SOFT_DROP | 16ms 안의 ▼ 탭 무시 | 래치 — 누름이 큐에 있으면 뗌을 다음 틱으로 |
+| 4 | M | useBattlePlay.ts:212 | 대전 이동 누른 채 앱 전환 시 고착 가능(blur만) | blur·visibilitychange·pagehide·pointercancel 해제, 대전 키보드에도 visibilitychange |
+| 5 | L | TouchControls hold | 같은 버튼 두 손가락 중 하나 떼면 해제 | D-pad는 첫 포인터 하나만 |
+| 6 | L | TouchControls | iOS 길게 누르기 콜아웃 가능 | touch-callout·user-select·tap-highlight |
+- 정상 확인: touch-action none·overscroll none·viewport-fit cover·ref 큐·pointerdown·엔진 프레임당 입력 제한 없음
+- 설계: 싱글·대전 공통 `GamePad`("게임보이형") — D-pad ←→ ±55°·↑ ±30°·데드존 20%, ↑ 하드 드롭은 새로 누를 때만·가로 이동 후 100ms 무시, A⟳·B⟲ 25° 대각·HOLD 알약(같은 즉시·슬라이드 무시 규칙), 일시정지는 머리줄. 다이아몬드형 설정은 제외. `TouchControls`는 대체 후 삭제(일괄 승인)
