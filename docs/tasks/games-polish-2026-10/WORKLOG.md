@@ -419,3 +419,12 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 사용자 승인: 프론트 파일 이동 2(테트리스 soundSettings(+test)·useSoundSettings → `_shared`, git mv)·삭제 2(`SoundSettingsPanel`·`BattleRoomsTeaser`) — CLAUDE.md Ask(파일 삭제)
 - Safari 중간 결과(프론트): Playwright WebKit에서 자동재생 제한은 재현되나(제스처 밖 resume → suspended), 현재 소리 경로 4개는 제스처 안 resume → running까지 정상. 유력 원인은 브라우저별 localStorage(Safari는 기본 OFF 그대로) + 설정 위치(피드백 ⑤). 하드닝: 제스처 안 무음 1샘플 재생·공통 모달 토글이 제스처 안에서 모든 플레이어 resume·단위 테스트. 실제 Safari 앱 확인은 배포 후 사용자
 - 사용자 승인: `SoundToggle`(+test) 삭제(사용처 4곳 → `_shared/components/SoundButton`) + **P8·P9 일괄 승인** — 공통 컴포넌트로 대체돼 참조 0이 된 파일 삭제는 grep 0 확인·보고 조건으로 건별 확인 없이 진행(범위 밖은 여전히 질문)
+
+## 2026-10-24 — 프론트 P8 `ux` 완료 보고
+- 3커밋(로컬), ci:core 1498 통과, build ✅. 리뷰 R1 확정 지적 수정 → R2 두 리뷰어 확정 0
+- A 진입점: /games 카드는 링크 1개 + "열린 방 N" 배지 → `/games/tetris#battle` · 테트리스 홈 헤더 바로 아래 대전 섹션(방 목록 상시, 0개 빈 상태·받는 중 자리, 빠른 참가·방 만들기·전체 보기), lobby REST 10초 주기·숨김 중지
+- B 공통 소리 모달: `_shared/lib/soundSettings`(기본 모두 OFF, sfx·sfxVolume·music·musicVolume, 옛 키에서 켠 값만 1회 이전) · `SoundSettingsModal`(useDialog·포털) · 소리 버튼은 누르면 모달(음소거 토글 없음 — 한곳 제어·320px HUD·Safari unlock 경로 일원화), 모달 동안 싱글·디펜스 일시정지
+- C Safari: WebKit에서 자동재생 제한 재현, 기존 경로 4개는 정상 → 원인은 브라우저별 저장값 기본 OFF + 설정 위치로 판단. 하드닝: 모달의 켜는 클릭 안에서 등록된 플레이어 생성·resume·무음 1샘플(`soundUnlock`·`primeAudioContext`), WebKit에서 모달 켜기 → running·소리 재생 확인. 실기기 Safari는 배포 후 사용자
+- 삭제(일괄 승인·grep 0): BattleRoomsTeaser · SoundToggle(+test) · SoundSettingsPanel · 이동: soundSettings·useSoundSettings → `_shared`
+- 보류: 테트리스 싱글톤 unlock 등록이 SPA 이동 후 남음(ctx 최대 1개 추가, 동작 오류 없음) · 연속 실패 문구 · 음량 100% 청취
+- 메인 Playwright 검증은 P9 완료 후 함께(프론트가 같은 브랜치에서 P9 진행 중 — 작업 중인 worktree에서 시연하지 않음)
