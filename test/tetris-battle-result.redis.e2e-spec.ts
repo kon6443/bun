@@ -279,23 +279,26 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     expect(saves.length).toBe(1 + 2 + 1);
   });
 
-  it('로비 방 수 REST(D-025): 실제 로비 인덱스로 센다 — 대기 방 +1·경기 방 +1, 2초 캐시', async () => {
-    await client.del('tetris-battle:lobby-counts');
-    const before = await room.lobbyCounts(T0);
+  it('로비 요약 REST(D-025): 실제 로비 인덱스로 센다 — 대기 방 +1·경기 방 +1, 대기 방 미리보기, 2초 캐시', async () => {
+    await client.del('tetris-battle:lobby-summary');
+    const before = await room.lobbySummary(T0);
     if (!before) throw new Error('Redis 준비 안 됨');
 
-    await room.createRoom({ name: '대기방', maxPlayers: 2, playerName: '대기' }, who(50), T0); // WAITING
+    const waiting = await room.createRoom({ name: '대기방', maxPlayers: 2, playerName: '대기' }, who(50), T0); // WAITING
     await start(); // PLAYING
-    await client.del('tetris-battle:lobby-counts');
-    const after = await room.lobbyCounts(T0);
-    expect(after).toEqual({ waitingRooms: before.waitingRooms + 1, playingRooms: before.playingRooms + 1 });
-    const ttl = await client.pttl('tetris-battle:lobby-counts');
+    await client.del('tetris-battle:lobby-summary');
+    const after = await room.lobbySummary(T0);
+    expect(after).toMatchObject({ waitingRooms: before.waitingRooms + 1, playingRooms: before.playingRooms + 1 });
+    // 빈자리 있는 대기 방은 미리보기에 실린다 — 경기 중 방은 싣지 않는다(games-polish D-009)
+    expect(after?.rooms).toContainEqual({ code: waiting.room.code, name: '대기방', playerCount: 1, maxPlayers: 2, locked: false });
+    expect(after?.rooms.every((r) => r.playerCount < r.maxPlayers)).toBe(true);
+    const ttl = await client.pttl('tetris-battle:lobby-summary');
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(2_000);
 
     // 캐시가 살아 있는 동안은 새 방이 생겨도 같은 숫자
     await room.createRoom({ name: '또대기', maxPlayers: 2, playerName: '또' }, who(51), T0);
-    await expect(room.lobbyCounts(T0)).resolves.toEqual(after);
+    await expect(room.lobbySummary(T0)).resolves.toEqual(after);
   });
 
   it('후속 수정: 종료 → rematch(마감 전) → 같은 소켓 재입장으로 토큰 재발급 → 새 토큰으로 직전 경기 제출이 403이 아니다', async () => {

@@ -54,9 +54,9 @@ export class TetrisBattleBrowseService {
   ) {}
 
   async getLobby(now = Date.now()): Promise<BattleLobbyDto> {
-    const counts = await this.roomService.lobbyCounts(now);
-    if (!counts) throw new TetrisBattleUnavailableErrorResponseDto();
-    return counts;
+    const summary = await this.roomService.lobbySummary(now);
+    if (!summary) throw new TetrisBattleUnavailableErrorResponseDto();
+    return summary;
   }
 
   async listMatches({ limit = MATCH_LIST_DEFAULT_LIMIT, cursor }: { limit?: number; cursor?: string }): Promise<BattleMatchListDto> {

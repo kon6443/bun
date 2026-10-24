@@ -166,9 +166,22 @@ export class ListBattleMatchesQueryDto {
   cursor?: string;
 }
 
+export class BattleLobbyRoomDto {
+  @ApiProperty({ description: '방 코드 — /games/tetris/battle/{code}로 입장', example: 'K7Q2MZ' }) code: string;
+  @ApiProperty({ description: '방 이름', example: '한판 하실 분' }) name: string;
+  @ApiProperty({ description: '현재 인원', example: 2 }) playerCount: number;
+  @ApiProperty({ description: '최대 인원', example: 4 }) maxPlayers: number;
+  @ApiProperty({ description: '비밀번호 방', example: false }) locked: boolean;
+}
+
 export class BattleLobbyDto {
   @ApiProperty({ description: '입장 가능한 대기 중 방 수', example: 3 }) waitingRooms: number;
   @ApiProperty({ description: '경기 중·결과 화면인 방 수(입장 불가)', example: 1 }) playingRooms: number;
+  @ApiProperty({
+    type: [BattleLobbyRoomDto],
+    description: '빈자리가 있는 대기 방 미리보기 — 사람 많은 순, 같으면 최근 생성 순, 최대 3개(비밀번호 방 포함 — locked로 구분)',
+  })
+  rooms: BattleLobbyRoomDto[];
 }
 
 export class BattleLobbyResponseDto extends ApiSuccessResponseDto {
