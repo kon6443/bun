@@ -7,8 +7,10 @@ import { DataSource } from 'typeorm';
 import { GamesController } from '../src/modules/games/games.controller';
 import { GamesService } from '../src/modules/games/games.service';
 import { GameSessionService } from '../src/modules/games/game-session.service';
+import { GameViewService } from '../src/modules/games/game-view.service';
+import { GameHallOfFameService } from '../src/modules/games/game-hall-of-fame.service';
 import { GAME_ENGINE_REGISTRY, GameEngine } from '../src/modules/games/game-engine.registry';
-import { tetrisGameEngine } from '../src/modules/games/tetris-game-engine';
+import { createTetrisGameEngine } from '../src/modules/games/tetris-game-engine';
 import { createDefenseGameEngine } from '../src/modules/games/defense-game-engine';
 import { verifyDefenseReplay } from '../src/modules/games/defense-verify';
 import { ENGINE_VERSION as DEFENSE_ENGINE_VERSION } from '../src/modules/games/defense-engine';
@@ -16,6 +18,7 @@ import { weeklySeed } from '../src/modules/games/weekly-board';
 import golden from '../src/modules/games/tetris-engine/__fixtures__/golden-replays.json';
 import { GameScore } from '../src/entities/GameScore';
 import { GameReplay } from '../src/entities/GameReplay';
+import { GameReplayViewStat } from '../src/entities/GameReplayViewStat';
 import { User } from '../src/entities/User';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
@@ -56,6 +59,7 @@ describe('E2E 게임', () => {
   let redis: FakeRedis;
   let gameScoreRepository: MockRepository<GameScore>;
   let gameReplayRepository: MockRepository<GameReplay>;
+  let viewStatRepository: MockRepository<GameReplayViewStat>;
   let saved: Record<string, unknown>[];
   /** 레지스트리 — 테스트가 검증기를 바꿔 끼울 수 있게 매번 새 객체 */
   let engines: Record<string, GameEngine>;
@@ -66,11 +70,14 @@ describe('E2E 게임', () => {
     redis = new FakeRedis();
     gameScoreRepository = createMockRepository<GameScore>();
     gameReplayRepository = createMockRepository<GameReplay>();
+    viewStatRepository = createMockRepository<GameReplayViewStat>();
+    viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
+    viewStatRepository.increment.mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
     saved = [];
     env = { GAME_IP_HASH_SECRET: 'e2e-secret', GAME_WEEKLY_SEED_SECRET: 'e2e-weekly' };
     // 디펜스 검증은 워커 대신 같은 함수를 인프로세스로 — 운영 배선(GamesModule)과 같은 엔진 항목
     engines = {
-      TETRIS: tetrisGameEngine,
+      TETRIS: createTetrisGameEngine({ getDailySecret: () => env.GAME_WEEKLY_SEED_SECRET }),
       DEFENSE: createDefenseGameEngine({
         getWeeklySecret: () => env.GAME_WEEKLY_SEED_SECRET,
         verify: input => Promise.resolve(verifyDefenseReplay(input)),
@@ -90,9 +97,14 @@ describe('E2E 게임', () => {
       providers: [
         GamesService,
         GameSessionService,
+        // Redis 미주입 — 조회 상한은 fail-open(상한 없이 반영)으로 돈다
+        GameViewService,
+        // Redis 미주입 — 명예의 전당은 매번 계산한다
+        GameHallOfFameService,
         { provide: GAME_ENGINE_REGISTRY, useValue: engines },
         { provide: getRepositoryToken(GameScore), useValue: gameScoreRepository },
         { provide: getRepositoryToken(GameReplay), useValue: gameReplayRepository },
+        { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
         // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존 — 토큰이 없으면 쓰지 않는다
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: { get: (key: string) => env[key] } },
@@ -148,6 +160,61 @@ describe('E2E 게임', () => {
       expect(redis.store.size).toBe(0);
     });
 
+    it('board=daily → 오늘의 테트리스 보드 + 데일리 seed(같은 날 전원 동일) (games-growth D-004)', async () => {
+      const first = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ board: 'daily' }).expect(201);
+      const second = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ board: 'daily' }).expect(201);
+
+      expect(first.body.data).toEqual(expect.objectContaining({ boardKey: expect.stringMatching(/^daily-\d{4}-\d{2}-\d{2}$/), mode: 'daily' }));
+      expect(second.body.data.seed).toBe(first.body.data.seed);
+    });
+
+    it('데일리 비밀값이 없으면 daily만 503 GAME_DAILY_UNAVAILABLE', async () => {
+      delete env.GAME_WEEKLY_SEED_SECRET;
+
+      const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ board: 'daily' }).expect(503);
+      expect(res.body.code).toBe('GAME_DAILY_UNAVAILABLE');
+      await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).expect(201);
+    });
+
+    describe('도전장 challengeScoreId (games-growth D-005)', () => {
+      beforeEach(() => {
+        gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date() } as GameScore);
+      });
+
+      it('원본의 seed로 challenge-{원본 ID} 보드 세션 — 세션에 원본 ID를 남긴다', async () => {
+        (gameReplayRepository.findOne as jest.Mock).mockResolvedValue({ seed: 777, engineVersion: 1 });
+
+        const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ challengeScoreId: 41 }).expect(201);
+
+        expect(res.body.data).toEqual(expect.objectContaining({ boardKey: 'challenge-41', mode: 'challenge', seed: 777 }));
+        expect(JSON.parse(redis.store.get(`game:session:${res.body.data.sessionId}`)!)).toEqual(expect.objectContaining({ challengeOf: 41 }));
+      });
+
+      it('원본 엔진 버전이 다르면 409 GAME_CHALLENGE_EXPIRED', async () => {
+        (gameReplayRepository.findOne as jest.Mock).mockResolvedValue({ seed: 777, engineVersion: 0 });
+
+        const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ challengeScoreId: 41 }).expect(409);
+        expect(res.body.code).toBe('GAME_CHALLENGE_EXPIRED');
+      });
+
+      it.each([
+        ['board와 함께', '/games/tetris/sessions', { board: 'daily', challengeScoreId: 41 }, 422, 'VALIDATION_ERROR'],
+        ['정수가 아닌 ID', '/games/tetris/sessions', { challengeScoreId: 'x' }, 422, 'VALIDATION_ERROR'],
+        ['도전장 미지원 게임(디펜스)', '/games/defense/sessions', { challengeScoreId: 41 }, 422, 'VALIDATION_ERROR'],
+      ])('%s → %i %s', async (_name, path, payload, status, code) => {
+        const res = await request(app.getHttpServer()).post(e2e.url(path)).send(payload).expect(status);
+        expect(res.body.code).toBe(code);
+        expect(redis.store.size).toBe(0);
+      });
+
+      it('원본이 없거나 숨김이면 404 GAME_SCORE_NOT_FOUND', async () => {
+        gameScoreRepository.findOne.mockResolvedValue(null);
+
+        const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).send({ challengeScoreId: 41 }).expect(404);
+        expect(res.body.code).toBe('GAME_SCORE_NOT_FOUND');
+      });
+    });
+
     it('모르는 게임은 404 GAME_NOT_FOUND', async () => {
       const res = await request(app.getHttpServer()).post(e2e.url('/games/pacman/sessions')).expect(404);
       expect(res.body.code).toBe('GAME_NOT_FOUND');
@@ -199,14 +266,15 @@ describe('E2E 게임', () => {
     it('검증기가 실패하면 503 GAME_VERIFY_BUSY + Retry-After — 세션이 남아 같은 세션으로 다시 내면 201', async () => {
       jest.spyOn(console, 'error').mockImplementation(() => undefined);
       const sessionId = await issueSession(SUCCESS.input.seed);
-      engines.TETRIS = { ...tetrisGameEngine, verify: () => Promise.reject(new Error('worker timeout')) };
+      const tetris = engines.TETRIS;
+      engines.TETRIS = { ...tetris, verify: () => Promise.reject(new Error('worker timeout')) };
 
       const res = await submit(body(sessionId, SUCCESS)).expect(503);
       expect(res.body.code).toBe('GAME_VERIFY_BUSY');
       expect(res.headers['retry-after']).toBe('2');
       expect(redis.store.has(`game:session:${sessionId}`)).toBe(true);
 
-      engines.TETRIS = tetrisGameEngine;
+      engines.TETRIS = tetris;
       await submit(body(sessionId, SUCCESS)).expect(201);
     });
 
@@ -293,9 +361,17 @@ describe('E2E 게임', () => {
   });
 
   describe('GET /games/:gameType/boards', () => {
-    it('200 — 테트리스는 default 보드 하나', async () => {
+    it('200 — 테트리스는 default + 오늘·어제 데일리(비밀값이 있을 때), 없으면 default 하나', async () => {
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/boards')).expect(200);
-      expect(res.body.data).toEqual({ items: [{ boardKey: 'default', mode: null, current: true, startsAt: null, endsAt: null }] });
+      expect(res.body.data.items.map((b: { boardKey: string; mode: string | null; current: boolean }) => [b.mode, b.current])).toEqual([
+        [null, true],
+        ['daily', true],
+        ['daily', false],
+      ]);
+
+      delete env.GAME_WEEKLY_SEED_SECRET;
+      const without = await request(app.getHttpServer()).get(e2e.url('/games/tetris/boards')).expect(200);
+      expect(without.body.data).toEqual({ items: [{ boardKey: 'default', mode: null, current: true, startsAt: null, endsAt: null }] });
     });
 
     it('모르는 게임은 404 GAME_NOT_FOUND', async () => {
@@ -330,7 +406,7 @@ describe('E2E 게임', () => {
 
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41')).expect(200);
 
-      expect(res.body.data).toEqual({ rank: 3, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, createdAt: '2026-10-21T00:00:00.000Z' });
+      expect(res.body.data).toEqual({ rank: 3, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, createdAt: '2026-10-21T00:00:00.000Z' });
     });
 
     it.each([
@@ -351,6 +427,83 @@ describe('E2E 게임', () => {
 
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(404);
       expect(res.body.code).toBe('GAME_SCORE_NOT_FOUND');
+    });
+  });
+
+  describe('리플레이 조회수·시청시간·인기 목록 (replay-views)', () => {
+    const visible = { scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 100_000, crtdAt: new Date('2026-10-21T00:00:00.000Z') } as GameScore;
+
+    it('POST .../views — 본문 없이 200 + 누적 조회수 (201 아님)', async () => {
+      gameScoreRepository.findOne.mockResolvedValue(visible);
+      viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [{ scoreId: '41', viewCount: '4', watchMs: '0' }] }) as never);
+
+      const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/scores/41/views')).expect(200);
+
+      expect(res.body).toEqual({ code: 'SUCCESS', data: { scoreId: 41, viewCount: 4, counted: true }, message: '' });
+      expect(viewStatRepository.increment).toHaveBeenCalledWith(expect.objectContaining({ scoreId: 41 }), 'viewCount', 1);
+    });
+
+    it.each([
+      ['없거나 숨긴 기록', '/games/tetris/scores/41/views', 404, 'GAME_SCORE_NOT_FOUND'],
+      ['모르는 게임', '/games/pacman/scores/41/views', 404, 'GAME_NOT_FOUND'],
+      ['숫자가 아닌 ID', '/games/tetris/scores/abc/views', 400, 'BAD_REQUEST'],
+    ])('POST .../views: %s → %i %s', async (_name, path, status, code) => {
+      gameScoreRepository.findOne.mockResolvedValue(null);
+
+      const res = await request(app.getHttpServer()).post(e2e.url(path)).expect(status);
+      expect(res.body.code).toBe(code);
+    });
+
+    it('POST .../watch?ms= — 본문 없는 요청(이탈 flush)으로 200 + 반영 몫', async () => {
+      gameScoreRepository.findOne.mockResolvedValue(visible);
+
+      const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/scores/41/watch?ms=30000')).expect(200);
+
+      expect(res.body.data).toEqual({ scoreId: 41, watchMs: 0, countedMs: 30000 });
+      expect(viewStatRepository.increment).toHaveBeenCalledWith(expect.objectContaining({ scoreId: 41 }), 'watchMs', 30000);
+    });
+
+    it.each([['ms 누락', ''], ['ms=0', '?ms=0'], ['ms 상한 초과', '?ms=120001'], ['소수', '?ms=1.5'], ['정의 외 쿼리', '?ms=10&x=1']])(
+      'POST .../watch: %s → 422 VALIDATION_ERROR',
+      async (_name, query) => {
+        const res = await request(app.getHttpServer()).post(e2e.url(`/games/tetris/scores/41/watch${query}`)).expect(422);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+        expect(viewStatRepository.increment).not.toHaveBeenCalled();
+      },
+    );
+
+    it('GET .../rankings?board= — 데일리(오늘)·도전장 보드도 랭킹 보드다', async () => {
+      gameScoreRepository.find.mockResolvedValue([]);
+      const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+
+      await request(app.getHttpServer()).get(e2e.url(`/games/tetris/rankings?board=daily-${today}`)).expect(200);
+      await request(app.getHttpServer()).get(e2e.url('/games/tetris/rankings?board=challenge-41')).expect(200);
+      await request(app.getHttpServer()).get(e2e.url('/games/tetris/rankings?board=daily-2999-01-01')).expect(422);
+    });
+
+    it('GET .../hall-of-fame — 기간별 시상대, 사용자 ID는 싣지 않는다', async () => {
+      gameScoreRepository.find.mockResolvedValue([
+        { scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-12T00:00:00.000Z'), userId: 7 },
+      ] as GameScore[]);
+
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/hall-of-fame')).expect(200);
+
+      expect(res.body.data.periods.length).toBeGreaterThan(0);
+      expect(res.body.data.periods[0]).toEqual(expect.objectContaining({ kind: 'weekly', boardKey: 'default' }));
+      expect(res.body.data.periods[0].podium[0]).toEqual(
+        expect.objectContaining({ rank: 1, scoreId: 41, trophies: expect.objectContaining({ gold: expect.any(Number) }) }),
+      );
+      expect(res.body.data.periods[0].podium[0]).not.toHaveProperty('userId');
+    });
+
+    it('GET .../popular-replays — 기본 주간·조회수순 빈 목록', async () => {
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/popular-replays')).expect(200);
+
+      expect(res.body.data).toEqual(expect.objectContaining({ boardKey: 'default', period: 'weekly', sort: 'views', items: [] }));
+    });
+
+    it.each([['sort=likes'], ['period=monthly'], ['limit=0'], ['limit=101'], ['board=endless-s1']])('GET .../popular-replays?%s → 422', async (query) => {
+      await request(app.getHttpServer()).get(e2e.url(`/games/tetris/popular-replays?${query}`)).expect(422);
     });
   });
 
@@ -530,6 +683,10 @@ describe('E2E 게임', () => {
         .get(e2e.url('/games/defense/scores/41/replay'))
         .expect(404);
       expect(current.body.code).toBe('GAME_SCORE_NOT_FOUND');
+      // 조회·시청 기록도 같은 공개 규칙 — 진행 중인 주간 보드는 집계하지 않는다 (replay-views)
+      await request(app.getHttpServer()).post(e2e.url('/games/defense/scores/41/views')).expect(404);
+      await request(app.getHttpServer()).post(e2e.url('/games/defense/scores/41/watch?ms=1000')).expect(404);
+      expect(viewStatRepository.increment).not.toHaveBeenCalled();
       // 공개 전 404는 캐시하지 않는다 — 공개 시점이 지나면 바로 보여야 한다 (games-polish BD-06)
       expect(current.headers['cache-control']).toBeUndefined();
 

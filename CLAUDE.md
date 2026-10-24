@@ -44,6 +44,8 @@ NestJS + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub. �
 | 사용자 피드백 · 내 피드백 | `docs/tasks/feedback/STATUS.md` |
 | 게임 모음집 · 테트리스 · 랭킹 | `docs/tasks/games/STATUS.md` |
 | 게임 리플레이 공유 · 카톡 공유 | `docs/tasks/game-share/STATUS.md` |
+| 리플레이 조회수 · 시청시간 · 인기 리플레이 | `docs/tasks/replay-views/STATUS.md` |
+| 게임 SEO · 유입 · 바이럴 · 트래픽 | `docs/tasks/games-growth/STATUS.md` |
 | 테트리스 대전 · 멀티 · 게임방 · 가비지 · 테트리스 연출 | `docs/tasks/tetris-battle/STATUS.md` |
 | 디펜스 게임 · 레벨링 · 타워/몬스터 밸런스 | `docs/tasks/defense/STATUS.md` (공통 랭킹·리플레이 구조는 위 `games`, 공유는 `game-share` 문서) |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |

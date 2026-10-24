@@ -9,6 +9,9 @@ import { GAME_ENGINE_REGISTRY, GameEngineRegistry } from './game-engine.registry
 import { DefenseVerifyService } from './defense-verify.service';
 import { GameScore } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
+import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
+import { GameViewService } from './game-view.service';
+import { GameHallOfFameService } from './game-hall-of-fame.service';
 import { User } from '../../entities/User';
 import { createMockRepository } from '../../common/__spec__/mock-repository';
 
@@ -27,7 +30,7 @@ class GlobalDataSourceStubModule {}
  * (docs/lessons.md 2026-10-21 — 피드백 모듈 부팅 실패). OptionalJwtAuthGuard는 User Repository가 필요하다.
  */
 describe('GamesModule', () => {
-  it('실제 가드·엔진 레지스트리를 포함해 컨트롤러 의존을 모두 해석하고, main.ts가 쓰는 GameSessionService를 노출해야 함', async () => {
+  it('실제 가드·엔진 레지스트리를 포함해 컨트롤러 의존을 모두 해석하고, main.ts가 쓰는 GameSessionService·GameViewService·GameHallOfFameService를 노출해야 함', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), GlobalDataSourceStubModule, GamesModule],
     })
@@ -35,12 +38,16 @@ describe('GamesModule', () => {
       .useValue(createMockRepository<GameScore>())
       .overrideProvider(getRepositoryToken(GameReplay))
       .useValue(createMockRepository<GameReplay>())
+      .overrideProvider(getRepositoryToken(GameReplayViewStat))
+      .useValue(createMockRepository<GameReplayViewStat>())
       .overrideProvider(getRepositoryToken(User))
       .useValue(createMockRepository<User>())
       .compile();
 
     expect(moduleRef.get(GamesController)).toBeInstanceOf(GamesController);
     expect(moduleRef.get(GameSessionService)).toBeInstanceOf(GameSessionService);
+    expect(moduleRef.get(GameViewService)).toBeInstanceOf(GameViewService);
+    expect(moduleRef.get(GameHallOfFameService)).toBeInstanceOf(GameHallOfFameService);
     await moduleRef.close();
   });
 
@@ -54,7 +61,7 @@ describe('GamesModule', () => {
       }
     });
 
-    it('레지스트리에 테트리스·디펜스가 붙고, 디펜스 주간은 GAME_WEEKLY_SEED_SECRET 설정을 읽는다', async () => {
+    it('레지스트리에 테트리스·디펜스가 붙고, 디펜스 주간·테트리스 데일리는 GAME_WEEKLY_SEED_SECRET 설정을 읽는다', async () => {
       const compile = (env: Record<string, string>) =>
         Test.createTestingModule({
           imports: [
@@ -67,6 +74,8 @@ describe('GamesModule', () => {
           .useValue(createMockRepository<GameScore>())
           .overrideProvider(getRepositoryToken(GameReplay))
           .useValue(createMockRepository<GameReplay>())
+          .overrideProvider(getRepositoryToken(GameReplayViewStat))
+          .useValue(createMockRepository<GameReplayViewStat>())
           .overrideProvider(getRepositoryToken(User))
           .useValue(createMockRepository<User>())
           .compile();
@@ -78,12 +87,17 @@ describe('GamesModule', () => {
       expect(() => engines.DEFENSE.resolveSessionBoard('weekly', now)).toThrow(
         expect.objectContaining({ code: 'GAME_WEEKLY_UNAVAILABLE' }),
       );
+      expect(() => engines.TETRIS.resolveSessionBoard('daily', now)).toThrow(expect.objectContaining({ code: 'GAME_DAILY_UNAVAILABLE' }));
       await without.close();
 
       const withSecret = await compile({ GAME_WEEKLY_SEED_SECRET: 'module-spec' });
       expect(
         withSecret.get<GameEngineRegistry>(GAME_ENGINE_REGISTRY).DEFENSE.resolveSessionBoard('weekly', now),
       ).toMatchObject({ mode: 'weekly' });
+      expect(withSecret.get<GameEngineRegistry>(GAME_ENGINE_REGISTRY).TETRIS.resolveSessionBoard('daily', now)).toMatchObject({
+        boardKey: 'daily-2026-10-22',
+        mode: 'daily',
+      });
 
       // 디펜스 검증은 워커 풀 서비스로 간다(워커는 띄우지 않는다)
       const verify = jest
