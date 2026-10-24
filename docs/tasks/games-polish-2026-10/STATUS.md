@@ -41,6 +41,7 @@
 | P6 `refactor` 정리·공용화 | BD-10 · BD-15 · BT-09 · BT-10 · BT-11 · BT-12 | FE-53~60 (fixedStep·입력 큐·matchMedia·WebAudio 공용화, 죽은 코드, 타입 우회 1) | 동작 무변경 |
 | P7 `fx` 사운드·BGM·공격 연출(D-006) | 대전 리플레이 `garbageFrom` 저장 ✅ | 다시보기 소리 · 멀티 소리 정책 · BGM(오디오 버스·합성 루프) · 대전 공격 연출(실시간 `attack`·다시보기 `garbageFrom`) | 신기능 · 계약 추가(응답 필드) |
 | P8 `ux` 후속(D-010) | — | 대전 진입점 일원화·방 목록 상시 노출(테트리스 홈) · 공통 사운드 설정 모달(기본 OFF·즉시 적용) · Safari 소리 | 프론트만 · 브랜치 `feat-onam-games-ux` |
+| P9 `pad` 후속(D-011) | — | 테트리스 모바일 게임패드식 컨트롤(싱글·대전) · 입력 씹힘 전수조사·수정 | 프론트만 · 로컬 시연 |
 | 대형 분해(Q3) | `tetris-battle-room.service.ts` 1,644줄 분해 | `DefensePlay.tsx` 793줄 분해 · BattleSocketContext 상태/액션 분리(FE-37) | 동작 무변경 · 회귀 위험 큼 |
 | 보류 | BD-05(Q2 정책) · BD-09(엔진 사본) · BD-12(측정 먼저) · BT-15(경계 유지) | FE-21(의도) · FE-51(측정 먼저) | — |
 
