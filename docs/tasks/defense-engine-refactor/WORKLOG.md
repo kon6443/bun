@@ -20,3 +20,11 @@
 
 - 판 상한 162,000틱 외삽 ≈ 280ms(선형). 최악 스트레스 (b)는 프론트 하네스 수치로 받는다
 - **운영 리플레이 회귀**: 운영 DB 디펜스 기록 3건뿐(`endless-s1` 1 · `weekly-2026-w43` 2, 테스트 기록 포함, 숨김 0) → 회귀 픽스처 가치 낮음(D-002). 안전망은 생성 코퍼스 중심
+
+## 2026-10-24 — 백엔드 안전망(코퍼스) · 실효 증명
+- 프론트 픽스처(엔진 af55815 기준, 결정성 2회 생성 바이트 동일): 이식용 `portable.json` 71판(캠페인 35·무한 18·주간 18, idle 162,000틱 장판 2·보스 웨이브 포함, 총 2,776,624틱) sha256 `2f4f52f7…` · 러너 `portableRunner.ts` `f7577694…` · 프론트 전용 `corpus.expected.json` 4,000판(봇 6종, 프론트 차등 테스트 통과)
+- 백엔드 배치: `src/modules/games/defense-engine-corpus/{portable.json, portableRunner.ts(엔진 import 한 줄만 '../defense-engine'), copy-hashes.json, corpusSpec.ts}` + spec 4개(사본·구성 1 + 모드별 campaign·endless·weekly — jest 병렬) · 러너 사본은 lint 제외(eslint ignores — 엔진 사본과 같은 이유, 경고 6 유지)
+- 결과: 백엔드 엔진 사본으로 71판 전부 고정값 일치(76 tests) · 모드별 분할 후 23.3초(단일 파일 45.8초)
+- **실효 증명**: 엔진 사본 `data/towers.ts:108` 궁수탑 damage 8→9 임시 변경 → 코퍼스 50판·골든 실패, 메시지에 첫 차이 위치("checkpoint #21 (tick 6300): 8cf662cd ≠ a33bc239") → 원복(git 변경 0)
+- ci:core: 단위 1663/1663(+76), lint 0 errors·경고 6, build ✅
+- 다른 메인 세션(bun-c4, 리플레이 조회수 기능)의 충돌 질의에 답함 — 겹치는 파일·스키마 없음, 주의: 리플레이 GET 60초 캐시·진행 중 주간 리플레이 404
