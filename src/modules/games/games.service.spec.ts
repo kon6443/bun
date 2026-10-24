@@ -151,7 +151,7 @@ describe('GamesService', () => {
         userId: 7,
         ttlSeconds: 7200,
       });
-      expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, boardKey: 'default', mode: null });
+      expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, ttlSeconds: 7200, boardKey: 'default', mode: null });
     });
 
     it('엔진이 보드가 정한 seed를 주면 그대로 세션에 넘겨야 함', async () => {
