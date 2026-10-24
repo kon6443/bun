@@ -27,6 +27,8 @@ export interface GameSession {
   startedAt: number;
   /** 발급 때 로그인 사용자(기록용) — 등록 귀속은 제출 시점 로그인 사용자다(세션은 토큰에 묶지 않는다) */
   userId: number | null;
+  /** 도전장 세션이면 원본 기록 ID — 원본 리플레이를 그대로 낸 제출을 거른다(games-growth D-009). 도입 전 세션에는 없다 */
+  challengeOf?: number | null;
 }
 
 /** seed 범위 0 ~ 2^32 − 1 (randomInt의 상한은 미포함) */
@@ -59,6 +61,7 @@ export class GameSessionService {
     engineVersion,
     userId,
     ttlSeconds,
+    challengeOf = null,
   }: {
     gameType: GameType;
     boardKey: string;
@@ -67,6 +70,8 @@ export class GameSessionService {
     engineVersion: number;
     userId: number | null;
     ttlSeconds: number;
+    /** 도전장 세션의 원본 기록 ID (games-growth D-009) */
+    challengeOf?: number | null;
   }): Promise<{ sessionId: string; session: GameSession; expiresAt: Date }> {
     const redis = this.requireRedis();
     const sessionId = randomUUID();
@@ -77,6 +82,8 @@ export class GameSessionService {
       engineVersion,
       startedAt: Date.now(),
       userId,
+      // 도전장 세션에만 싣는다 — 기존 세션 형식은 그대로
+      ...(challengeOf !== null && { challengeOf }),
     };
 
     try {

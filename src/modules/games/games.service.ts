@@ -3,29 +3,42 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, MoreThanOrEqual, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repository } from 'typeorm';
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
+import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import {
+  GAME_POPULAR_DEFAULT_LIMIT,
   GAME_RANKING_DEFAULT_LIMIT,
   GAME_REPLAY_TIME_TOLERANCE_MS,
   GAME_VERIFY_RETRY_AFTER_SECONDS,
   GAME_VERIFY_TIMEOUT_LIMIT,
   GAME_VERIFY_UNAVAILABLE_RETRY_AFTER_SECONDS,
+  GAME_WATCH_DAILY_CAP_MIN_MS,
+  GAME_WATCH_DAILY_CAP_MULTIPLIER,
 } from '../../common/constants/app.constants';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { ApiValidationErrorResponseDto } from '../../common/dto/api-error.dto';
 import { GameSession, GameSessionService } from './game-session.service';
+import { GameViewService } from './game-view.service';
+import { GameHallOfFameService, Trophies, trophiesFromPodiums } from './game-hall-of-fame.service';
 import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError } from './verify-worker-pool';
 import { GAME_ENGINE_REGISTRY, GameEngineRegistry, VerifiedReplay } from './game-engine.registry';
 import { checkPlayerName } from './player-name-policy';
 import { rankingPeriodStart } from './ranking-period';
+import { kstDateOf } from './daily-board';
+import { challengeBoardKey, challengeRootOf } from './challenge-board';
 import {
   GameBoardListDto,
   GameReplayDetailDto,
+  GameReplayViewDto,
+  GameReplayWatchDto,
   GameScoreSubmittedDto,
   GameSessionDto,
+  GetPopularReplaysQueryDto,
   GetRankingsQueryDto,
+  HallOfFameDto,
+  PopularReplayListDto,
   RANKING_PERIODS,
   RankingItemDto,
   RankingListDto,
@@ -33,6 +46,7 @@ import {
   SubmitGameScoreDto,
 } from './games.dto';
 import {
+  GameChallengeExpiredErrorResponseDto,
   GameNotFoundErrorResponseDto,
   GamePlayerNameForbiddenErrorResponseDto,
   GamePlayerNameInvalidErrorResponseDto,
@@ -63,6 +77,16 @@ const RANKING_ITEM_SELECT = {
   crtdAt: true,
 } as const;
 
+/** 랭킹 항목을 만드는 데 필요한 기록 컬럼 — RANKING_ITEM_SELECT와 같다 */
+type RankingRow = Pick<GameScore, 'scoreId' | 'boardKey' | 'playerName' | 'score' | 'detail' | 'durationMs' | 'crtdAt'>;
+
+/** 조회 집계 누적 값 — 집계 행이 없으면 0 */
+type ReplayStats = { viewCount: number; watchMs: number };
+const NO_STATS: ReplayStats = { viewCount: 0, watchMs: 0 };
+
+/** 인기 정렬 → 집계 컬럼 */
+const POPULAR_SORT_COLUMN = { views: 'v.viewCount', watch: 'v.watchMs' } as const;
+
 /** params가 쓸 수 없는 키 — 저장 본문에서 params와 같은 층에 있다 */
 const REPLAY_RESERVED_KEYS = ['frames', 'inputs'] as const;
 
@@ -70,9 +94,12 @@ const REPLAY_RESERVED_KEYS = ['frames', 'inputs'] as const;
 const verifyBusy = (reason: string, retryAfterSeconds: number) =>
   new GameVerifyBusyErrorResponseDto({ details: { reason, retryAfterSeconds } });
 
-/** Oracle 유니크 위반(ORA-00001) — 메시지가 아니라 드라이버 에러 번호로 판정한다 */
-const isUniqueViolation = (error: unknown): boolean =>
-  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 1;
+/** Oracle 에러 번호 — 메시지가 아니라 드라이버 에러 번호로 판정한다. QueryFailedError가 아니면 undefined */
+const oraErrorNum = (error: unknown): number | undefined =>
+  error instanceof QueryFailedError ? (error.driverError as { errorNum?: number } | undefined)?.errorNum : undefined;
+
+/** Oracle 유니크 위반(ORA-00001) */
+const isUniqueViolation = (error: unknown): boolean => oraErrorNum(error) === 1;
 
 /**
  * 같은 리플레이 판정용 해시(D-003) — 게임·보드·seed·params·frames·inputs.
@@ -100,11 +127,15 @@ export class GamesService {
     private readonly gameScoreRepository: Repository<GameScore>,
     @InjectRepository(GameReplay)
     private readonly gameReplayRepository: Repository<GameReplay>,
+    @InjectRepository(GameReplayViewStat)
+    private readonly viewStatRepository: Repository<GameReplayViewStat>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(GAME_ENGINE_REGISTRY)
     private readonly engines: GameEngineRegistry,
     private readonly gameSessionService: GameSessionService,
+    private readonly gameViewService: GameViewService,
+    private readonly hallOfFameService: GameHallOfFameService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -117,21 +148,31 @@ export class GamesService {
     return gameType as GameType;
   }
 
-  /** 세션 발급 — board(플레이 방식)로 랭킹 보드·seed를 서버가 정한다. 생략하면 게임 기본 보드 (defense DESIGN §B3) */
-  async createSession(gameTypeParam: string, userId: number | null, board?: string): Promise<GameSessionDto> {
+  /**
+   * 세션 발급 — board(플레이 방식)로 랭킹 보드·seed를 서버가 정한다. 생략하면 게임 기본 보드 (defense DESIGN §B3).
+   * challengeScoreId가 있으면 도전장 — 원본 기록의 seed로 `challenge-{원본 ID}` 보드 세션 (games-growth D-005)
+   */
+  async createSession(gameTypeParam: string, userId: number | null, board?: string, challengeScoreId?: number): Promise<GameSessionDto> {
     const gameType = this.toGameType(gameTypeParam);
     const engine = this.engines[gameType];
-    const resolved = engine.resolveSessionBoard(board, new Date());
-    if (!resolved) {
+    if (challengeScoreId !== undefined && board !== undefined) {
+      throw new ApiValidationErrorResponseDto('도전장과 플레이 방식은 함께 보낼 수 없습니다.');
+    }
+    const resolved =
+      challengeScoreId === undefined
+        ? { ...engine.resolveSessionBoard(board, new Date()), challengeOf: null }
+        : await this.resolveChallengeBoard(gameType, challengeScoreId);
+    if (!resolved.boardKey) {
       throw new ApiValidationErrorResponseDto('지원하지 않는 플레이 방식입니다.');
     }
     const { sessionId, session, expiresAt } = await this.gameSessionService.createSession({
       gameType,
       boardKey: resolved.boardKey,
-      seed: resolved.seed,
+      seed: resolved.seed ?? null,
       engineVersion: engine.engineVersion,
       userId,
       ttlSeconds: engine.sessionTtlSeconds,
+      challengeOf: resolved.challengeOf,
     });
     return {
       sessionId,
@@ -141,8 +182,35 @@ export class GamesService {
       // 절대 시각(expiresAt)은 기기 시계가 빠르면 짧게 보인다 — 클라이언트가 받은 시각 기준으로 셀 수 있게 길이도 준다(games-polish 프론트 리뷰)
       ttlSeconds: engine.sessionTtlSeconds,
       boardKey: resolved.boardKey,
-      mode: resolved.mode,
+      mode: resolved.mode ?? null,
     };
+  }
+
+  /**
+   * 도전장 세션 보드 — 원본은 재생을 공개한 기록이어야 한다(진행 중 데일리·주간은 같은 판 복제가 되므로 404).
+   * 도전장 기록으로 도전장을 열면 그 원본으로 묶는다(보드가 갈라지지 않게). 원본 엔진 버전이 다르면 같은 seed로도 다른 판이라 409
+   */
+  private async resolveChallengeBoard(
+    gameType: GameType,
+    challengeScoreId: number,
+  ): Promise<{ boardKey: string; mode: string; seed: number; challengeOf: number }> {
+    const engine = this.engines[gameType];
+    if (!engine.supportsChallenge) {
+      throw new ApiValidationErrorResponseDto('이 게임은 도전장을 지원하지 않습니다.');
+    }
+    const { score } = await this.findPublicReplayScore(gameType, challengeScoreId);
+    const rootId = challengeRootOf(score.boardKey) ?? score.scoreId;
+    if (rootId !== score.scoreId) {
+      await this.findPublicReplayScore(gameType, rootId);
+    }
+    const root = await this.gameReplayRepository.findOne({ select: { seed: true, engineVersion: true }, where: { scoreId: rootId, gameType } });
+    if (!root) {
+      throw new GameScoreNotFoundErrorResponseDto();
+    }
+    if (root.engineVersion !== engine.engineVersion) {
+      throw new GameChallengeExpiredErrorResponseDto();
+    }
+    return { boardKey: challengeBoardKey(rootId), mode: 'challenge', seed: root.seed, challengeOf: rootId };
   }
 
   /** 랭킹 보드 목록 — 현재·지난 보드 */
@@ -215,6 +283,11 @@ export class GamesService {
     // 같은 보드에 같은 리플레이는 한 번만(D-003) — 검증(CPU) 전에 걸러 낸다. 동시 제출은 유니크 인덱스가 막는다
     const replayHash = hashReplay(gameType, boardKey, session.seed, storedReplay);
     if (await this.gameScoreRepository.exists({ where: { replayHash } })) {
+      await this.gameSessionService.consumeSession(dto.sessionId);
+      throw new GameReplayDuplicateErrorResponseDto();
+    }
+    // 도전장: 같은 seed의 공개 리플레이를 그대로 내면 그 점수가 된다 — 원본 보드 기준 해시로 거른다(games-growth D-009·D-013)
+    if (session.challengeOf && (await this.isChallengeRootCopy(gameType, session.challengeOf, session.seed, storedReplay))) {
       await this.gameSessionService.consumeSession(dto.sessionId);
       throw new GameReplayDuplicateErrorResponseDto();
     }
@@ -363,9 +436,11 @@ export class GamesService {
       take: query.limit ?? GAME_RANKING_DEFAULT_LIMIT,
     });
 
+    const scoreIds = rows.map((row) => row.scoreId);
+    const [stats, trophies] = await Promise.all([this.statTotals(scoreIds), this.trophiesOf(gameType, scoreIds)]);
     return {
       boardKey,
-      items: rows.map((row, index) => this.toRankingItem(row, index + 1)),
+      items: rows.map((row, index) => this.toRankingItem(row, index + 1, stats.get(row.scoreId), trophies.get(row.scoreId))),
       periodStart,
     };
   }
@@ -374,7 +449,12 @@ export class GamesService {
   async getScore(gameTypeParam: string, scoreId: number): Promise<RankingItemDto> {
     const gameType = this.toGameType(gameTypeParam);
     const score = await this.findVisibleScore(gameType, scoreId);
-    return this.toRankingItem(score, await this.rankOf(gameType, score, null));
+    const [rank, stats, trophies] = await Promise.all([
+      this.rankOf(gameType, score, null),
+      this.statTotals([scoreId]),
+      this.trophiesOf(gameType, [scoreId]),
+    ]);
+    return this.toRankingItem(score, rank, stats.get(scoreId), trophies.get(scoreId));
   }
 
   /** 리플레이 재생 데이터 — 누구나 조회, 숨김 기록·아직 공개하지 않는 보드(디펜스 진행 중 주간)의 기록은 404 (D-011) */
@@ -388,12 +468,17 @@ export class GamesService {
     if (!replay) {
       throw new GameScoreNotFoundErrorResponseDto();
     }
+    const [rank, stats, trophies] = await Promise.all([
+      this.rankOf(gameType, score, null),
+      this.statTotals([scoreId]),
+      this.trophiesOf(gameType, [scoreId]),
+    ]);
 
     const { frames, inputs, ...stored } = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
     const params = stored as Record<string, number>;
     const topLevel = Object.fromEntries(this.engines[gameType].topLevelReplayParams.map((key) => [key, params[key]]));
     return {
-      ...this.toRankingItem(score, await this.rankOf(gameType, score, null)),
+      ...this.toRankingItem(score, rank, stats.get(scoreId), trophies.get(scoreId)),
       engineVersion: replay.engineVersion,
       seed: replay.seed,
       // 게임별 기존 계약 필드(테트리스 das·arr)는 최상위에도 둔다
@@ -402,6 +487,194 @@ export class GamesService {
       frames,
       inputs,
     };
+  }
+
+  /**
+   * 리플레이 조회 1회 기록 — 재생 화면 진입 때 프론트가 브라우저당 하루 1회 부른다 (docs/tasks/replay-views D-002·D-003).
+   * 같은 IP 해시가 하루 상한을 넘으면 반영하지 않고 현재 값만 돌려준다(counted false)
+   */
+  async recordView(gameTypeParam: string, scoreId: number, ip: string | undefined): Promise<GameReplayViewDto> {
+    const { gameType } = await this.findPublicReplayScore(gameTypeParam, scoreId);
+    // IP 해시를 못 만들면(시크릿·IP 없음) 서버 상한 없이 센다 — 프론트의 하루 1회만 남는다
+    const viewerKey = this.hashIp(ip);
+    const counted = viewerKey === null || (await this.gameViewService.claimView(scoreId, viewerKey));
+    if (counted) {
+      await this.addTodayStat(scoreId, gameType, 'viewCount', 1);
+    }
+    const { viewCount } = (await this.statTotals([scoreId])).get(scoreId) ?? NO_STATS;
+    return { scoreId, viewCount, counted };
+  }
+
+  /**
+   * 시청시간 보고 — 재생이 진행된 벽시계 시간의 증분(ms)을 프론트가 주기적으로·이탈 때 보낸다 (D-004).
+   * 같은 IP 해시의 하루 누적이 max(리플레이 길이 × 배수, 최소값)를 넘는 부분은 버린다(countedMs)
+   */
+  async recordWatch(gameTypeParam: string, scoreId: number, watchedMs: number, ip: string | undefined): Promise<GameReplayWatchDto> {
+    const { gameType, score } = await this.findPublicReplayScore(gameTypeParam, scoreId);
+    const viewerKey = this.hashIp(ip);
+    const capMs = Math.max(score.durationMs * GAME_WATCH_DAILY_CAP_MULTIPLIER, GAME_WATCH_DAILY_CAP_MIN_MS);
+    const countedMs = viewerKey === null ? watchedMs : await this.gameViewService.claimWatchMs(scoreId, viewerKey, watchedMs, capMs);
+    if (countedMs > 0) {
+      await this.addTodayStat(scoreId, gameType, 'watchMs', countedMs);
+    }
+    const { watchMs } = (await this.statTotals([scoreId])).get(scoreId) ?? NO_STATS;
+    return { scoreId, watchMs, countedMs };
+  }
+
+  /**
+   * 기간별 인기 리플레이 — 기간 안 조회수(views) 또는 시청시간(watch) 합이 큰 순, 같으면 먼저 등록된 기록 (D-005).
+   * 보드 단위다. 재생을 공개하지 않는 보드(디펜스 진행 중 주간)는 빈 목록 — 여기서 링크를 내주면 재생이 404라서
+   */
+  async getPopularReplays(gameTypeParam: string, query: GetPopularReplaysQueryDto): Promise<PopularReplayListDto> {
+    const gameType = this.toGameType(gameTypeParam);
+    const engine = this.engines[gameType];
+    const boardKey = query.board ?? engine.defaultBoardKey;
+    const period = query.period ?? 'weekly';
+    const sort = query.sort ?? 'views';
+    const now = new Date();
+    if (!engine.isRankingBoard(boardKey, now)) {
+      throw new ApiValidationErrorResponseDto('지원하지 않는 랭킹 보드입니다.');
+    }
+    const periodStart = rankingPeriodStart(period, now);
+    if (!engine.isReplayPublic(boardKey, now)) {
+      return { boardKey, period, sort, periodStart, items: [] };
+    }
+
+    const sortColumn = POPULAR_SORT_COLUMN[sort];
+    const qb = this.viewStatRepository
+      .createQueryBuilder('v')
+      .innerJoin(GameScore, 's', 's.scoreId = v.scoreId AND s.gameType = v.gameType')
+      .select('v.scoreId', 'scoreId')
+      .addSelect('SUM(v.viewCount)', 'viewCount')
+      .addSelect('SUM(v.watchMs)', 'watchMs')
+      .where('v.gameType = :gameType', { gameType })
+      .andWhere('s.boardKey = :boardKey', { boardKey })
+      .andWhere('s.isHidden = 0');
+    if (periodStart) {
+      qb.andWhere('v.statDate >= :fromDate', { fromDate: kstDateOf(periodStart) });
+    }
+    const ranked = await qb
+      .groupBy('v.scoreId')
+      .having(`SUM(${sortColumn}) > 0`)
+      .orderBy(`SUM(${sortColumn})`, 'DESC')
+      .addOrderBy('v.scoreId', 'ASC')
+      .limit(query.limit ?? GAME_POPULAR_DEFAULT_LIMIT)
+      .getRawMany<{ scoreId: number | string; viewCount: number | string; watchMs: number | string }>();
+    if (ranked.length === 0) {
+      return { boardKey, period, sort, periodStart, items: [] };
+    }
+
+    const scoreIds = ranked.map((row) => Number(row.scoreId));
+    const [rows, totals, trophies] = await Promise.all([
+      this.gameScoreRepository.find({ select: RANKING_ITEM_SELECT, where: { scoreId: In(scoreIds), gameType, isHidden: 0 } }),
+      this.statTotals(scoreIds),
+      this.trophiesOf(gameType, scoreIds),
+    ]);
+    const rowById = new Map(rows.map((row) => [row.scoreId, row]));
+    // 두 조회 사이에 숨겨지거나 지워진 기록은 빼고 순서를 다시 매긴다
+    const items = ranked
+      .flatMap((stat) => {
+        const row = rowById.get(Number(stat.scoreId));
+        return row ? [{ row, stat }] : [];
+      })
+      .map(({ row, stat }, index) => ({
+        ...this.toRankingItem(row, index + 1, totals.get(row.scoreId), trophies.get(row.scoreId)),
+        periodViewCount: Number(stat.viewCount),
+        periodWatchMs: Number(stat.watchMs),
+      }));
+    return { boardKey, period, sort, periodStart, items };
+  }
+
+  /**
+   * 제출 리플레이가 원본 보드에 이미 있는 리플레이와 같은지 — 원본 1건만이 아니라 그 보드 전체를 본다.
+   * 데일리 보드는 그날 기록이 전부 같은 seed라, 공개된 그날 1위 입력으로 하위 기록의 도전장을 이길 수 있기 때문(D-013).
+   * 해시 도입 전 기록은 REPLAY_HASH가 없어 거르지 못한다
+   */
+  private async isChallengeRootCopy(gameType: GameType, rootId: number, seed: number, storedReplay: StoredReplay): Promise<boolean> {
+    const root = await this.gameScoreRepository.findOne({ select: { scoreId: true, boardKey: true }, where: { scoreId: rootId, gameType } });
+    return !!root && (await this.gameScoreRepository.exists({ where: { replayHash: hashReplay(gameType, root.boardKey, seed, storedReplay) } }));
+  }
+
+  /** 명예의 전당 — 끝난 기간별 1~3위 (games-growth D-007·D-010). 사용자 ID는 배지 계산에만 쓰고 싣지 않는다 */
+  async getHallOfFame(gameTypeParam: string): Promise<HallOfFameDto> {
+    const gameType = this.toGameType(gameTypeParam);
+    const podiums = await this.hallOfFameService.getPodiums(gameType);
+    const trophiesByUser = trophiesFromPodiums(podiums);
+    const stats = await this.statTotals(podiums.flatMap(({ rows }) => rows.map((row) => row.scoreId)));
+    return {
+      periods: podiums.map(({ rows, ...period }) => ({
+        ...period,
+        podium: rows.map((row, index) =>
+          this.toRankingItem(row, index + 1, stats.get(row.scoreId), row.userId === null ? undefined : trophiesByUser.get(row.userId)),
+        ),
+      })),
+    };
+  }
+
+  /**
+   * 기록 ID → 배지. 입상한 로그인 사용자가 없으면 기록 쪽은 조회하지 않는다.
+   * 배지는 부가 정보라 계산이 실패해도 목록은 배지 없이 돌려준다
+   */
+  private async trophiesOf(gameType: GameType, scoreIds: number[]): Promise<Map<number, Trophies>> {
+    const result = new Map<number, Trophies>();
+    if (scoreIds.length === 0) return result;
+    try {
+      const trophiesByUser = await this.hallOfFameService.trophiesByUser(gameType);
+      if (trophiesByUser.size === 0) return result;
+      // 랭킹 항목 조회(RANKING_ITEM_SELECT)는 USER_ID를 읽지 않는다 — 배지 계산용으로만 따로 읽는다
+      const owners = await this.gameScoreRepository.find({ select: { scoreId: true, userId: true }, where: { scoreId: In(scoreIds), gameType } });
+      for (const { scoreId, userId } of owners) {
+        const trophies = userId === null ? undefined : trophiesByUser.get(userId);
+        if (trophies) result.set(scoreId, trophies);
+      }
+    } catch (error) {
+      this.logger.warn(`trophiesOf(): 배지 계산 실패 — 배지 없이 응답한다: ${toErrorDetail(error)}`);
+    }
+    return result;
+  }
+
+  /** 재생을 공개하는 기록 1건 — 재생 API(GET .../replay)와 같은 규칙: 숨김·없음·공개 전(디펜스 진행 중 주간) 보드는 404 */
+  private async findPublicReplayScore(gameTypeParam: string, scoreId: number): Promise<{ gameType: GameType; score: GameScore }> {
+    const gameType = this.toGameType(gameTypeParam);
+    const score = await this.findVisibleScore(gameType, scoreId);
+    if (!this.engines[gameType].isReplayPublic(score.boardKey, new Date())) {
+      throw new GameScoreNotFoundErrorResponseDto();
+    }
+    return { gameType, score };
+  }
+
+  /**
+   * 오늘(KST) 집계 행에 더한다 — repository.increment(컬럼 = 컬럼 + n)라 동시 요청도 원자적으로 쌓인다.
+   * 오늘 행이 없으면 새로 넣고, 그 사이 다른 요청이 먼저 넣었으면(ORA-00001) 다시 더한다
+   */
+  private async addTodayStat(scoreId: number, gameType: GameType, column: keyof ReplayStats, amount: number): Promise<void> {
+    const statDate = kstDateOf(new Date());
+    const { affected } = await this.viewStatRepository.increment({ scoreId, statDate }, column, amount);
+    if (affected) return;
+    try {
+      await this.viewStatRepository.insert({ scoreId, statDate, gameType, ...NO_STATS, [column]: amount });
+    } catch (error) {
+      // 확인과 저장 사이에 기록이 지워졌다(FK 위반, ORA-02291) — 없는 기록과 같게 404
+      if (oraErrorNum(error) === 2291) throw new GameScoreNotFoundErrorResponseDto();
+      if (!isUniqueViolation(error)) throw error;
+      await this.viewStatRepository.increment({ scoreId, statDate }, column, amount);
+    }
+  }
+
+  /** 기록별 누적 조회수·시청시간 — 일별 집계의 SUM. 집계가 없는 기록은 Map에 없다(호출부가 0으로 본다) */
+  private async statTotals(scoreIds: number[]): Promise<Map<number, ReplayStats>> {
+    if (scoreIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.viewStatRepository
+      .createQueryBuilder('v')
+      .select('v.scoreId', 'scoreId')
+      .addSelect('SUM(v.viewCount)', 'viewCount')
+      .addSelect('SUM(v.watchMs)', 'watchMs')
+      .where({ scoreId: In(scoreIds) })
+      .groupBy('v.scoreId')
+      .getRawMany<{ scoreId: number | string; viewCount: number | string; watchMs: number | string }>();
+    return new Map(rows.map((row) => [Number(row.scoreId), { viewCount: Number(row.viewCount), watchMs: Number(row.watchMs) }]));
   }
 
   /** 숨기지 않은 기록 1건 — 없으면 404. IP_HASH·USER_ID는 조회하지 않는다 */
@@ -466,7 +739,7 @@ export class GamesService {
     return Object.values(merged).every((value) => Number.isSafeInteger(value)) ? (merged as Record<string, number>) : null;
   }
 
-  private toRankingItem(row: GameScore, rank: number): RankingItemDto {
+  private toRankingItem(row: RankingRow, rank: number, stats: ReplayStats = NO_STATS, trophies?: Trophies): RankingItemDto {
     return {
       rank,
       scoreId: row.scoreId,
@@ -475,6 +748,9 @@ export class GamesService {
       score: row.score,
       detail: JSON.parse(row.detail) as Record<string, unknown>,
       durationMs: row.durationMs,
+      viewCount: stats.viewCount,
+      watchMs: stats.watchMs,
+      trophies: trophies ?? null,
       createdAt: row.crtdAt,
     };
   }

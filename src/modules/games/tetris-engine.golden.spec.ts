@@ -1,7 +1,9 @@
 import golden from './tetris-engine/__fixtures__/golden-replays.json';
 import { ENGINE_VERSION, FRAMES_PER_SECOND, MAX_FRAMES, MAX_INPUT_LENGTH, simulateReplay } from './tetris-engine';
 import { GAME_REPLAY_MAX_FRAMES, GAME_REPLAY_MAX_INPUT_LENGTH } from '../../common/constants/app.constants';
-import { tetrisGameEngine } from './tetris-game-engine';
+import { createTetrisGameEngine } from './tetris-game-engine';
+
+const tetrisGameEngine = createTetrisGameEngine({ getDailySecret: () => undefined });
 
 type GoldenCase = {
   name: string;
