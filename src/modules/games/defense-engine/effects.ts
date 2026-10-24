@@ -41,17 +41,43 @@ function matches(effect: Effect, subject: EffectSubject): boolean {
   }
 }
 
+/**
+ * 수치별 효과 버킷 (리팩토링 1단계 R1 — statValue가 재생 CPU의 38%) — 마지막으로 본 효과 목록 하나를 수치(stat)별로 나눠 둔다
+ * statValue는 그 수치의 효과만 원래와 같은 순서·규칙으로 돈다(곱 하나씩 내림 → 더하기 → 덮어쓰기) — 결과는 같다
+ * 효과 목록은 판 시작(규칙)·증강 선택 때 끝에 붙기만 한다 → 같은 배열이고 길이가 같으면 내용도 같다. 다른 배열·길이면 다시 나눈다
+ * Map 금지(§E1)라 수치 번호를 인덱스로 쓰는 배열 — 수치 번호는 작은 정수(STAT)
+ */
+let bucketEffects: readonly Effect[] | null = null;
+let bucketLength = -1;
+let buckets: Effect[][] = [];
+
+function bucketOf(effects: readonly Effect[], stat: number): readonly Effect[] | undefined {
+  if (effects !== bucketEffects || effects.length !== bucketLength) {
+    bucketEffects = effects;
+    bucketLength = effects.length;
+    buckets = [];
+    for (const e of effects) {
+      const list = buckets[e.stat];
+      if (list) list.push(e);
+      else buckets[e.stat] = [e];
+    }
+  }
+  return buckets[stat];
+}
+
 /** base에 활성 효과를 적용한 값 — 음수가 되지 않게 0으로 자른다 */
 export function statValue(effects: readonly Effect[], subject: EffectSubject, stat: number, base: number): number {
+  const list = effects.length === 0 ? undefined : bucketOf(effects, stat);
+  if (list === undefined) return Math.max(0, base);
   let value = base;
-  for (const e of effects) {
-    if (e.op === EFFECT_OP.MUL && e.stat === stat && matches(e, subject)) value = Math.floor((value * e.value) / PERMILLE);
+  for (const e of list) {
+    if (e.op === EFFECT_OP.MUL && matches(e, subject)) value = Math.floor((value * e.value) / PERMILLE);
   }
-  for (const e of effects) {
-    if (e.op === EFFECT_OP.ADD && e.stat === stat && matches(e, subject)) value += e.value;
+  for (const e of list) {
+    if (e.op === EFFECT_OP.ADD && matches(e, subject)) value += e.value;
   }
-  for (const e of effects) {
-    if (e.op === EFFECT_OP.SET && e.stat === stat && matches(e, subject)) value = e.value;
+  for (const e of list) {
+    if (e.op === EFFECT_OP.SET && matches(e, subject)) value = e.value;
   }
   return Math.max(0, value);
 }

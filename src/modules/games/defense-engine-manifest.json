@@ -1,6 +1,6 @@
 {
   "engineVersion": 3,
-  "sha256": "e5564b03197199fd83920326739e02bfbd45ff0acbeef0e3cd4f5e7d1ceeb881",
+  "sha256": "930c8bd4d61395ea886870862026e587e8a1a080b618773c5e4864bc8d8c330b",
   "files": [
     {
       "path": "__fixtures__/golden-replays.json",
@@ -56,7 +56,7 @@
     },
     {
       "path": "effects.ts",
-      "sha256": "27bce80f166c342476ff2991e2e20f60264cb41b0b2db9e4eea68745441189fd"
+      "sha256": "0a75bcac60a5b586c6574eb2ae4a0b2c0a49992f44133ab62b9b8c86b41b39d5"
     },
     {
       "path": "game.ts",
