@@ -446,3 +446,8 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 패드: 세로·가로(844×390)·320×640 모두 버튼(홀드·A·B) 렌더, 가로 넘침 없음 ✅ · 페이지 오류 0
 - WebKit: Playwright 1.63과 캐시 webkit-2215(1.56용) 프로토콜 불일치로 멈춤 → scratchpad `pw156`에 playwright-core 1.56.1 설치, D-012 반영 후 재검증
 - 사용자 추가 요청(D-012) 반영 중이라 패드 배치는 재검증 예정
+
+## 2026-10-24 — D-012 패드 반영·검증 · 길게 누르기 차단 요청
+- 프론트 D-012 완료(bdf463a·892d92c, 리뷰 R1 두 리뷰어 확정 0): `_shared/components/GamePad`(게임 무관, layout props) + `tetris/lib/tetrisPadLayout` · ↑ 무동작(팔 비표시) · ⤓ 드롭 전용 키(강조색, 높이 64) · HOLD 왼쪽 알약 · 옛 tetris GamePad 삭제(grep 0). 최종 build는 PR 직전(시연 dev 보호)
+- Playwright(Chromium 1.63 · **WebKit 1.56**, hasTouch) 375×812·320×640·812×375: 버튼 HOLD·소프트 드롭·하드 드롭·A·B 렌더, 가로 넘침 0, 페이지 오류 0 ✅ (스크린샷 scratchpad `shots/pad-*.png`). 화면 왼쪽 아래 "N"은 Next dev 표시기(운영 빌드엔 없음)
+- 사용자: 새 모바일 키 만족. 추가 요청 — 게임 화면 길게 누르기 시 선택·복사 메뉴 차단 → 프론트 지시(게임 레이아웃 전체 user-select·touch-callout·contextmenu 차단, 입력칸 예외)
