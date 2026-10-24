@@ -45,7 +45,7 @@ interface StoredSubmission {
   /** 제출 요청의 로그인 사용자 (없으면 null → 방 입장 때 신원) */
   userId: number | null;
   battleEngineVersion: number;
-  /** gzip(JSON {seed, das, arr, frames, inputs, garbage}) base64 */
+  /** gzip(JSON {seed, das, arr, frames, inputs, garbage, garbageFrom}) base64 */
   replay: string;
 }
 
@@ -57,9 +57,22 @@ interface StoredReplayBody {
   frames: number;
   inputs: number[];
   garbage: number[];
+  /**
+   * 받은 가비지별 공격자 playerId — `garbage`의 이벤트 순서와 같다(서버 가비지 로그의 from, 모르면 null).
+   * 다시보기의 "누가 누구에게" 연출용(games-polish D-006). 도입 전 기록에는 없다
+   */
+  garbageFrom?: (string | null)[];
 }
 
 const PLAYER_ID_PATTERN = /^p\d{1,6}$/;
+
+/** 리플레이 가비지 이벤트([deltaFrame, id, lines, hole, ...]) 순서대로 서버 로그의 공격자를 붙인다 — 로그에 없는 id는 null */
+const garbageSenders = (garbage: readonly number[], log: readonly { id: number; from?: string | null }[]): (string | null)[] => {
+  const fromById = new Map(log.map((g) => [g.id, g.from ?? null]));
+  const senders: (string | null)[] = [];
+  for (let i = 0; i + 3 < garbage.length; i += 4) senders.push(fromById.get(garbage[i + 1]) ?? null);
+  return senders;
+};
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
@@ -218,6 +231,7 @@ export class TetrisBattleResultService {
       frames: replay.frames,
       inputs: replay.inputs,
       garbage: replay.garbage,
+      garbageFrom: garbageSenders(replay.garbage, context.garbage),
     };
     const record: StoredSubmission = {
       verdict: result.verdict,

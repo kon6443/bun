@@ -59,7 +59,9 @@ const snapshot = (over: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
 
 const survivorGarbage = () => {
   const g = [];
-  for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 2_000 });
+  for (let i = 0; i < SURVIVOR.garbage.length; i += 4) {
+    g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 2_000, from: 'p2' as string | null });
+  }
   return g;
 };
 const survivorSent = () => SURVIVOR_SIM.sent.filter((l) => l.sent > 0).map((l) => ({ seq: l.seq, sent: l.sent }));
@@ -258,6 +260,18 @@ describe('TetrisBattleResultService', () => {
     });
   });
 
+  describe('다시보기 공격자 기록 (games-polish D-006)', () => {
+    it('제출 리플레이의 가비지마다 서버 로그의 공격자를 같은 순서로 저장한다 — 로그에 없는 id는 null', async () => {
+      const log = survivorGarbage().map((g, i) => ({ ...g, from: i % 2 === 0 ? 'p2' : 'p3' }));
+      store.garbageLog.mockResolvedValueOnce(log.slice(1)); // 첫 이벤트는 로그에서 빠진 경우
+      await submit();
+      const record = JSON.parse(subs.p1) as { replay: string };
+      const body = JSON.parse(gunzipSync(Buffer.from(record.replay, 'base64')).toString('utf8')) as { garbageFrom: (string | null)[] };
+      expect(body.garbageFrom).toEqual([null, ...log.slice(1).map((g) => g.from)]);
+      expect(body.garbageFrom).toHaveLength(SURVIVOR.garbage.length / 4);
+    });
+  });
+
   describe('제출 — 상태코드', () => {
     it('정직한 리플레이는 201 verdict VERIFIED, 제출 기록(gzip)을 남긴다', async () => {
       await expect(submit(TOKEN(1), replayDto(), T_END + 1_000, 7)).resolves.toEqual({ verdict: 'VERIFIED' });
@@ -283,12 +297,12 @@ describe('TetrisBattleResultService', () => {
 
     it('생존자: 종료 시각 − 3초 전에 보낸 가비지가 리플레이에 없으면 INVALID, 그 뒤 것만 빠졌으면 VERIFIED (D-022)', async () => {
       const endedClock = snapshot().endedClock as number;
-      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_001 }]);
+      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_001, from: 'p2' }]);
       await expect(submit()).resolves.toEqual({ verdict: 'INVALID' });
       expect(JSON.parse(subs.p1)).toMatchObject({ reason: 'GARBAGE_MISMATCH' });
 
       delete subs.p1;
-      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_000 }]);
+      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_000, from: 'p2' }]);
       await expect(submit()).resolves.toEqual({ verdict: 'VERIFIED' });
     });
 

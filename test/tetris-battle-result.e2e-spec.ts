@@ -75,7 +75,7 @@ describe('E2E 테트리스 대전 결과', () => {
     jest.spyOn(proto, 'garbageLog').mockImplementation(async (_r, _m, pid) => {
       if (pid !== 'p1') return [];
       const g = [];
-      for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 1_000 });
+      for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 1_000, from: 'p2' as string | null });
       return g;
     });
     jest

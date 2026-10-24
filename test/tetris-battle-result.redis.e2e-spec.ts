@@ -143,7 +143,8 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     const [sec] = await client.time();
 
     const log = await store.garbageLog(client, matchId, 'p2');
-    expect(log).toEqual([{ id: 1, lines: 2, hole: expect.any(Number), at: expect.any(Number) }]);
+    // from = 보낸 플레이어 — 다시보기 공격 연출에 저장한다(games-polish D-006)
+    expect(log).toEqual([{ id: 1, lines: 2, hole: expect.any(Number), at: expect.any(Number), from: 'p1' }]);
     expect(Math.abs((log[0].at as number) - Number(sec) * 1000)).toBeLessThan(5_000);
     expect(await store.garbageSince(client, matchId, 'p2', 0)).toEqual([
       { matchId, id: 1, lines: 2, hole: log[0].hole, from: 'p1' },

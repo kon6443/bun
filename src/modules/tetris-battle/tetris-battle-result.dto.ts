@@ -136,6 +136,13 @@ export class BattleReplayDetailDto {
   @ApiProperty() frames: number;
   @ApiProperty({ type: [Number] }) inputs: number[];
   @ApiProperty({ type: [Number] }) garbage: number[];
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description: '받은 가비지별 공격자 playerId — garbage 이벤트 순서와 같다(모르면 null). 다시보기 공격 연출용, 2026-10-24 이전 기록에는 없다',
+    example: ['p2', 'p3'],
+  })
+  garbageFrom?: (string | null)[];
 }
 
 export class BattleReplayDetailResponseDto extends ApiSuccessResponseDto {
