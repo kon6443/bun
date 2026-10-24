@@ -362,3 +362,11 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 반영: FE-14(강조 행 scrollIntoView·50위 밖 "전체 기간 N위" — 단건 조회 사용) · FE-18·19·20·22 · FE-27(기록이 사라질 때만 확인) · FE-28~32(접근성·이모트 창·대전 키 안내) · FE-47(OG s-maxage·swr, 대체 카드는 60초) · FE-48 · FE-49(카카오 SDK 상태 4단계) · FE-52 · 허브 "버리기" · 응답 `playerName` 사용(없으면 원문 폴백)
 - 미검증: OG 캐시의 CDN 실효·카카오 실패 경로·실기기 스크린리더
 - P6 지시(FE-53~60) + Q-B4 답(`error` 이벤트는 ack 없는 이벤트 실패 때만 — ws-exception.filter.ts:27-36)
+
+## 2026-10-24 — 프론트 P6 `refactor` 완료 보고 · P7 착수
+- 8커밋, ci:core 1462 통과, build ✅, 엔진 파일 diff 0, 동작 무변경(새 공용 모듈마다 단위 테스트)
+- 공용화: `_shared/lib/fixedStep`(디펜스 3벌 통합) · `useInputQueue`·`_shared/lib/vibrate` · `_shared/hooks/useMediaQuery` · `_shared/lib/webAudio`(생성·노이즈·멈춤 판정만 — unlock 방식은 게임별로 달라 합치면 동작 변경) · `tetris/lib/boardRules`(엔진 접점 재노출 한 곳) · `_shared/lib/{sleep,rankingParams}`·`ackTimeout` · `_shared/hooks/useLazyRef`(타입 우회 제거)
+- 죽은 코드 제거(FE-59): 항상 true 플래그 2개와 죽은 분기·RELEASE_OF·isValidMaxPlayers·loadBest·useMatchPublished enabled·settings loaded·HUD tick·RenderEnemy.effects/EFFECT_BIT(매 틱 statusBits 계산 제거)
+- Q-B4: `ServerEvents.ERROR` 타입 삭제·미구독(ack 없는 heartbeat 실패만 오고, 재연결이 복구 — 화면 동작 없음)
+- 남김: formatFullDateTime(dateUtils에 대응 없음) · 랭킹 링크 쿼리 순서만 바뀜(의미 동일)
+- 미검증: 실기기 소리·진동
