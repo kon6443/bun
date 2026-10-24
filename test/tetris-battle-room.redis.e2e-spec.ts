@@ -332,7 +332,8 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
       let seq = 0;
       const hostLock = (sent: number) =>
         emitWithAck(host, C.LOCK, {
-          matchId, seq: ++seq, frame: seq * 30, sent, combo: 0, b2b: false, tSpin: 'none', lines: 2, pc: false, board: BOARD, pending: 0,
+          // 테트리스(공격표 4) — sent는 공격표 이하여야 받는다(games-polish BT-01)
+          matchId, seq: ++seq, frame: seq * 30, sent, combo: 0, b2b: false, tSpin: 'none', lines: 4, pc: false, board: BOARD, pending: 0,
         });
 
       // p2 소켓이 끊긴 동안 p2에게 가비지 1
