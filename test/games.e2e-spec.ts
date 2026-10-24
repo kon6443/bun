@@ -132,7 +132,7 @@ describe('E2E 게임', () => {
       const res = await request(app.getHttpServer()).post(e2e.url('/games/tetris/sessions')).expect(201);
 
       expect(res.body.data).toEqual(
-        expect.objectContaining({ engineVersion: 1, seed: expect.any(Number), expiresAt: expect.any(String), boardKey: 'default', mode: null }),
+        expect.objectContaining({ engineVersion: 1, seed: expect.any(Number), expiresAt: expect.any(String), ttlSeconds: 7200, boardKey: 'default', mode: null }),
       );
       // 본문 없이 보내도(테트리스 기존 클라이언트) 기본 보드로 세션을 저장한다
       expect(JSON.parse(redis.store.get(`game:session:${res.body.data.sessionId}`)!)).toEqual(expect.objectContaining({ boardKey: 'default' }));
@@ -169,6 +169,8 @@ describe('E2E 게임', () => {
       expect(res.body.data).toEqual({
         scoreId: 41,
         score: SUCCESS.expected.score,
+        // 보낸 '  테트리스   왕 '을 DTO가 정리해 저장한 값 — 공유 카드는 이 값을 쓴다(games-polish Q-S2)
+        playerName: '테트리스 왕',
         detail: expect.objectContaining({ lines: SUCCESS.expected.lines, level: SUCCESS.expected.level }),
         ranks: { daily: 3, weekly: 3, all: 3 },
       });
@@ -528,6 +530,8 @@ describe('E2E 게임', () => {
         .get(e2e.url('/games/defense/scores/41/replay'))
         .expect(404);
       expect(current.body.code).toBe('GAME_SCORE_NOT_FOUND');
+      // 공개 전 404는 캐시하지 않는다 — 공개 시점이 지나면 바로 보여야 한다 (games-polish BD-06)
+      expect(current.headers['cache-control']).toBeUndefined();
 
       for (const boardKey of [items[2].boardKey, 'endless-s1']) {
         gameScoreRepository.findOne.mockResolvedValue(row(boardKey));
@@ -536,6 +540,7 @@ describe('E2E 게임', () => {
           .expect(200);
         expect(res.body.data).toEqual(expect.objectContaining({ boardKey, seed: 5, params: {}, frames: 30 }));
         expect(res.body.data).not.toHaveProperty('das');
+        expect(res.headers['cache-control']).toBe('public, max-age=60');
       }
     });
 

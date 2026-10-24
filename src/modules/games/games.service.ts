@@ -1,18 +1,22 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, MoreThanOrEqual, Repository } from 'typeorm';
+import { DataSource, EntityManager, MoreThanOrEqual, QueryFailedError, Repository } from 'typeorm';
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import {
   GAME_RANKING_DEFAULT_LIMIT,
   GAME_REPLAY_TIME_TOLERANCE_MS,
+  GAME_VERIFY_RETRY_AFTER_SECONDS,
+  GAME_VERIFY_TIMEOUT_LIMIT,
+  GAME_VERIFY_UNAVAILABLE_RETRY_AFTER_SECONDS,
 } from '../../common/constants/app.constants';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { ApiValidationErrorResponseDto } from '../../common/dto/api-error.dto';
-import { GameSessionService } from './game-session.service';
+import { GameSession, GameSessionService } from './game-session.service';
+import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError } from './verify-worker-pool';
 import { GAME_ENGINE_REGISTRY, GameEngineRegistry, VerifiedReplay } from './game-engine.registry';
 import { checkPlayerName } from './player-name-policy';
 import { rankingPeriodStart } from './ranking-period';
@@ -32,6 +36,7 @@ import {
   GameNotFoundErrorResponseDto,
   GamePlayerNameForbiddenErrorResponseDto,
   GamePlayerNameInvalidErrorResponseDto,
+  GameReplayDuplicateErrorResponseDto,
   GameReplayInvalidErrorResponseDto,
   GameScoreNotFoundErrorResponseDto,
   GameSessionInvalidErrorResponseDto,
@@ -60,6 +65,25 @@ const RANKING_ITEM_SELECT = {
 
 /** params가 쓸 수 없는 키 — 저장 본문에서 params와 같은 층에 있다 */
 const REPLAY_RESERVED_KEYS = ['frames', 'inputs'] as const;
+
+/** 503 GAME_VERIFY_BUSY — 원인과 다시 낼 때까지 기다릴 시간을 details에 싣는다(컨트롤러가 Retry-After로도 보낸다, games-polish BD-04·BD-14) */
+const verifyBusy = (reason: string, retryAfterSeconds: number) =>
+  new GameVerifyBusyErrorResponseDto({ details: { reason, retryAfterSeconds } });
+
+/** Oracle 유니크 위반(ORA-00001) — 메시지가 아니라 드라이버 에러 번호로 판정한다 */
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 1;
+
+/**
+ * 같은 리플레이 판정용 해시(D-003) — 게임·보드·seed·params·frames·inputs.
+ * params는 키를 정렬해 넣는다 — 클라이언트가 보낸 params의 키 순서만 바꿔 다른 해시를 만들지 못하게
+ */
+const hashReplay = (gameType: GameType, boardKey: string, seed: number, { frames, inputs, ...params }: StoredReplay): string => {
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map((key) => [key, params[key]]);
+  return createHash('sha256').update(JSON.stringify({ gameType, boardKey, seed, params: sortedParams, frames, inputs })).digest('hex');
+};
 
 /**
  * 게임 모음집 — 세션 발급 · 리플레이 검증 후 랭킹 등록 · 랭킹 · 리플레이 조회 (docs/tasks/games DESIGN.md)
@@ -109,7 +133,16 @@ export class GamesService {
       userId,
       ttlSeconds: engine.sessionTtlSeconds,
     });
-    return { sessionId, seed: session.seed, engineVersion: engine.engineVersion, expiresAt, boardKey: resolved.boardKey, mode: resolved.mode };
+    return {
+      sessionId,
+      seed: session.seed,
+      engineVersion: engine.engineVersion,
+      expiresAt,
+      // 절대 시각(expiresAt)은 기기 시계가 빠르면 짧게 보인다 — 클라이언트가 받은 시각 기준으로 셀 수 있게 길이도 준다(games-polish 프론트 리뷰)
+      ttlSeconds: engine.sessionTtlSeconds,
+      boardKey: resolved.boardKey,
+      mode: resolved.mode,
+    };
   }
 
   /** 랭킹 보드 목록 — 현재·지난 보드 */
@@ -151,14 +184,20 @@ export class GamesService {
       throw new ApiValidationErrorResponseDto('리플레이 형식이 이 게임과 맞지 않습니다.');
     }
 
+    // 엔진 버전이 다르면 배포 뒤 옛 화면이다 — 세션보다 먼저 봐서 "새로고침" 안내를 고를 수 있게(games-polish BD-04)
+    if (dto.replay.engineVersion !== engine.engineVersion) {
+      throw new GameSessionInvalidErrorResponseDto({ details: { reason: 'ENGINE_VERSION' } });
+    }
     const session = await this.gameSessionService.getSession(dto.sessionId);
-    if (
-      !session ||
-      session.gameType !== gameType ||
-      session.engineVersion !== engine.engineVersion ||
-      dto.replay.engineVersion !== engine.engineVersion
-    ) {
-      throw new GameSessionInvalidErrorResponseDto();
+    if (!session) {
+      // 없음·만료·이미 사용은 Redis에서 구분할 수 없다
+      throw new GameSessionInvalidErrorResponseDto({ details: { reason: 'NOT_FOUND' } });
+    }
+    if (session.gameType !== gameType) {
+      throw new GameSessionInvalidErrorResponseDto({ details: { reason: 'GAME_MISMATCH' } });
+    }
+    if (session.engineVersion !== engine.engineVersion) {
+      throw new GameSessionInvalidErrorResponseDto({ details: { reason: 'ENGINE_VERSION' } });
     }
 
     // 실시간 검사: 최대 배속으로 돌려도 서버가 잰 경과 시간보다 길 수 없다(빨리 감기·미리 계산한 입력 차단)
@@ -167,59 +206,32 @@ export class GamesService {
       this.logger.warn(`submitScore(): 실제 경과 시간 초과 — frames=${frames}, elapsed=${Date.now() - session.startedAt}ms`);
       // 확정 결과 — 같은 세션으로 기다렸다 다시 내지 못하게 소모한다(이전 테트리스 동작과 같음)
       await this.gameSessionService.consumeSession(dto.sessionId);
-      throw new GameReplayInvalidErrorResponseDto();
+      throw new GameReplayInvalidErrorResponseDto({ details: { reason: 'ELAPSED_TIME' } });
     }
 
-    // 보드는 세션이 정한 값 — 보드 도입 전에 발급된 세션은 게임 기본 보드
-    const boardKey = session.boardKey ?? engine.defaultBoardKey;
-    let verified: VerifiedReplay;
-    try {
-      verified = await engine.verify({ seed: session.seed, boardKey, frames, inputs, params });
-    } catch (error) {
-      // 확정 결과가 아니다 — 세션을 남겨 같은 세션으로 다시 낼 수 있게 한다. 503 자체는 전역 필터가 error로 남기므로 원인만 warn
-      this.logger.warn(`submitScore(): 리플레이 검증 실패(인프라) — ${gameType}\n${toErrorDetail(error)}`);
-      throw new GameVerifyBusyErrorResponseDto();
-    }
-
-    // 확정 결과 — 여기서 1회 소모. 동시에 같은 세션을 낸 다른 요청이 먼저 소모했으면 409
-    if (!(await this.gameSessionService.consumeSession(dto.sessionId))) {
-      throw new GameSessionInvalidErrorResponseDto();
-    }
-    if (!verified.ok) {
-      this.logger.warn(`submitScore(): 리플레이 재현 실패 — ${gameType} reason=${verified.reason}`);
-      throw new GameReplayInvalidErrorResponseDto();
-    }
-
-    const crtdAt = new Date();
+    // 보드는 세션이 정한 값
+    const boardKey = session.boardKey;
     const storedReplay: StoredReplay = { ...params, frames, inputs };
-    const saved = await this.dataSource.transaction(async (manager: EntityManager) => {
-      const score = await manager.save(
-        manager.create(GameScore, {
-          gameType,
-          boardKey,
-          score: verified.score,
-          playerName: dto.playerName,
-          userId,
-          durationMs: Math.round(playedMs),
-          detail: JSON.stringify(verified.detail),
-          ipHash: this.hashIp(ip),
-          isHidden: 0,
-          crtdAt,
-        }),
-      );
-      await manager.save(
-        manager.create(GameReplay, {
-          scoreId: score.scoreId,
-          gameType,
-          engineVersion: engine.engineVersion,
-          seed: session.seed,
-          replay: gzipSync(JSON.stringify(storedReplay)),
-          crtdAt,
-        }),
-      );
-      return score;
-    });
+    // 같은 보드에 같은 리플레이는 한 번만(D-003) — 검증(CPU) 전에 걸러 낸다. 동시 제출은 유니크 인덱스가 막는다
+    const replayHash = hashReplay(gameType, boardKey, session.seed, storedReplay);
+    if (await this.gameScoreRepository.exists({ where: { replayHash } })) {
+      await this.gameSessionService.consumeSession(dto.sessionId);
+      throw new GameReplayDuplicateErrorResponseDto();
+    }
 
+    // 같은 세션을 동시에 여러 번 내도 검증은 하나만(BD-01) — 그 결과가 정해진 뒤 다시 내면 409(소모됨) 또는 재시도
+    const guard = await this.gameSessionService.claimVerification(dto.sessionId);
+    if (!guard) {
+      throw verifyBusy('IN_PROGRESS', GAME_VERIFY_RETRY_AFTER_SECONDS);
+    }
+    let saved: GameScore;
+    let verified: VerifiedReplay & { ok: true };
+    let crtdAt: Date;
+    try {
+      ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
+    } finally {
+      await this.gameSessionService.releaseVerification(dto.sessionId, guard);
+    }
     // 기록은 이미 커밋됐고 세션도 소모됐다 — 순위 계산이 실패해도 등록 성공(201)은 지킨다(재시도하면 409라 결과를 잃는다)
     let ranks: GameScoreSubmittedDto['ranks'] = null;
     try {
@@ -227,7 +239,110 @@ export class GamesService {
     } catch (error) {
       this.logger.error(`submitScore(): 순위 계산 실패 — scoreId=${saved.scoreId}`, toErrorDetail(error));
     }
-    return { scoreId: saved.scoreId, score: verified.score, detail: verified.detail, ranks };
+    // 이름은 DTO가 정리한 값으로 저장됐다 — 클라이언트가 보낸 원문과 다를 수 있어 저장값을 돌려준다(games-polish Q-S2)
+    return { scoreId: saved.scoreId, score: verified.score, playerName: dto.playerName, detail: verified.detail, ranks };
+  }
+
+  /**
+   * 검증 → 세션 소모 → 저장. 세션은 결과가 확정된 뒤에만 소모한다 — 검증이 밀리거나 실패하면 503 + 세션 유지,
+   * 저장이 실패하면 세션을 되돌리고 503(같은 세션으로 다시 낸다, games-polish BD-03)
+   */
+  private async verifyAndSave({
+    gameType,
+    dto,
+    userId,
+    ip,
+    session,
+    boardKey,
+    params,
+    storedReplay,
+    replayHash,
+    playedMs,
+  }: {
+    gameType: GameType;
+    dto: SubmitGameScoreDto;
+    userId: number | null;
+    ip: string | undefined;
+    session: GameSession;
+    boardKey: string;
+    params: Record<string, number>;
+    storedReplay: StoredReplay;
+    replayHash: string;
+    playedMs: number;
+  }): Promise<{ saved: GameScore; verified: VerifiedReplay & { ok: true }; crtdAt: Date }> {
+    const engine = this.engines[gameType];
+    const { frames, inputs } = storedReplay;
+    let verified: VerifiedReplay;
+    try {
+      verified = await engine.verify({ seed: session.seed, boardKey, frames, inputs, params });
+    } catch (error) {
+      // 확정 결과가 아니다 — 503 자체는 전역 필터가 error로 남기므로 원인만 warn
+      this.logger.warn(`submitScore(): 리플레이 검증 실패(인프라) — ${gameType}\n${toErrorDetail(error)}`);
+      throw await this.verifyFailure(error, dto.sessionId, engine.sessionTtlSeconds);
+    }
+
+    // 확정 결과 — 여기서 1회 소모. 동시에 같은 세션을 낸 다른 요청이 먼저 소모했으면 409
+    if (!(await this.gameSessionService.consumeSession(dto.sessionId))) {
+      throw new GameSessionInvalidErrorResponseDto({ details: { reason: 'NOT_FOUND' } });
+    }
+    if (!verified.ok) {
+      this.logger.warn(`submitScore(): 리플레이 재현 실패 — ${gameType} reason=${verified.reason}`);
+      throw new GameReplayInvalidErrorResponseDto({ details: { reason: 'REPLAY_REJECTED', engineReason: verified.reason } });
+    }
+
+    const crtdAt = new Date();
+    try {
+      const saved = await this.dataSource.transaction(async (manager: EntityManager) => {
+        const score = await manager.save(
+          manager.create(GameScore, {
+            gameType,
+            boardKey,
+            score: verified.score,
+            playerName: dto.playerName,
+            userId,
+            durationMs: Math.round(playedMs),
+            detail: JSON.stringify(verified.detail),
+            ipHash: this.hashIp(ip),
+            replayHash,
+            isHidden: 0,
+            crtdAt,
+          }),
+        );
+        await manager.save(
+          manager.create(GameReplay, {
+            scoreId: score.scoreId,
+            gameType,
+            engineVersion: engine.engineVersion,
+            seed: session.seed,
+            replay: gzipSync(JSON.stringify(storedReplay)),
+            crtdAt,
+          }),
+        );
+        return score;
+      });
+      return { saved, verified, crtdAt };
+    } catch (error) {
+      // 같은 리플레이를 동시에 낸 다른 세션이 먼저 저장했다 — 확정 결과라 세션은 소모된 채로 둔다
+      if (isUniqueViolation(error)) throw new GameReplayDuplicateErrorResponseDto();
+      const restored = await this.gameSessionService.restoreSession(dto.sessionId, session, engine.sessionTtlSeconds);
+      this.logger.error(`submitScore(): 기록 저장 실패 — 세션 복구=${restored}`, toErrorDetail(error));
+      if (!restored) throw error;
+      throw verifyBusy('SAVE_FAILED', GAME_VERIFY_RETRY_AFTER_SECONDS);
+    }
+  }
+
+  /** 검증기 예외 → 응답. 같은 세션이 시간 초과를 반복하면 결정적으로 느린 리플레이로 보고 소모·422(games-polish BD-02) */
+  private async verifyFailure(error: unknown, sessionId: string, ttlSeconds: number): Promise<Error> {
+    if (error instanceof VerifyTimeoutError) {
+      if ((await this.gameSessionService.recordVerifyTimeout(sessionId, ttlSeconds)) >= GAME_VERIFY_TIMEOUT_LIMIT) {
+        await this.gameSessionService.consumeSession(sessionId);
+        return new GameReplayInvalidErrorResponseDto({ details: { reason: 'VERIFY_TIMEOUT' } });
+      }
+      return verifyBusy('TIMEOUT', GAME_VERIFY_RETRY_AFTER_SECONDS);
+    }
+    if (error instanceof VerifyUnavailableError) return verifyBusy('UNAVAILABLE', GAME_VERIFY_UNAVAILABLE_RETRY_AFTER_SECONDS);
+    if (error instanceof VerifyQueueFullError) return verifyBusy('QUEUE_FULL', GAME_VERIFY_RETRY_AFTER_SECONDS);
+    return verifyBusy('VERIFY_ERROR', GAME_VERIFY_RETRY_AFTER_SECONDS);
   }
 
   /** 보드·기간별 랭킹 — SCORE DESC, 같은 점수면 먼저 저장된 기록(SCORE_ID 작은 쪽)이 위. 숨김 제외 */
@@ -314,9 +429,9 @@ export class GamesService {
       }
       return ranks;
     }
-    for (const period of RANKING_PERIODS) {
-      ranks[period] = await this.rankOf(gameType, target, rankingPeriodStart(period, crtdAt));
-    }
+    // 기간별 COUNT는 서로 독립 — 순서대로 기다리지 않는다(games-polish BD-07)
+    const counted = await Promise.all(RANKING_PERIODS.map((period) => this.rankOf(gameType, target, rankingPeriodStart(period, crtdAt))));
+    RANKING_PERIODS.forEach((period, i) => (ranks[period] = counted[i]));
     return ranks;
   }
 

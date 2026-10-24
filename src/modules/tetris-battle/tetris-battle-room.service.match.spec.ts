@@ -18,13 +18,18 @@ const B: SocketIdentity = { socketId: 'sock-b', userId: null, ip: '10.0.0.2' };
 const C: SocketIdentity = { socketId: 'sock-c', userId: null, ip: '10.0.0.3' };
 const BOARD = Buffer.alloc(BOARD_BYTES).toString('base64');
 
-const lockInput = (matchId: string, over: Partial<{ seq: number; frame: number; sent: number; board: string }> = {}) => ({
+type LockInput = Parameters<TetrisBattleRoomService['lock']>[2];
+
+const lockInput = (matchId: string, over: Partial<LockInput> = {}): LockInput => ({
   matchId,
   seq: 1,
   frame: 10,
   sent: 0,
   combo: -1,
   b2b: false,
+  tSpin: 'none',
+  lines: 0,
+  pc: false,
   board: BOARD,
   pending: 0,
   ...over,
@@ -211,7 +216,7 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
       const { code, matchId } = await started();
       store.lock.mockResolvedValueOnce(okLock({ target: 'p2', gid: 3, nextTarget: 'p2' }));
 
-      const out = await service.lock(code, A.socketId, lockInput(matchId, { sent: 4 }), T0);
+      const out = await service.lock(code, A.socketId, lockInput(matchId, { sent: 4, lines: 4, combo: 0 }), T0);
 
       expect(store.lock).toHaveBeenCalledWith(
         expect.anything(),
@@ -228,7 +233,7 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
         duplicate: false,
         garbage: { toPlayerId: 'p2', payload: { matchId, id: 3, lines: 4, hole, from: 'p1' } },
         attack: { matchId, from: 'p1', to: 'p2', lines: 4 },
-        opponentUpdate: { matchId, playerId: 'p1', board: BOARD, pending: 0, combo: -1, b2b: false },
+        opponentUpdate: { matchId, playerId: 'p1', board: BOARD, pending: 0, combo: 0, b2b: false },
         roomChange: null,
       });
     });
@@ -238,7 +243,7 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
       await service.markDisconnected(code, B.socketId, T0);
       store.lock.mockResolvedValueOnce(okLock({ target: 'p2', gid: 1 }));
 
-      const out = await service.lock(code, A.socketId, lockInput(matchId, { sent: 1 }), T0);
+      const out = await service.lock(code, A.socketId, lockInput(matchId, { sent: 1, lines: 2, combo: 0 }), T0);
       expect(out.garbage?.toPlayerId).toBe('p2');
     });
 
@@ -351,6 +356,31 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
       const { code, matchId } = await started();
       await expectCode(service.lock(code, A.socketId, lockInput(matchId, { board }), T0), 'INVALID_PAYLOAD');
       expect(store.lock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['줄을 안 지웠는데 공격', { lines: 0, sent: 1 }],
+      ['싱글은 공격 0', { lines: 1, combo: 0, sent: 1 }],
+      ['테트리스 4줄 초과', { lines: 4, combo: 0, sent: 5 }],
+      ['T-스핀 더블 4줄 초과', { lines: 2, tSpin: 'full' as const, combo: 0, sent: 5 }],
+      ['최대 공격 22를 줄 없이', { lines: 0, pc: true, sent: 22 }],
+    ])('sent가 공격표 상한을 넘으면(%s) INVALID_PAYLOAD, 저장소를 부르지 않는다 (BT-01)', async (_label, over) => {
+      const { code, matchId } = await started();
+      await expectCode(service.lock(code, A.socketId, lockInput(matchId, over), T0), 'INVALID_PAYLOAD');
+      expect(store.lock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['상쇄로 공격표보다 적게', { lines: 4, combo: 0, sent: 1 }],
+      ['B2B 테트리스 5', { lines: 4, combo: 0, b2b: true, sent: 5 }],
+      ['T-스핀 더블 4', { lines: 2, tSpin: 'full' as const, combo: 0, sent: 4 }],
+      ['퍼펙트 클리어 +10', { lines: 4, combo: 0, pc: true, sent: 14 }],
+      ['콤보 가산', { lines: 1, combo: 5, sent: 2 }],
+    ])('sent가 공격표 이하면(%s) 저장소로 넘긴다 (BT-01)', async (_label, over) => {
+      const { code, matchId } = await started();
+      store.lock.mockResolvedValueOnce(okLock());
+      await service.lock(code, A.socketId, lockInput(matchId, over), T0);
+      expect(store.lock).toHaveBeenCalledTimes(1);
     });
 
     it('멤버가 아니면 NOT_IN_ROOM, matchId가 다르거나 경기 중이 아니면 MATCH_NOT_FOUND', async () => {

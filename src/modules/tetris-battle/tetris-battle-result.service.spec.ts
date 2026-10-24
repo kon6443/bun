@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -9,7 +10,7 @@ import { TetrisBattleReplay } from '../../entities/TetrisBattleReplay';
 import { User } from '../../entities/User';
 import golden from './battle-engine/__fixtures__/golden-battle-replays.json';
 import { BattleReplayInput, simulateBattleReplay } from './battle-engine';
-import { REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from './tetris-battle.constants';
+import { PENDING_SAVE_RETRY_MS, REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from './tetris-battle.constants';
 import { MatchSnapshot, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
@@ -58,7 +59,9 @@ const snapshot = (over: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
 
 const survivorGarbage = () => {
   const g = [];
-  for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 2_000 });
+  for (let i = 0; i < SURVIVOR.garbage.length; i += 4) {
+    g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 2_000, from: 'p2' as string | null });
+  }
   return g;
 };
 const survivorSent = () => SURVIVOR_SIM.sent.filter((l) => l.sent > 0).map((l) => ({ seq: l.seq, sent: l.sent }));
@@ -83,7 +86,11 @@ describe('TetrisBattleResultService', () => {
     | 'releaseSave'
     | 'isClosed'
     | 'claimVerification'
-    | 'releaseVerification',
+    | 'releaseVerification'
+    | 'markPendingSave'
+    | 'duePendingSaves'
+    | 'clearPendingSave'
+    | 'exists',
     jest.SpyInstance
   >;
   let subs: Record<string, string>;
@@ -131,6 +138,10 @@ describe('TetrisBattleResultService', () => {
       isClosed: jest.spyOn(proto, 'isClosed').mockImplementation(async () => closed),
       claimVerification: jest.spyOn(proto, 'claimVerification').mockResolvedValue(true),
       releaseVerification: jest.spyOn(proto, 'releaseVerification').mockResolvedValue(undefined),
+      markPendingSave: jest.spyOn(proto, 'markPendingSave').mockResolvedValue(undefined),
+      duePendingSaves: jest.spyOn(proto, 'duePendingSaves').mockResolvedValue([]),
+      clearPendingSave: jest.spyOn(proto, 'clearPendingSave').mockResolvedValue(undefined),
+      exists: jest.spyOn(proto, 'exists').mockResolvedValue(true),
     };
 
     matchRepository = createMockRepository<TetrisBattleMatch>();
@@ -156,15 +167,19 @@ describe('TetrisBattleResultService', () => {
       setMatchFinishedListener: (listener: (matchId: string) => void) => (matchFinished = listener),
       scheduleWake: (task: () => Promise<void>, delayMs: number) => wakes.push({ task, delayMs }),
     } as unknown as TetrisBattleRoomService;
-    service = new TetrisBattleResultService(
+    service = createService(roomService, { ENV: 'PROD', TASK_SLOT: 1 });
+  });
+
+  const createService = (roomService: TetrisBattleRoomService, env: Record<string, unknown>) =>
+    new TetrisBattleResultService(
       roomService,
       matchRepository as never,
       playerRepository as never,
       replayRepository as never,
       userRepository as never,
       { transaction } as unknown as DataSource,
+      { get: (key: string) => env[key] } as unknown as ConfigService,
     );
-  });
 
   afterEach(() => jest.restoreAllMocks());
 
@@ -179,6 +194,81 @@ describe('TetrisBattleResultService', () => {
 
       expect(store.claimSave).toHaveBeenCalled();
       expect(transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('저장 대기 스윕 (games-polish BT-05 — 깨우기 타이머가 레플리카 재시작으로 사라져도 저장)', () => {
+    const due = T_END + REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS;
+
+    it('매치가 끝나면 Redis 저장 대기에도 마감 시각으로 올린다', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T_END);
+      matchFinished?.(MATCH);
+      now.mockRestore();
+      await Promise.resolve();
+      expect(store.markPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH, due);
+    });
+
+    it('마감 지난 대기 매치를 저장하고, 저장됐으면 대기에서 뺀다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      store.isSaved.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(transaction).toHaveBeenCalled();
+      expect(store.clearPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH);
+    });
+
+    it('저장이 실패하면 대기에 남겨 다음 스윕이 다시 시도한다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      transaction.mockRejectedValueOnce(new Error('ORA-12516'));
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(store.releaseSave).toHaveBeenCalled();
+      expect(store.clearPendingSave).not.toHaveBeenCalled();
+      // 뒤로 미뤄 다음 스윕이 다른 대기 매치부터 본다(앞 20개 고착 방지)
+      expect(store.markPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH, due + 1 + PENDING_SAVE_RETRY_MS);
+    });
+
+    it('매치가 TTL로 사라졌으면 저장 없이 대기에서 뺀다', async () => {
+      store.duePendingSaves.mockResolvedValueOnce([MATCH]);
+      store.snapshot.mockResolvedValueOnce(null);
+      store.exists.mockResolvedValueOnce(false);
+
+      await service.sweepPendingSaves(due + 1);
+
+      expect(transaction).not.toHaveBeenCalled();
+      expect(store.clearPendingSave).toHaveBeenCalledWith(expect.anything(), MATCH);
+    });
+
+    it.each([
+      ['LOCAL', { ENV: 'local', TASK_SLOT: 1 }],
+      ['TASK_SLOT 2', { ENV: 'PROD', TASK_SLOT: 2 }],
+    ])('%s 레플리카는 스윕하지 않는다(2단 가드)', async (_label, env) => {
+      const roomService = { readyRedisClient: () => ({}) as never, setMatchFinishedListener: () => undefined } as unknown as TetrisBattleRoomService;
+      await createService(roomService, env).sweepPendingSaves(due + 1);
+      expect(store.duePendingSaves).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('조회 계기 저장 (games-polish BT-09)', () => {
+    it('이미 저장된 경기는 매치 Hash를 읽지 않는다', async () => {
+      store.isSaved.mockResolvedValue(true);
+      matchRepository.findOne.mockResolvedValue(null);
+      await service.getMatch(MATCH, T_END + REPLAY_SUBMIT_DEADLINE_MS + 1).catch(() => undefined);
+      expect(store.snapshot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('다시보기 공격자 기록 (games-polish D-006)', () => {
+    it('제출 리플레이의 가비지마다 서버 로그의 공격자를 같은 순서로 저장한다 — 로그에 없는 id는 null', async () => {
+      const log = survivorGarbage().map((g, i) => ({ ...g, from: i % 2 === 0 ? 'p2' : 'p3' }));
+      store.garbageLog.mockResolvedValueOnce(log.slice(1)); // 첫 이벤트는 로그에서 빠진 경우
+      await submit();
+      const record = JSON.parse(subs.p1) as { replay: string };
+      const body = JSON.parse(gunzipSync(Buffer.from(record.replay, 'base64')).toString('utf8')) as { garbageFrom: (string | null)[] };
+      expect(body.garbageFrom).toEqual([null, ...log.slice(1).map((g) => g.from)]);
+      expect(body.garbageFrom).toHaveLength(SURVIVOR.garbage.length / 4);
     });
   });
 
@@ -207,12 +297,12 @@ describe('TetrisBattleResultService', () => {
 
     it('생존자: 종료 시각 − 3초 전에 보낸 가비지가 리플레이에 없으면 INVALID, 그 뒤 것만 빠졌으면 VERIFIED (D-022)', async () => {
       const endedClock = snapshot().endedClock as number;
-      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_001 }]);
+      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_001, from: 'p2' }]);
       await expect(submit()).resolves.toEqual({ verdict: 'INVALID' });
       expect(JSON.parse(subs.p1)).toMatchObject({ reason: 'GARBAGE_MISMATCH' });
 
       delete subs.p1;
-      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_000 }]);
+      store.garbageLog.mockResolvedValueOnce([...survivorGarbage(), { id: 99, lines: 2, hole: 1, at: endedClock - 3_000, from: 'p2' }]);
       await expect(submit()).resolves.toEqual({ verdict: 'VERIFIED' });
     });
 

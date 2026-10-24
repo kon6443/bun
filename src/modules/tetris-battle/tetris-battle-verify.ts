@@ -25,7 +25,7 @@ import { KoReason } from './tetris-battle.events';
 export interface VerificationContext {
   seed: number;
   /** 이 플레이어가 서버에서 받은 가비지(보낸 순서, at = 보낸 Redis 시각 — 없으면 옛 기록) */
-  garbage: { id: number; lines: number; hole: number; at?: number | null }[];
+  garbage: { id: number; lines: number; hole: number; at?: number | null; from?: string | null }[];
   /** 이 시각(Redis ms) 전에 보낸 가비지는 리플레이에 반드시 있어야 한다. null이면 끝부분 누락을 모두 허용 */
   requiredBefore: number | null;
   /** 이 플레이어가 보고한 공격 lock (sent > 0, seq 순) */

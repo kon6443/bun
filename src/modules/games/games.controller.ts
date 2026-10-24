@@ -17,7 +17,7 @@ import {
   THROTTLE_GAME_SESSION_LONG,
   THROTTLE_GAME_SESSION_SHORT,
 } from '../../common/constants/throttle.constants';
-import { GAME_VERIFY_RETRY_AFTER_SECONDS } from '../../common/constants/app.constants';
+import { GAME_REPLAY_CACHE_MAX_AGE_SECONDS, GAME_VERIFY_RETRY_AFTER_SECONDS } from '../../common/constants/app.constants';
 import { User } from '../../entities/User';
 import { AuthUnauthorizedErrorResponseDto } from '../auth/auth-error.dto';
 import { GamesService } from './games.service';
@@ -98,14 +98,21 @@ export class GamesController {
   @ApiResponse({ status: 201, description: 'SUCCESS (서버 계산 점수 + 기간별 순위)', type: GameScoreSubmittedResponseDto })
   @ApiResponse({ status: 401, description: '만료·무효 토큰을 보냄 — 토큰 없이 다시 제출(세션은 소모되지 않음)', type: AuthUnauthorizedErrorResponseDto })
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
-  @ApiResponse({ status: 409, description: '세션 없음·만료·재사용(동시 제출 포함)·엔진 버전 불일치 — 새 게임 필요', type: GameSessionInvalidErrorResponseDto })
+  @ApiResponse({
+    status: 409,
+    description:
+      'GAME_SESSION_INVALID: 새 게임 필요 — details.reason ENGINE_VERSION(배포 뒤 옛 화면 → 새로고침) · NOT_FOUND(없음·만료·이미 사용) · GAME_MISMATCH · ' +
+      'GAME_REPLAY_DUPLICATE: 같은 보드에 같은 리플레이가 이미 등록됨(세션 소모)',
+    type: GameSessionInvalidErrorResponseDto,
+  })
   @ApiResponse({ status: 413, description: 'PAYLOAD_TOO_LARGE: 본문 300kb 초과' })
   // 422는 네 코드 — Swagger는 상태코드당 응답 하나만 남기므로 한 항목에 모두 적는다
   @ApiResponse({
     status: 422,
     description:
       'GAME_PLAYER_NAME_INVALID: 이름 형식 위반 · GAME_PLAYER_NAME_FORBIDDEN: 금칙어 (둘 다 세션 미소모 — 이름만 바꿔 재제출) · ' +
-      'VALIDATION_ERROR: 리플레이·세션 형식 위반·게임별 상한·params 형식 (세션 미소모) · GAME_REPLAY_INVALID: 실제 경과 시간 초과·재현 불가(세션 소모)',
+      'VALIDATION_ERROR: 리플레이·세션 형식 위반·게임별 상한·params 형식 (세션 미소모) · ' +
+      'GAME_REPLAY_INVALID(세션 소모): details.reason ELAPSED_TIME(실제 경과 시간 초과) · REPLAY_REJECTED(재현 불가, engineReason에 엔진 사유) · VERIFY_TIMEOUT(검증 시간 초과 반복)',
     type: GameReplayInvalidErrorResponseDto,
   })
   @ApiThrottledResponse('요청 횟수 초과 (초당 1회 / 분당 10회)')
@@ -113,7 +120,8 @@ export class GamesController {
   @ApiResponse({
     status: 503,
     description:
-      'GAME_SESSION_UNAVAILABLE: 세션 저장소(Redis) 사용 불가 · GAME_VERIFY_BUSY: 검증이 밀림·실패 — 세션 유지, Retry-After(초) 뒤 같은 세션으로 다시 제출',
+      'GAME_SESSION_UNAVAILABLE: 세션 저장소(Redis) 사용 불가 · GAME_VERIFY_BUSY: 세션 유지, Retry-After(초 = details.retryAfterSeconds) 뒤 같은 세션으로 다시 제출 — ' +
+      'details.reason QUEUE_FULL · TIMEOUT · UNAVAILABLE(워커 꺼짐, 30초) · VERIFY_ERROR · IN_PROGRESS(같은 세션 검증 중) · SAVE_FAILED(저장 실패, 세션 복구됨)',
     type: GameVerifyBusyErrorResponseDto,
   })
   @ApiCommonInternalServerErrorResponse()
@@ -130,7 +138,9 @@ export class GamesController {
     } catch (error) {
       // 전역 필터는 헤더를 다루지 않는다 — 같은 응답 객체에 먼저 실어 두면 필터가 본문만 쓴다
       if (error instanceof GameVerifyBusyErrorResponseDto) {
-        res.setHeader('Retry-After', String(GAME_VERIFY_RETRY_AFTER_SECONDS));
+        // 원인별 대기 시간(details.retryAfterSeconds) — 워커가 꺼졌으면 길게(games-polish BD-14)
+        const details = error.details as { retryAfterSeconds?: number } | undefined;
+        res.setHeader('Retry-After', String(details?.retryAfterSeconds ?? GAME_VERIFY_RETRY_AFTER_SECONDS));
       }
       throw error;
     }
@@ -199,8 +209,15 @@ export class GamesController {
   })
   @ApiThrottledResponse('요청 횟수 초과 (초당 2회 / 분당 30회)')
   @ApiCommonInternalServerErrorResponse()
-  async getReplay(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number) {
+  async getReplay(
+    @Param('gameType') gameType: string,
+    @Param('scoreId', ParseIntPipe) scoreId: number,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.gamesService.getReplay(gameType, scoreId);
+    // 입력 기록(큰 본문)은 등록 뒤 바뀌지 않는다 — 공유 링크·재방문의 반복 조회를 브라우저가 잠깐 재사용한다(games-polish BD-06).
+    // 성공 응답에만 단다(404는 주간 공개 전일 수 있어 캐시하지 않는다). 순위·숨김 반영이 최대 60초 늦을 수 있다
+    res.setHeader('Cache-Control', `public, max-age=${GAME_REPLAY_CACHE_MAX_AGE_SECONDS}`);
     return { code: 'SUCCESS', data, message: '' };
   }
 }

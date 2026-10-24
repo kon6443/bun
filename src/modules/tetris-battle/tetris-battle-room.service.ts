@@ -14,6 +14,7 @@ import {
   HEARTBEAT_TTL_MS,
   LOBBY_LIST_LIMIT,
   LOBBY_COUNTS_CACHE_MS,
+  LOBBY_PREVIEW_LIMIT,
   LOBBY_SCAN_LIMIT,
   MATCH_START_DELAY_MS,
   ROOM_CAS_MAX_ATTEMPTS,
@@ -31,8 +32,8 @@ import {
   playerTokenMatches,
   verifyRoomPasswordOrThrow,
 } from './tetris-battle-room-tokens';
-import { GARBAGE_HOLE_MAX } from './battle-engine';
-import { SEED_MAX } from './battle-engine/engine';
+import { GARBAGE_HOLE_MAX, computeAttack } from './battle-engine';
+import { type LockEvent, SEED_MAX } from './battle-engine/engine';
 import { MatchSnapshot, ScriptKo, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import {
   AttackPayload,
@@ -63,7 +64,7 @@ import {
  * |---|---|---|
  * | tetris-battle:room:{code} | Hash { v: 버전, json: StoredRoom } | ROOM_TTL_SECONDS, 쓰기마다 갱신 |
  * | tetris-battle:rooms | ZSET code → 생성 시각(ms) — 로비 인덱스 | ROOM_TTL_SECONDS, 쓰기마다 갱신 |
- * | tetris-battle:lobby-counts | String JSON {waitingRooms, playingRooms} — 로비 방 수 REST 캐시(D-025) | LOBBY_COUNTS_CACHE_MS |
+ * | tetris-battle:lobby-summary | String JSON {waitingRooms, playingRooms, rooms} — 로비 요약 REST 캐시(D-025·games-polish D-009) | LOBBY_COUNTS_CACHE_MS |
  * | tetris-battle:rl:{action}:{subject} | String 카운터 | 윈도(초) |
  * | tetris-battle:pwfail:{code}:{socketId} | String 카운터 | PASSWORD_FAILURE_LIMIT.windowSec |
  * | tetris-battle:pwfail-ip:{code}:{ip} | String 카운터 | PASSWORD_FAILURE_LIMIT_IP.windowSec |
@@ -75,8 +76,16 @@ import {
  */
 const roomKey = (code: string) => `tetris-battle:room:${code}`;
 const LOBBY_INDEX_KEY = 'tetris-battle:rooms';
-/** 로비 방 수 캐시 (REST, D-025) — String JSON, TTL LOBBY_COUNTS_CACHE_MS */
-const LOBBY_COUNTS_CACHE_KEY = 'tetris-battle:lobby-counts';
+/** 로비 요약 캐시 (REST, D-025) — String JSON, TTL LOBBY_COUNTS_CACHE_MS. 응답 모양이 바뀌어 키를 새로 둔다(배포 중 옛 모양 캐시를 읽지 않게) */
+const LOBBY_SUMMARY_CACHE_KEY = 'tetris-battle:lobby-summary';
+
+/** 로비 요약 — 방 수 + 바로 들어갈 수 있는 방 미리보기 */
+export interface LobbySummary {
+  waitingRooms: number;
+  playingRooms: number;
+  /** 입장 가능한 대기 방(빈자리 있음) — 사람 많은 순, 같으면 최근 생성 순, 최대 LOBBY_PREVIEW_LIMIT개 */
+  rooms: Pick<RoomSummary, 'code' | 'name' | 'playerCount' | 'maxPlayers' | 'locked'>[];
+}
 const rateLimitKey = (action: string, subject: string) => `tetris-battle:rl:${action}:${subject}`;
 const probeKey = (code: string) => `tetris-battle:probe:${code}`;
 /** 소켓 단위 — 자리를 넘겨준 옛 탭이 계속 답해도 넘겨받은 소켓의 생존으로 세지 않게 */
@@ -386,28 +395,33 @@ export class TetrisBattleRoomService {
   }
 
   /**
-   * 로비 방 수 (REST — 테트리스 홈 "지금 열린 방 N개", D-025). 소켓 로비 목록과 같은 정리 규칙(scanLobby)으로 센다.
+   * 로비 요약 (REST — 테트리스 홈·게임 목록 "지금 열린 방", D-025). 소켓 로비 목록과 같은 정리 규칙(scanLobby)을 쓴다.
    * - waitingRooms: WAITING(입장 가능) · playingRooms: PLAYING + RESULT(입장 불가 — 경기 중·결과 화면)
+   * - rooms: 빈자리가 있는 WAITING 방 미리보기 — 홈에서 소켓 없이 바로 들어가게(games-polish D-009). 방 코드는 소켓 로비 목록에도 공개되는 값이다
    * - 홈 방문자마다 불리므로 레플리카 공통 Redis 캐시(LOBBY_COUNTS_CACHE_MS)를 둔다. 생존 확인(reconcile)은 하지 않는다(조회 비용)
    * - 로비 인덱스 최근 LOBBY_SCAN_LIMIT(200)개만 본다 — 방이 그보다 많으면 적게 셀 수 있다(수용, 리뷰 N3)
    * Redis를 못 쓰거나 명령이 실패하면(조회 중 끊김 등) null → 503(리뷰 N3, 500으로 새지 않게)
    */
-  async lobbyCounts(now = Date.now()): Promise<{ waitingRooms: number; playingRooms: number } | null> {
+  async lobbySummary(now = Date.now()): Promise<LobbySummary | null> {
     const redis = this.readyRedisClient();
     if (!redis) return null;
     try {
-      const cached = await redis.get(LOBBY_COUNTS_CACHE_KEY);
-      if (cached) return JSON.parse(cached) as { waitingRooms: number; playingRooms: number };
+      const cached = await redis.get(LOBBY_SUMMARY_CACHE_KEY);
+      if (cached) return JSON.parse(cached) as LobbySummary;
 
       const summaries = await this.scanLobby(redis, now);
-      const counts = {
-        waitingRooms: summaries.filter((r) => r.status === 'WAITING').length,
-        playingRooms: summaries.filter((r) => r.status !== 'WAITING').length,
-      };
-      await redis.set(LOBBY_COUNTS_CACHE_KEY, JSON.stringify(counts), 'PX', LOBBY_COUNTS_CACHE_MS);
-      return counts;
+      const waiting = summaries.filter((r) => r.status === 'WAITING');
+      // scanLobby는 최근 생성 순 — 안정 정렬이라 같은 인원이면 그 순서를 지킨다
+      const rooms = waiting
+        .filter((r) => r.playerCount < r.maxPlayers)
+        .sort((a, b) => b.playerCount - a.playerCount)
+        .slice(0, LOBBY_PREVIEW_LIMIT)
+        .map(({ code, name, playerCount, maxPlayers, locked }) => ({ code, name, playerCount, maxPlayers, locked }));
+      const summary: LobbySummary = { waitingRooms: waiting.length, playingRooms: summaries.length - waiting.length, rooms };
+      await redis.set(LOBBY_SUMMARY_CACHE_KEY, JSON.stringify(summary), 'PX', LOBBY_COUNTS_CACHE_MS);
+      return summary;
     } catch (error) {
-      this.logger.warn(`로비 방 수 조회 실패 — 503: ${(error as Error).message}`);
+      this.logger.warn(`로비 요약 조회 실패 — 503: ${(error as Error).message}`);
       return null;
     }
   }
@@ -862,7 +876,19 @@ export class TetrisBattleRoomService {
   async lock(
     code: string,
     socketId: string,
-    input: { matchId: string; seq: number; frame: number; sent: number; combo: number; b2b: boolean; board: string; pending: number },
+    input: {
+      matchId: string;
+      seq: number;
+      frame: number;
+      sent: number;
+      combo: number;
+      b2b: boolean;
+      tSpin: LockEvent['tSpin'];
+      lines: number;
+      pc: boolean;
+      board: string;
+      pending: number;
+    },
     now = Date.now(),
   ): Promise<LockOutcome> {
     const redis = this.requireRedis();
@@ -870,6 +896,7 @@ export class TetrisBattleRoomService {
     // 이 방의 직전 매치가 이미 끝났으면 늦게 온 보고는 무시하고 성공(리뷰 H7)
     if (ended) return this.ignoredLock(ref.matchId);
     this.assertBoard(input.board);
+    this.assertAttack(input);
 
     const hole = randomInt(0, GARBAGE_HOLE_MAX + 1);
     const r = await this.matches.lock(redis, ref.matchId, ref.playerIds, { ...input, playerId: player.playerId, hole }, now);
@@ -988,6 +1015,26 @@ export class TetrisBattleRoomService {
   }
 
   /** 판: base64(정확히 BOARD_BYTES바이트, 정규 인코딩) + 칸 값 0~8 */
+  /**
+   * 보고한 sent가 같은 고정의 공격표 값을 넘지 못하게 한다 — 줄을 안 지우고 공격만 보내는 조작 차단(games-polish BT-01).
+   * sent는 대기 가비지 상쇄 후 값이라 공격표 값과 같거나 작다. 공격표는 엔진 사본 computeAttack이 읽는 필드만 채운다
+   */
+  private assertAttack(input: { sent: number; lines: number; tSpin: LockEvent['tSpin']; b2b: boolean; combo: number; pc: boolean }): void {
+    const lock: LockEvent = {
+      frame: 0,
+      piece: 0,
+      rows: [],
+      points: 0,
+      lines: input.lines,
+      tSpin: input.tSpin,
+      backToBack: input.b2b,
+      combo: input.combo,
+    };
+    if (input.sent > computeAttack(lock, input.pc)) {
+      throw new TetrisBattleError('INVALID_PAYLOAD', '공격 줄 수가 고정 결과와 맞지 않습니다.');
+    }
+  }
+
   private assertBoard(board: string): void {
     const bytes = Buffer.from(board, 'base64');
     if (bytes.length !== BOARD_BYTES || bytes.toString('base64') !== board || bytes.some((v) => v > BOARD_CELL_MAX)) {

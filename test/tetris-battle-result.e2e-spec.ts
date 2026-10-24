@@ -62,12 +62,12 @@ describe('E2E 테트리스 대전 결과', () => {
   let playerRepository: MockRepository<TetrisBattlePlayer>;
   let replayRepository: MockRepository<TetrisBattleReplay>;
   let saved: unknown[];
-  let lobbyCounts: jest.Mock;
+  let lobbySummary: jest.Mock;
 
   const submit = (body: unknown, matchId = MATCH) => request(app.getHttpServer()).post(e2e.url(`/tetris-battle/matches/${matchId}/replays`)).send(body as object);
 
   beforeEach(async () => {
-    lobbyCounts = jest.fn().mockResolvedValue({ waitingRooms: 3, playingRooms: 1 });
+    lobbySummary = jest.fn().mockResolvedValue({ waitingRooms: 3, playingRooms: 1 });
     subs = {};
     saved = [];
     const proto = TetrisBattleMatchStore.prototype;
@@ -75,7 +75,7 @@ describe('E2E 테트리스 대전 결과', () => {
     jest.spyOn(proto, 'garbageLog').mockImplementation(async (_r, _m, pid) => {
       if (pid !== 'p1') return [];
       const g = [];
-      for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 1_000 });
+      for (let i = 0; i < SURVIVOR.garbage.length; i += 4) g.push({ id: SURVIVOR.garbage[i + 1], lines: SURVIVOR.garbage[i + 2], hole: SURVIVOR.garbage[i + 3], at: 1_000, from: 'p2' as string | null });
       return g;
     });
     jest
@@ -114,7 +114,7 @@ describe('E2E 테트리스 대전 결과', () => {
         TetrisBattleBrowseService,
         {
           provide: TetrisBattleRoomService,
-          useValue: { readyRedisClient: () => ({}), lobbyCounts, setMatchFinishedListener: () => undefined, scheduleWake: () => undefined },
+          useValue: { readyRedisClient: () => ({}), lobbySummary, setMatchFinishedListener: () => undefined, scheduleWake: () => undefined },
         },
         { provide: getRepositoryToken(TetrisBattleMatch), useValue: matchRepository },
         { provide: getRepositoryToken(TetrisBattlePlayer), useValue: playerRepository },
@@ -201,7 +201,7 @@ describe('E2E 테트리스 대전 결과', () => {
     });
 
     it('로비: Redis를 못 쓰면 503', async () => {
-      lobbyCounts.mockResolvedValueOnce(null);
+      lobbySummary.mockResolvedValueOnce(null);
       expect((await get('/tetris-battle/lobby').expect(503)).body).toMatchObject({ code: 'TETRIS_BATTLE_UNAVAILABLE' });
     });
 

@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { createHash } from 'crypto';
 import { DataSource } from 'typeorm';
@@ -20,6 +21,9 @@ import {
 } from '../src/modules/tetris-battle/battle-engine';
 import golden from '../src/modules/tetris-battle/battle-engine/__fixtures__/golden-battle-replays.json';
 import { createMockRepository } from '../src/common/__spec__/mock-repository';
+
+/** 공격 상한 검사(games-polish BT-01)를 넉넉히 통과하는 고정(공격표 14) — 이 스펙은 Lua 라우팅·기록만 본다 */
+const LOCK_ATTACK_ROOM = { lines: 4, tSpin: 'none' as const, pc: true };
 
 /**
  * 실제 Redis 대상 경기 후 검증(P5) — **opt-in** (`TETRIS_BATTLE_REDIS_TEST_PORT`).
@@ -118,7 +122,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
   it('lock Lua가 sent > 0인 lock만 "seq:sent"로 기록한다 — 중복·거부 lock은 기록하지 않는다, TTL 있음', async () => {
     const { code, matchId } = await start();
     const lock = (seq: number, frame: number, sent: number) =>
-      room.lock(code, who(1).socketId, { matchId, seq, frame, sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+      room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq, frame, sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
 
     await lock(1, 10, 0);
     await lock(2, 20, 3);
@@ -135,11 +139,12 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
 
   it('가비지 로그에 보낸 Redis 시각(at)을 남기고, 탈락 Redis 시각(koClock)을 남긴다 — 재연결 missedGarbage에는 at이 없다 (D-022)', async () => {
     const { code, matchId } = await start();
-    await room.lock(code, who(1).socketId, { matchId, seq: 1, frame: 10, sent: 2, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+    await room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq: 1, frame: 10, sent: 2, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
     const [sec] = await client.time();
 
     const log = await store.garbageLog(client, matchId, 'p2');
-    expect(log).toEqual([{ id: 1, lines: 2, hole: expect.any(Number), at: expect.any(Number) }]);
+    // from = 보낸 플레이어 — 다시보기 공격 연출에 저장한다(games-polish D-006)
+    expect(log).toEqual([{ id: 1, lines: 2, hole: expect.any(Number), at: expect.any(Number), from: 'p1' }]);
     expect(Math.abs((log[0].at as number) - Number(sec) * 1000)).toBeLessThan(5_000);
     expect(await store.garbageSince(client, matchId, 'p2', 0)).toEqual([
       { matchId, id: 1, lines: 2, hole: log[0].hole, from: 'p1' },
@@ -213,7 +218,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     const { code, matchId, tokens } = await start();
     await client.hset(matchKey(matchId), 'seed', String(replay.seed)); // 골든 seed로 맞춘다
     for (const l of locks) {
-      await room.lock(code, who(1).socketId, { matchId, seq: l.seq, frame: l.frame, sent: l.sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
+      await room.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId, seq: l.seq, frame: l.frame, sent: l.sent, combo: 0, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0);
     }
     await room.topOut(code, who(1).socketId, { matchId, frame: topOutFrame as number }, T0); // p1 탈락 → p2 우승·종료
 
@@ -230,6 +235,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const submit = (token: string, r: BattleReplayInput) =>
       result.submitReplay({ matchId, playerToken: token, replay: r, userId: null, now: T0 + 1_000 });
@@ -261,6 +267,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
 
@@ -272,23 +279,26 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
     expect(saves.length).toBe(1 + 2 + 1);
   });
 
-  it('로비 방 수 REST(D-025): 실제 로비 인덱스로 센다 — 대기 방 +1·경기 방 +1, 2초 캐시', async () => {
-    await client.del('tetris-battle:lobby-counts');
-    const before = await room.lobbyCounts(T0);
+  it('로비 요약 REST(D-025): 실제 로비 인덱스로 센다 — 대기 방 +1·경기 방 +1, 대기 방 미리보기, 2초 캐시', async () => {
+    await client.del('tetris-battle:lobby-summary');
+    const before = await room.lobbySummary(T0);
     if (!before) throw new Error('Redis 준비 안 됨');
 
-    await room.createRoom({ name: '대기방', maxPlayers: 2, playerName: '대기' }, who(50), T0); // WAITING
+    const waiting = await room.createRoom({ name: '대기방', maxPlayers: 2, playerName: '대기' }, who(50), T0); // WAITING
     await start(); // PLAYING
-    await client.del('tetris-battle:lobby-counts');
-    const after = await room.lobbyCounts(T0);
-    expect(after).toEqual({ waitingRooms: before.waitingRooms + 1, playingRooms: before.playingRooms + 1 });
-    const ttl = await client.pttl('tetris-battle:lobby-counts');
+    await client.del('tetris-battle:lobby-summary');
+    const after = await room.lobbySummary(T0);
+    expect(after).toMatchObject({ waitingRooms: before.waitingRooms + 1, playingRooms: before.playingRooms + 1 });
+    // 빈자리 있는 대기 방은 미리보기에 실린다 — 경기 중 방은 싣지 않는다(games-polish D-009)
+    expect(after?.rooms).toContainEqual({ code: waiting.room.code, name: '대기방', playerCount: 1, maxPlayers: 2, locked: false });
+    expect(after?.rooms.every((r) => r.playerCount < r.maxPlayers)).toBe(true);
+    const ttl = await client.pttl('tetris-battle:lobby-summary');
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(2_000);
 
     // 캐시가 살아 있는 동안은 새 방이 생겨도 같은 숫자
     await room.createRoom({ name: '또대기', maxPlayers: 2, playerName: '또' }, who(51), T0);
-    await expect(room.lobbyCounts(T0)).resolves.toEqual(after);
+    await expect(room.lobbySummary(T0)).resolves.toEqual(after);
   });
 
   it('후속 수정: 종료 → rematch(마감 전) → 같은 소켓 재입장으로 토큰 재발급 → 새 토큰으로 직전 경기 제출이 403이 아니다', async () => {
@@ -311,6 +321,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
+      { get: () => undefined } as unknown as ConfigService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
     // 리플레이 내용은 이 경기와 무관해 INVALID지만, 인증(토큰)은 통과해야 한다

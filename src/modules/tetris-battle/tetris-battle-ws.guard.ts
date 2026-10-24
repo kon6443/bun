@@ -5,6 +5,7 @@ import { verify, JwtPayload } from 'jsonwebtoken';
 import { Socket } from 'socket.io';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
+import { TetrisBattleError } from './tetris-battle.errors';
 
 type AccessTokenPayload = JwtPayload & { sub: number };
 
@@ -21,6 +22,8 @@ export interface TetrisBattleSocket extends Socket {
     /** 로그인 유저면 userId, 게스트면 null */
     userId?: number | null;
     room?: TetrisBattleSocketRoom;
+    /** 마지막으로 처리한 heartbeat 시각(ms) — 소켓 로컬 빈도 제한용 */
+    lastHeartbeatAt?: number;
   };
 }
 
@@ -56,14 +59,22 @@ export class TetrisBattleWsGuard implements CanActivate {
     const secret = this.configService.get<string>('JWT_SECRET');
     if (!secret) return null;
 
+    let payload: AccessTokenPayload;
     try {
-      const payload = verify(token, secret) as AccessTokenPayload;
-      if (!payload?.sub) return null;
-      const user = await this.userRepository.findOne({ where: { userId: payload.sub, isActivated: 1 } });
-      return user ? user.userId : null;
+      payload = verify(token, secret) as AccessTokenPayload;
     } catch {
       // 만료·서명 오류 → 게스트로 강등 (fishing 정책과 같다)
       return null;
+    }
+    if (!payload?.sub) return null;
+
+    try {
+      const user = await this.userRepository.findOne({ where: { userId: payload.sub, isActivated: 1 } });
+      return user ? user.userId : null;
+    } catch {
+      // DB 일시 오류는 게스트로 확정하지 않는다 — 확정하면 이 소켓은 끝까지 게스트라 좌석 넘겨받기·결과 귀속이 깨진다(games-polish BT-03).
+      // authResolved를 세우기 전에 던지므로 다음 이벤트에서 다시 조회한다
+      throw new TetrisBattleError('SERVICE_UNAVAILABLE');
     }
   }
 

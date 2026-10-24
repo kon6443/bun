@@ -156,7 +156,7 @@ export class GameSessionDto {
   @ApiProperty({ description: '세션 ID (점수 제출 시 1회 사용)', example: '3f1c2b9e-0a4d-4f7e-9a1b-2c3d4e5f6a7b' })
   sessionId: string;
 
-  @ApiProperty({ description: '블록 순서 시드 (0 ~ 4294967295)', example: 123456789 })
+  @ApiProperty({ description: '게임 시드 (0 ~ 4294967295) — 테트리스 블록 순서·디펜스 웨이브 구성. 주간 보드는 전원 같은 값', example: 123456789 })
   seed: number;
 
   @ApiProperty({ description: '서버가 받는 엔진 버전', example: 1 })
@@ -173,6 +173,12 @@ export class GameSessionDto {
 
   @ApiProperty({ description: '세션 만료 시각 (ISO, UTC)', example: '2026-10-21T08:00:00.000Z' })
   expiresAt: Date;
+
+  @ApiProperty({
+    description: '세션 유효 시간(초) — 발급 시점부터. 기기 시계가 서버와 달라도 남은 시간을 계산할 수 있게 받은 시각 + 이 값으로 쓴다',
+    example: 7200,
+  })
+  ttlSeconds: number;
 }
 
 /** 기간 필터를 쓰지 않는 보드(DEFENSE 주간)는 세 값 모두 보드 전체 순위로 같다 */
@@ -194,6 +200,9 @@ export class GameScoreSubmittedDto {
 
   @ApiProperty({ description: '서버가 리플레이로 계산한 점수', example: 12340 })
   score: number;
+
+  @ApiProperty({ description: '랭킹에 저장된 이름 — 보낸 이름의 앞뒤 공백 제거·연속 공백 1개로 정리한 값(공유 카드·화면 표시는 이 값을 쓴다)', example: '테트리스왕' })
+  playerName: string;
 
   @ApiProperty({
     description:

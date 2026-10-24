@@ -23,6 +23,9 @@ const A: SocketIdentity = { socketId: 'sock-a', userId: 42, ip: '10.0.0.1' };
 const B: SocketIdentity = { socketId: 'sock-b', userId: null, ip: '10.0.0.2' };
 const C: SocketIdentity = { socketId: 'sock-c', userId: null, ip: '10.0.0.3' };
 const D: SocketIdentity = { socketId: 'sock-d', userId: null, ip: '10.0.0.4' };
+const E: SocketIdentity = { socketId: 'sock-e2', userId: null, ip: '10.0.0.7' };
+const F: SocketIdentity = { socketId: 'sock-f2', userId: null, ip: '10.0.0.8' };
+const G: SocketIdentity = { socketId: 'sock-g', userId: null, ip: '10.0.0.9' };
 
 /**
  * 대전 방 서비스 — 방 상태 전부가 Redis 한 키(Hash: 버전 + JSON)에 있고, 모든 변경은
@@ -122,7 +125,7 @@ describe('TetrisBattleRoomService', () => {
     });
   });
 
-  describe('lobbyCounts (REST 방 수, D-025)', () => {
+  describe('lobbySummary (REST 방 수, D-025)', () => {
     it('listRooms와 같은 정리 규칙으로 센다 — 대기(WAITING) / 입장 불가(PLAYING·RESULT), 사라진 방·유예 지난 빈 방 제외', async () => {
       await create(A, { name: '대기1' }, T0);
       await create(B, { name: '대기2' }, T0 + 1);
@@ -135,29 +138,55 @@ describe('TetrisBattleRoomService', () => {
       const empty = await create({ socketId: 'sock-f', userId: null, ip: '10.0.0.6' }, { name: '빈방' }, T0 + 5);
       await service.markDisconnected(empty.room.code, 'sock-f', T0);
 
-      await expect(service.lobbyCounts(T0 + DISCONNECT_GRACE_MS)).resolves.toEqual({ waitingRooms: 2, playingRooms: 2 });
+      await expect(service.lobbySummary(T0 + DISCONNECT_GRACE_MS)).resolves.toMatchObject({ waitingRooms: 2, playingRooms: 2 });
+    });
+
+    it('방 미리보기: 빈자리 있는 대기 방만, 사람 많은 순 → 같으면 최근 생성 순, 최대 3개, 공개 필드만 (games-polish D-009)', async () => {
+      const lone1 = await create(A, { name: '혼자1' }, T0);
+      const pair = await create(B, { name: '둘', password: 'pw' }, T0 + 1);
+      await service.joinRoom({ code: pair.room.code, playerName: '둘째', password: 'pw' }, E, T0 + 1);
+      const full = await create(C, { name: '꽉참', maxPlayers: 2 }, T0 + 2);
+      await service.joinRoom({ code: full.room.code, playerName: '둘째' }, F, T0 + 2);
+      const lone2 = await create(D, { name: '혼자2' }, T0 + 3);
+      const lone3 = await create(G, { name: '혼자3' }, T0 + 4);
+
+      const summary = await service.lobbySummary(T0 + 5);
+
+      expect(summary?.waitingRooms).toBe(5);
+      expect(summary?.rooms).toEqual([
+        { code: pair.room.code, name: '둘', playerCount: 2, maxPlayers: 4, locked: true },
+        { code: lone3.room.code, name: '혼자3', playerCount: 1, maxPlayers: 4, locked: false },
+        { code: lone2.room.code, name: '혼자2', playerCount: 1, maxPlayers: 4, locked: false },
+      ]);
+      expect(summary?.rooms.map((r) => r.code)).not.toContain(full.room.code);
+      expect(summary?.rooms.map((r) => r.code)).not.toContain(lone1.room.code);
     });
 
     it('2초 캐시(레플리카 공통 Redis) — 캐시가 있으면 로비를 다시 읽지 않는다', async () => {
-      await create(A, {}, T0);
-      await expect(service.lobbyCounts(T0)).resolves.toEqual({ waitingRooms: 1, playingRooms: 0 });
-      expect(mock.redis.set).toHaveBeenCalledWith('tetris-battle:lobby-counts', JSON.stringify({ waitingRooms: 1, playingRooms: 0 }), 'PX', 2_000);
+      const first = await create(A, {}, T0);
+      const expected = {
+        waitingRooms: 1,
+        playingRooms: 0,
+        rooms: [{ code: first.room.code, name: '한판 해요', playerCount: 1, maxPlayers: 4, locked: false }],
+      };
+      await expect(service.lobbySummary(T0)).resolves.toEqual(expected);
+      expect(mock.redis.set).toHaveBeenCalledWith('tetris-battle:lobby-summary', JSON.stringify(expected), 'PX', 2_000);
 
       await create(B, {}, T0);
       mock.redis.zrevrange.mockClear();
-      await expect(service.lobbyCounts(T0)).resolves.toEqual({ waitingRooms: 1, playingRooms: 0 });
+      await expect(service.lobbySummary(T0)).resolves.toEqual(expected);
       expect(mock.redis.zrevrange).not.toHaveBeenCalled();
     });
 
     it('Redis를 못 쓰면 null', async () => {
       mock.state.status = 'reconnecting';
-      await expect(service.lobbyCounts(T0)).resolves.toBeNull();
+      await expect(service.lobbySummary(T0)).resolves.toBeNull();
     });
 
     it('조회 중 Redis 명령이 실패해도 던지지 않고 null(→ 503) (리뷰 N3)', async () => {
       jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       mock.redis.zrevrange.mockRejectedValueOnce(new Error('Connection is closed.'));
-      await expect(service.lobbyCounts(T0)).resolves.toBeNull();
+      await expect(service.lobbySummary(T0)).resolves.toBeNull();
     });
   });
 

@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
 import { Logger } from '@nestjs/common';
-import { VerifyQueueFullError, VerifyTimeoutError, VerifyWorkerError, VerifyWorkerPool } from './verify-worker-pool';
+import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError, VerifyWorkerError, VerifyWorkerPool } from './verify-worker-pool';
 
 /**
  * 검증 워커 풀 (docs/tasks/defense DESIGN §B5) — 실제 worker_threads로 돌린다.
@@ -117,7 +117,9 @@ describe('VerifyWorkerPool', () => {
 
     await expect(slow).rejects.toBeInstanceOf(VerifyTimeoutError);
     await expect(next).resolves.toBe(2);
-    expect(created).toBe(2);
+    // 새 워커가 떴다. 정확히 2로 고정하지 않는다 — ready 대기 상한도 timeoutMs(100ms)라, CPU 부하로 새 워커 기동이
+    // 100ms를 넘으면 그 워커도 회수돼 한 번 더 뜬다(정상 동작). 전체 테스트 병렬 실행에서 간헐 실패하던 원인(games-polish BD-17)
+    expect(created).toBeGreaterThanOrEqual(2);
   });
 
   it('워커 처리 실패 답({ ok: false })이면 VerifyWorkerError — 워커는 계속 쓴다', async () => {
@@ -209,12 +211,14 @@ describe('VerifyWorkerPool', () => {
     const first = pool.run({ ms: 0, value: 1 }).catch((e: unknown) => e);
     const queued = pool.run({ ms: 0, value: 2 }).catch((e: unknown) => e);
     expect(await first).toBeInstanceOf(VerifyWorkerError);
-    expect(await queued).toBeInstanceOf(VerifyWorkerError);
+    // 자리가 꺼지는 순간 대기 중이던 작업도 '꺼짐'으로 거절 — Retry-After를 길게 받는다(리뷰 Opus #2)
+    expect(await queued).toBeInstanceOf(VerifyUnavailableError);
 
     // ready 전에 죽으므로 작업을 맡기지 않고 매번 크래시로 센다 → 3번째(100·200ms 백오프 뒤)에 자리가 꺼지고 대기 작업은 거절
     await waitUntil(() => created >= 3);
     // 세 번째가 아직 살아 있으면 대기열에 들어갔다가 그 워커가 죽으며 자리가 꺼질 때 거절된다 — 어느 쪽이든 같은 오류
-    await expect(pool.run({ ms: 0, value: 3 })).rejects.toThrow('검증 워커를 쓸 수 없습니다');
+    // 꺼진 자리는 일시 밀림과 구분되는 오류 — 게임 서비스가 Retry-After를 길게 준다(games-polish BD-14)
+    await expect(pool.run({ ms: 0, value: 3 })).rejects.toBeInstanceOf(VerifyUnavailableError);
     // 꺼진 뒤에는 재시도 간격(기본 60초) 전까지 더 띄우지 않는다
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(created).toBe(3);
