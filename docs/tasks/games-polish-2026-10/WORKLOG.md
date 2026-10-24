@@ -440,3 +440,9 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 | 6 | L | TouchControls | iOS 길게 누르기 콜아웃 가능 | touch-callout·user-select·tap-highlight |
 - 정상 확인: touch-action none·overscroll none·viewport-fit cover·ref 큐·pointerdown·엔진 프레임당 입력 제한 없음
 - 설계: 싱글·대전 공통 `GamePad`("게임보이형") — D-pad ←→ ±55°·↑ ±30°·데드존 20%, ↑ 하드 드롭은 새로 누를 때만·가로 이동 후 100ms 무시, A⟳·B⟲ 25° 대각·HOLD 알약(같은 즉시·슬라이드 무시 규칙), 일시정지는 머리줄. 다이아몬드형 설정은 제외. `TouchControls`는 대체 후 삭제(일괄 승인)
+
+## 2026-10-24 — P8·P9 1차 Playwright(Chromium, 390×844 hasTouch)
+- /games: `#battle` 링크 1 · 방 만들기 0 ✅ · 테트리스 홈 대전 섹션 top 349px(첫 화면) ✅ · 빈 상태 "지금 열린 방이 없어요" ✅ · 소리 버튼 → 모달, 기본 [false,false] ✅ · Esc 닫힘 ✅ · 21초간 lobby 요청 3회(10초 주기) ✅
+- 패드: 세로·가로(844×390)·320×640 모두 버튼(홀드·A·B) 렌더, 가로 넘침 없음 ✅ · 페이지 오류 0
+- WebKit: Playwright 1.63과 캐시 webkit-2215(1.56용) 프로토콜 불일치로 멈춤 → scratchpad `pw156`에 playwright-core 1.56.1 설치, D-012 반영 후 재검증
+- 사용자 추가 요청(D-012) 반영 중이라 패드 배치는 재검증 예정
