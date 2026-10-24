@@ -230,7 +230,8 @@ export class GamesService {
     } catch (error) {
       this.logger.error(`submitScore(): 순위 계산 실패 — scoreId=${saved.scoreId}`, toErrorDetail(error));
     }
-    return { scoreId: saved.scoreId, score: verified.score, detail: verified.detail, ranks };
+    // 이름은 DTO가 정리한 값으로 저장됐다 — 클라이언트가 보낸 원문과 다를 수 있어 저장값을 돌려준다(games-polish Q-S2)
+    return { scoreId: saved.scoreId, score: verified.score, playerName: dto.playerName, detail: verified.detail, ranks };
   }
 
   /**
