@@ -75,3 +75,11 @@
 | **서버** 대상 8판 합 / 워커 | 191 / 97~118 | 118 / 64~79 | −38% / −34% |
 
 - 관찰: 무한·주간 스캐빈지 +3~6회/판(V8 측 추정, R2에서 할당 프로파일로 재확인)
+
+## 2026-10-24 — 1단계 R2 핫패스 임시 객체 재사용 (프론트 cb8f2b7 → 백엔드 동기화)
+- R1 뒤 스캐빈지 증가 원인(프론트 할당 프로파일): R1 버킷의 for…of 반복자가 bucketOf 삽입 뒤 V8 탈출 분석에서 제거되지 않아 statValue만 판당 72MB → 인덱스 루프로 0. 나머지 135MB는 makeStrike(공격마다 객체 2개)·enemySubject(틱마다 적 종류 수)
+- 변경 3파일: effects(인덱스 루프) · state(towerSubject·enemySubject 값별 공유 객체, 키 kind×8+element — ELEMENT 0~4) · combat(makeStrike 작업 객체 하나, 매 호출 전 전 필드 재기입)
+- 메인 대조: makeStrike 호출처 attack(500)·runUltimate(601)·impact(681) — 호출부(456·460)·투사체 루프(675)에서 순차, 중첩 없음 · 투사체는 towerId·slot·kind·level·branch·nthStatus 원시값만 저장 → 착탄 때 makeStrike 재생성 · 효과 대상 키 충돌 없음
+- 판 간 격리 테스트: 프론트 `interleave.test.ts` → 백엔드 `defense-engine.corpus.interleave.spec.ts`(jest) — 8판 틱 단위 교대, 단독 기대값과 일치. 변이(버킷 메모 신원 검사 제거) 시 실패 확인 후 원복
+- 게이트: 프론트 전체 4,000판·이식 72·골든·매니페스트·tokenScan 537 tests · 백엔드 엔진 테스트 138 · ci:core 1667 · lint 경고 6
+- 성능(R1 → R2): 프론트 무한 c2093 145.4→138.0ms(−5.1%, 스캐빈지 14→0.4) · 주간 136.6→128.8(−5.7%, 16→0.2) · 골든 62.5→60.2 · 복원 148.6→144.3(14.6→1) · 서버 최장 판 62.3→61.6ms · 힙 증가 4.0→0.6MB — CPU 이득은 작고 GC가 사실상 사라짐(연속 검증·프론트 GC 멈춤 제거)
