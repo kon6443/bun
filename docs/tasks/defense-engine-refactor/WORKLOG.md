@@ -89,3 +89,8 @@
 - 리뷰어 A(메인, review-flow): 엔진 호출처 `defense-verify.ts`·`defense-game-engine.ts` 2곳 — `simulateReplay` 동기 호출, 워커 스레드는 모듈 인스턴스 분리 → 판 교차 경로 없음. 확정 0
 - 리뷰어 B(Opus 서브에이전트): 확정 0. effects 변경은 push 2곳뿐(augment.ts:125·state.ts:261-262, 같은 길이 내용 변경 0건 grep) · subject 필드 대입·identity 비교 0건 · strike 재진입 경로 없음(damage·status가 combat 미import) · 변이 재확인(길이 비교 제거 → 코퍼스 26건 실패, 신원 검사 제거 → interleave 실패). `defense-engine|defense-verify` 171 tests 통과
 - 사소(버그 아님, 기각/후속): interleave의 캠페인 판 수 미단정(증강 판 ≥3 단정이 있어 격리 검사는 공허하지 않음 — 프론트 원본 테스트와 같이 바꿔야 해 프론트에 선택 제안) · effects "push만" 전제는 주석으로만 보장(효과 제거 기능이 생기면 코퍼스에 그런 판 추가 필요 — 후속 메모)
+
+## 2026-10-24 — 배포 전 운영 기록 점검 (중간)
+- `pnpm db:select`(읽기 전용) — 운영 DEFENSE 기록은 여전히 3건(46 endless-s1 · 47·79 weekly-2026-w43), 모두 ENGINE_VERSION 3, 숨김 0
+- 리플레이 본문(GAME_REPLAYS.REPLAY BLOB)은 `db:select`가 LOB을 문자열로 꺼내지 못하고 내장 패키지(DBMS_LOB)는 가드가 거부 → 공개 API(`GET /games/:gameType/scores/:scoreId/replay`)로 받아야 한다. 주간 w43 2건은 그 주가 끝나고 4시간 뒤까지 404
+- 재검증은 D-002대로 배포 직전에 공개 API로 받아 리팩토링 엔진 `verifyDefenseReplay`로 돌린다(점수·결과 일치 확인)
