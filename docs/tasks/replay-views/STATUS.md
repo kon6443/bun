@@ -30,13 +30,18 @@
 - [x] 프론트 구현 (next-bun-c4, 미커밋) — 랭킹 행 `· 조회 N` · 재생 머리줄 조회수 · RankingsView 점수순/조회순/시청순 토글 · 테트리스 홈 "오늘 많이 본 리플레이". 프론트 lint·typecheck·test 1545·build 통과, 리뷰 2종 2회 must-fix 0
   - 후속 조정 지시(2026-10-24): 조회 기록은 재생 데이터 로드 성공 뒤에, 인기 목록 메달 제거
 - [x] 마이그레이션 실행 (담당자, 2026-10-24) — 1차 ORA-02329 실패(생성물 없음) → D-006 수정 → 2차 성공. `db:select`로 컬럼 5·제약 4·인덱스 2 확인, 인기 목록 형태 쿼리 실행 확인
-- [ ] 최종 검증 — 실제 API·Playwright
+- [x] 최종 검증 — 실제 API·Playwright·운영 배포 (2026-10-24, 아래 배포 절)
   - 실API 1차(2026-10-24, 로컬 `pnpm dev` → 운영 DB): 읽기 6종 정상 · scoreId 86에 views 2회(첫 INSERT·두 번째 증가 경로 모두 Oracle에서 동작) · watch 30초 · popular daily/all·watch 정렬 반영 · 기록 요약 viewCount·watchMs 반영 · `ms=0` 422. DB 행 `('2026-10-24', VIEW_COUNT 2, WATCH_MS 30000)` 확인. ⚠️ 이 2회·30초는 운영 집계에 남아 있다(검증 흔적)
+
+## 배포 (2026-10-24)
+
+- 백엔드: PR #293(→develop) · #294(→main, merge `1779e9f`) → Deploy success. 운영 API 스모크: boards에 데일리 표시(비밀값 있음) · popular views·watch · hall-of-fame 200
+- 프론트(next-bun): PR #378(replay-views, 기능별 6커밋) · #379(seo) · #380(→main, `1fe6258`) → Deploy success
+- 운영 화면 Playwright(390px, 읽기만): 테트리스 홈(데일리 카드·많이 본 리플레이·소개) · 테트리스 랭킹(정렬 토글·조회 N) · 데일리 랭킹 · 디펜스 허브·랭킹 — 5/5 PASS, 페이지 오류 0, 가로 넘침 0
 
 ## 다음 할 일
 
-1. 프론트 구현 결과 대조 (계약: 위 API 표)
-2. 사용자 커밋 지시 → 담당자 마이그레이션 실행 → 로컬 `pnpm dev`로 실제 API·Playwright 확인
+1. 후속 — 테트리스 대전 경기 조회수(범위 밖)
 
 ## 게이트
 
