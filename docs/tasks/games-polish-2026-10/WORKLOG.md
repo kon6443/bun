@@ -414,3 +414,7 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 운영 확인(프론트 세션, 운영 env): /games·/games/tetris 200 · lobby 응답 rooms 필드 있음(대기 방 0이라 미리보기 화면은 운영 미확인) · 세션 응답 ttlSeconds = 7200(테스트 세션 1개 발급, 등록 안 함·TTL 만료)
 - 정리: 검증용 로컬 dev 서버(:3500·:3000) 종료. Redis 컨테이너 `bun-redis`·`bun-redis-test`와 원격·로컬 기능 브랜치는 남김(삭제는 사용자 지시 후)
 - **태스크 완료** — 후속 후보는 STATUS
+
+## 2026-10-24 — P8 `ux` 진행 중 결정
+- 사용자 승인: 프론트 파일 이동 2(테트리스 soundSettings(+test)·useSoundSettings → `_shared`, git mv)·삭제 2(`SoundSettingsPanel`·`BattleRoomsTeaser`) — CLAUDE.md Ask(파일 삭제)
+- Safari 중간 결과(프론트): Playwright WebKit에서 자동재생 제한은 재현되나(제스처 밖 resume → suspended), 현재 소리 경로 4개는 제스처 안 resume → running까지 정상. 유력 원인은 브라우저별 localStorage(Safari는 기본 OFF 그대로) + 설정 위치(피드백 ⑤). 하드닝: 제스처 안 무음 1샘플 재생·공통 모달 토글이 제스처 안에서 모든 플레이어 resume·단위 테스트. 실제 Safari 앱 확인은 배포 후 사용자
