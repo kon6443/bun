@@ -540,11 +540,11 @@ export class TetrisBattleMatchStore {
     redis: Redis,
     matchId: string,
     playerId: string,
-  ): Promise<{ id: number; lines: number; hole: number; at: number | null }[]> {
+  ): Promise<{ id: number; lines: number; hole: number; at: number | null; from: string | null }[]> {
     const entries = await redis.lrange(garbageLogKey(matchId, playerId), 0, -1);
     return entries.map((e) => {
-      const g = JSON.parse(e) as { id: number; lines: number; hole: number; at?: number };
-      return { id: g.id, lines: g.lines, hole: g.hole, at: g.at ?? null };
+      const g = JSON.parse(e) as { id: number; lines: number; hole: number; at?: number; from?: string };
+      return { id: g.id, lines: g.lines, hole: g.hole, at: g.at ?? null, from: g.from ?? null };
     });
   }
 
