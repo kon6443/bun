@@ -378,3 +378,12 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 계약 확인 답: garbageFrom[k] = 리플레이 garbage k번째 4개 묶음의 공격자(`garbageSenders`) · rooms = WAITING·빈자리·locked 포함·최대 3
 - 미검증: 실기기 소리(iOS unlock)·실제 경기 데이터 궤적 화면 → Playwright 단계
 - 프론트 리뷰 루프 지시: origin/main...base 전체, 리뷰 스킬 + Opus 매 라운드, 확정 0까지
+
+## 2026-10-24 — 프론트 리뷰 R1 결과 · 보류 3건 처리
+- 범위 origin/main...base(166파일), 리뷰어 review-front + Opus — **R1 두 리뷰어 확정 0**, 수정 커밋 없음. ci:core 1480 통과
+- 보류로 올라온 3건을 메인이 정석 방향으로 처리 결정:
+  1. 세션 TTL이 기기 시계에 묶임(expiresAt 절대 시각) → **백엔드 세션 응답에 `ttlSeconds` 추가**(`feat-onam-games-polish-session-ttl`, 단위·E2E·로컬 실응답 7200 확인) · 프론트는 받은 시각 + ttlSeconds, 없으면 expiresAt 폴백
+  2. 디펜스 다시보기 끝 소리 잘림 → 사용자 일시정지 때만 setPaused(라이브와 같은 규칙)
+  3. 디펜스 다시보기 소리 토글 추가(싱글·대전과 일관)
+- Opus 지적 "판 재수신 중 KO 소리"는 재현 안 됨(재시도 중 rAF 정지) → 기각
+- 로컬 서버: nest watch가 편집 중간의 일시 컴파일 오류 뒤 멈춰 재시작(검증 서버 dev2 로그)
