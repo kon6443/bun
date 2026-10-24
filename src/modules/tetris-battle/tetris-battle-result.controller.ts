@@ -51,8 +51,9 @@ export class TetrisBattleResultController {
   @Get('lobby')
   @Throttle(THROTTLE_BATTLE_RESULT_READ)
   @ApiOperation({
-    summary: '대전 로비 방 수',
-    description: '테트리스 홈 "지금 열린 방 N개"용 — 소켓 없이. 레플리카 공통 2초 캐시(숫자가 최대 2초 늦을 수 있다)',
+    summary: '대전 로비 요약 (방 수 + 바로 들어갈 방 미리보기)',
+    description:
+      '테트리스 홈·게임 목록 "지금 열린 방"용 — 소켓 없이. 방 수와 빈자리 있는 대기 방 최대 3개. 레플리카 공통 2초 캐시(최대 2초 늦을 수 있다)',
   })
   @ApiResponse({ status: 200, description: 'SUCCESS', type: BattleLobbyResponseDto })
   @ApiThrottledResponse('요청 횟수 초과 (초당 3회 / 분당 60회)')

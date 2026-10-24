@@ -144,6 +144,8 @@ export const THROTTLE_BATTLE_RESULT_READ = { short: { ttl: 1000, limit: 3 }, lon
 
 /** 로비 방 수 REST 캐시(ms, 레플리카 공통 Redis) — 홈 방문자마다 로비 전체를 읽지 않게. 2초 늦은 숫자는 문제없다(D-025) */
 export const LOBBY_COUNTS_CACHE_MS = 2_000;
+/** 로비 요약 REST의 방 미리보기 개수 — 홈·게임 목록 카드에 바로 들어갈 방 (games-polish D-009) */
+export const LOBBY_PREVIEW_LIMIT = 3;
 
 /** 최근 대전 목록 페이지 크기 (D-025) */
 export const MATCH_LIST_DEFAULT_LIMIT = 10;

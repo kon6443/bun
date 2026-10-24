@@ -20,14 +20,14 @@ describe('TetrisBattleBrowseService', () => {
   let service: TetrisBattleBrowseService;
   let matchRepository: MockRepository<TetrisBattleMatch>;
   let playerRepository: MockRepository<TetrisBattlePlayer>;
-  let lobbyCounts: jest.Mock;
+  let lobbySummary: jest.Mock;
 
   beforeEach(() => {
     matchRepository = createMockRepository<TetrisBattleMatch>();
     playerRepository = createMockRepository<TetrisBattlePlayer>();
-    lobbyCounts = jest.fn();
+    lobbySummary = jest.fn();
     service = new TetrisBattleBrowseService(
-      { lobbyCounts } as unknown as TetrisBattleRoomService,
+      { lobbySummary } as unknown as TetrisBattleRoomService,
       matchRepository as never,
       playerRepository as never,
     );
@@ -142,12 +142,12 @@ describe('TetrisBattleBrowseService', () => {
 
   describe('getLobby', () => {
     it('방 서비스의 방 수를 그대로', async () => {
-      lobbyCounts.mockResolvedValueOnce({ waitingRooms: 2, playingRooms: 1 });
-      await expect(service.getLobby()).resolves.toEqual({ waitingRooms: 2, playingRooms: 1 });
+      lobbySummary.mockResolvedValueOnce({ waitingRooms: 2, playingRooms: 1, rooms: [] });
+      await expect(service.getLobby()).resolves.toEqual({ waitingRooms: 2, playingRooms: 1, rooms: [] });
     });
 
     it('Redis를 못 쓰면 503', async () => {
-      lobbyCounts.mockResolvedValueOnce(null);
+      lobbySummary.mockResolvedValueOnce(null);
       await expect(service.getLobby()).rejects.toMatchObject({ status: 503, code: 'TETRIS_BATTLE_UNAVAILABLE' });
     });
   });
