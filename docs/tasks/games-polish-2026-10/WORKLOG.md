@@ -317,3 +317,24 @@ lint 경고 수(게임 경로): 0 (`pnpm lint` 전체 "No ESLint warnings or err
 - 검증: ci:core 단위 **1585/1585**·lint 경고 6 · E2E 240 통과(sandbox 밖) · 변경 스펙 병렬 5회 27/27
 - R2: Opus에 수정분 재검토 요청(진행 중), review-flow 수정분 자체 확인 — 변경 심볼(`claimVerification` 반환 타입·`releaseVerification` 인자) 호출처 games.service 1곳뿐, 확정 0
 - **R2 결과**: Opus 수정분 4커밋 재검토 확정 0(되돌리면 실패하는 테스트 각각 확인, Lua 해제 스크립트는 실제 Redis 미실행 — 표준 패턴) · review-flow 확정 0 → **백엔드 리뷰 루프 종료**, review 브랜치 base 머지
+
+## 2026-10-24 — 최종 검증(백엔드): ci:all·마이그레이션·로컬 실API
+- 사용자 지시: 로컬 서버 실API(기록 남겨도 됨·정리 불필요) · 로컬 docker 필요한 것 실행 · 마이그레이션은 파일·코드·용도 보여주면 사용자 실행
+- docker: `bun-redis`(6379, 앱) · `bun-redis-test`(6390, 대전 Redis 스펙)
+- **ci:all**(`TETRIS_BATTLE_REDIS_TEST_PORT=6390`, sandbox 밖): lint 0 errors·경고 6 · 스텁 0 · 단위 1585 · E2E **296 통과·2 skip**(README 기준선 동일) · build ✅. 첫 실행에서 `tetris-battle-room.redis.e2e-spec` 1건 실패 — 픽스처가 2줄·콤보 0(공격표 1)에 sent 2를 보내 BT-01 상한에 거절. 픽스처를 테트리스(4)로 수정(`ddec263`). Redis 포트가 있어야 도는 스펙이라 앞선 E2E에서 안 보였다
+- **마이그레이션**: `db:select`로 이력 확인(게임 8개 적용, 신규 1개 대기) → 사용자가 `1792743022000-AddGameScoresReplayHash` 실행 ✅ → `REPLAY_HASH VARCHAR2(64) NULL` + `UX_GAME_SCORES_REPLAY_HASH` UNIQUE 확인(db:select)
+- **로컬 서버**(`pnpm dev`, worktree, 3500) 실API — 스크립트는 세션 scratchpad `battle.cjs`·`games.cjs`·`defense-dup.cjs`
+
+| 항목 | 요청 | 결과 |
+|---|---|---|
+| BT-02 | 같은 소켓 listRooms 7회 | OK×5 → RATE_LIMITED×2 ✅ |
+| BT-01 | 2인 방·매치 시작 후 lock | 줄 없이 sent 22 → INVALID_PAYLOAD · 테트리스 sent 4 → OK · 테트리스+콤보1(공격 5)에 sent 6 → INVALID_PAYLOAD · 상쇄 sent 1 → OK ✅ |
+| 등록 성공 | 테트리스 하드 드롭 탑아웃 리플레이(95프레임) | 201, `playerName` "  검증   봇 " → "검증 봇", ranks ✅ (scoreId 76·77) |
+| BD-04 | 같은 세션 재제출 / engineVersion 999 / 10분 프레임 | 409 NOT_FOUND / 409 ENGINE_VERSION / 422 ELAPSED_TIME ✅ |
+| BD-04 | 다른 seed 리플레이 | 422 REPLAY_REJECTED + engineReason INPUT_AFTER_END ✅(2회차는 단순 판이라 우연히 재현돼 201 — 결함 아님) |
+| BD-06 | 리플레이 GET 200 / 없는 기록 404 | `public, max-age=60` / 헤더 없음 ✅ |
+| BD-05 | 디펜스 주간(`weekly-2026-w43`) 빠른 패배 리플레이(975틱) — 세션1 등록 → 세션2 같은 리플레이 → 세션2 재제출 | 201(scoreId 79) → **409 GAME_REPLAY_DUPLICATE** → 409 NOT_FOUND(세션 소모) ✅ |
+
+- 실서버 미검증: BD-01(동시 제출 IN_PROGRESS)·BD-02(시간 초과 2회)·BD-03(DB 저장 실패 복구)·BD-13·BD-14 — 일부러 실패를 만들어야 해서 단위 테스트로만 고정. BT-03(가드 DB 오류)·BT-05(레플리카 재시작 후 스윕 — 로컬은 ENV=LOCAL이라 스윕 꺼짐) 동일
+- **Q-S2 답 정정**: 프론트에 "서버는 이름을 정규화하지 않는다"고 답했으나 DTO `@Transform(normalizePlayerName)`이 앞뒤 공백·연속 공백을 정리해 저장한다. 등록 응답에 `playerName`(저장값) 추가(`130b12c`, 계약 추가) → 프론트 P5에서 반영 지시. 교훈 lessons 2026-10-24
+- 프론트 FE-16(주간 조합표 번들 분리) 보류 결정 — 엔진 state→rules→weeklyCombos 정적 의존이라 엔진 수정 필요, 실측 gzip 5.3KB. 엔진을 다른 이유로 고칠 때 함께(후속)
