@@ -69,14 +69,18 @@ function bucketOf(effects: readonly Effect[], stat: number): readonly Effect[] |
 export function statValue(effects: readonly Effect[], subject: EffectSubject, stat: number, base: number): number {
   const list = effects.length === 0 ? undefined : bucketOf(effects, stat);
   if (list === undefined) return Math.max(0, base);
+  // 인덱스 루프 — for…of는 여기서 반복자 객체를 매번 만든다(R2 할당 프로파일: 판당 약 72MB, R1 뒤 스캐빈지 증가의 원인)
   let value = base;
-  for (const e of list) {
+  for (let k = 0; k < list.length; k++) {
+    const e = list[k];
     if (e.op === EFFECT_OP.MUL && matches(e, subject)) value = Math.floor((value * e.value) / PERMILLE);
   }
-  for (const e of list) {
+  for (let k = 0; k < list.length; k++) {
+    const e = list[k];
     if (e.op === EFFECT_OP.ADD && matches(e, subject)) value += e.value;
   }
-  for (const e of list) {
+  for (let k = 0; k < list.length; k++) {
+    const e = list[k];
     if (e.op === EFFECT_OP.SET && matches(e, subject)) value = e.value;
   }
   return Math.max(0, value);

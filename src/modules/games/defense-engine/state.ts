@@ -230,8 +230,26 @@ export function enemyPath(stage: Stage, air: boolean, index: number): MapPath {
   return groundPaths[Math.min(index, groundPaths.length - 1)];
 }
 
-export const towerSubject = (kind: number, element: number): EffectSubject => ({ tower: kind, element, enemy: -1 });
-export const enemySubject = (kind: number): EffectSubject => ({ tower: -1, element: -1, enemy: kind });
+/**
+ * 효과 대상은 (종류·원소) 값만으로 정해지고 읽기만 한다(statValue·applyStatus는 담아 두지 않는다) → 값마다 객체 하나를 만들어 두고 함께 쓴다
+ * (리팩토링 1단계 R2 — 틱마다 적 종류 수만큼·공격마다 새로 만들던 할당). 판 상태가 아니라 판 사이에 공유돼도 결과가 같다. 고쳐 쓰지 않는다
+ */
+const ELEMENT_STRIDE = 8; // 원소 번호(ELEMENT, 0~4)보다 큰 간격 — 키가 겹치지 않는다
+const towerSubjects: EffectSubject[] = [];
+const enemySubjects: EffectSubject[] = [];
+
+export function towerSubject(kind: number, element: number): EffectSubject {
+  const key = kind * ELEMENT_STRIDE + element;
+  const cached = towerSubjects[key];
+  if (cached) return cached;
+  return (towerSubjects[key] = { tower: kind, element, enemy: -1 });
+}
+
+export function enemySubject(kind: number): EffectSubject {
+  const cached = enemySubjects[kind];
+  if (cached) return cached;
+  return (enemySubjects[kind] = { tower: -1, element: -1, enemy: kind });
+}
 
 export function economyStat(state: GameState, stat: number, base: number): number {
   return statValue(state.effects, ECONOMY_SUBJECT, stat, base);
