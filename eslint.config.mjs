@@ -29,7 +29,8 @@ export default tseslint.config(
   },
   {
     // 테스트 코드도 린트 대상이다 — 프로덕션 코드와 같은 품질 기준을 적용한다.
-    // 디펜스 엔진 사본은 프론트 원본 그대로 — lint --fix가 고치면 매니페스트 해시가 깨진다(결정성 규칙 lint는 원본 쪽, docs/tasks/defense §E0)
-    ignores: ['dist/', 'node_modules/', '*.js', '*.mjs', 'src/modules/games/defense-engine/'],
+    // 디펜스 엔진 사본은 프론트 원본 그대로 — lint --fix가 고치면 매니페스트 해시가 깨진다(결정성 규칙 lint는 원본 쪽, docs/tasks/defense §E0).
+    // 결과 동일성 코퍼스 러너도 프론트 원본 사본(copy-hashes.json 감시) — 같은 이유로 제외한다(docs/tasks/defense-engine-refactor)
+    ignores: ['dist/', 'node_modules/', '*.js', '*.mjs', 'src/modules/games/defense-engine/', 'src/modules/games/defense-engine-corpus/portableRunner.ts'],
   },
 );
