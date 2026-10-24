@@ -8,7 +8,8 @@ export type TetrisBattleMatchStatus = (typeof TETRIS_BATTLE_MATCH_STATUSES)[numb
  * 테트리스 대전 경기 — 스키마: migrations/*-CreateTetrisBattleMatches.ts (docs/tasks/tetris-battle DESIGN §17-2)
  *
  * 경기 후 검증(P5)을 마친 경기만 저장한다. STATUS: 제출자 전원 VERIFIED(미제출 MISSING 포함)면 VERIFIED,
- * INVALID가 하나라도 있으면 DISPUTED(공유·재생 목록 제외). 조회는 IS_HIDDEN = 0 · STATUS = VERIFIED만.
+ * INVALID가 하나라도 있으면 DISPUTED(표시용). 조회는 IS_HIDDEN = 0이면 DISPUTED도 공개 — 검증 실패는 참가자 단위이고
+ * 재생은 VERIFIED 참가자만(tetris-audit D-004).
  */
 @Entity('TETRIS_BATTLE_MATCHES')
 export class TetrisBattleMatch {

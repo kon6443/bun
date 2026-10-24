@@ -43,6 +43,9 @@ export class VerifyTimeoutError extends Error {
 
 export class VerifyWorkerError extends Error {}
 
+/** 연속 크래시로 모든 자리가 꺼져 있다 — 재시도까지 최대 disabledRetryMs. 일시적 밀림과 달리 길게 기다려야 한다(games-polish BD-14) */
+export class VerifyUnavailableError extends VerifyWorkerError {}
+
 /** 작업 없이 연속으로 이만큼 죽으면 그 자리를 끈다 */
 const MAX_CONSECUTIVE_CRASHES = 3;
 /** 재생성 대기 = 기준 × 2^(연속 크래시 − 1) */
@@ -95,7 +98,7 @@ export class VerifyWorkerPool<I, O> {
       return Promise.reject(new VerifyWorkerError('검증 워커 풀이 닫혔습니다'));
     }
     if (this.isDisabled()) {
-      return Promise.reject(new VerifyWorkerError('검증 워커를 쓸 수 없습니다'));
+      return Promise.reject(new VerifyUnavailableError('검증 워커를 쓸 수 없습니다'));
     }
     return new Promise<O>((resolve, reject) => {
       const job = { input, resolve, reject };
@@ -262,7 +265,7 @@ export class VerifyWorkerPool<I, O> {
       const retryMs = this.options.disabledRetryMs ?? DEFAULT_DISABLED_RETRY_MS;
       this.logger.error(`검증 워커 ${index}번 자리를 끕니다(${retryMs}ms 뒤 다시 시도) — 연속 ${count}회 크래시: ${reason}`);
       if (this.isDisabled()) {
-        this.rejectQueue(new VerifyWorkerError('검증 워커를 쓸 수 없습니다'));
+        this.rejectQueue(new VerifyUnavailableError('검증 워커를 쓸 수 없습니다'));
       }
       setTimeout(() => this.respawn(index), retryMs).unref();
       return;

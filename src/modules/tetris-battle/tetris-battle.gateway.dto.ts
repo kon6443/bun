@@ -161,7 +161,7 @@ export class RematchDto extends RoomCodeDto {}
 
 /**
  * 블록 고정 보고 (DESIGN §16). 서버가 쓰는 값: seq·frame(단조 검증)·sent(라우팅)·combo·b2b·board·pending(중계·통계).
- * tSpin·lines·pc는 경기 후 검증(P5)·연출 대조용으로 형식만 검사한다.
+ * lines·tSpin·b2b·combo·pc는 sent 상한(공격표) 검사에도 쓴다 — 경기 후 검증(P5)·연출 대조와 함께
  */
 export class LockDto {
   @IsString()

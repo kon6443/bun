@@ -36,6 +36,7 @@ export class GameScore {
   @Column({ name: 'USER_ID', type: 'number', nullable: true })
   userId: number | null;
 
+  // 게임 시간(ms) = 리플레이 프레임 수 × 1000 / 엔진 틱레이트(테트리스 60·디펜스 30). DB 컬럼 코멘트의 '/ 60'은 테트리스 기준 서술
   @Column({ name: 'DURATION_MS', type: 'number' })
   durationMs: number;
 
@@ -46,6 +47,10 @@ export class GameScore {
   // 응답에 싣지 않는다 — 운영자 도배 판별용
   @Column({ name: 'IP_HASH', type: 'varchar2', length: 64, nullable: true })
   ipHash: string | null;
+
+  // 리플레이 해시(sha256 hex) — 같은 리플레이 반복 등록 차단, 유니크(migrations/*-AddGameScoresReplayHash.ts). 도입 전 기록은 null
+  @Column({ name: 'REPLAY_HASH', type: 'varchar2', length: 64, nullable: true })
+  replayHash: string | null;
 
   @Column({ name: 'IS_HIDDEN', type: 'number', default: 0 })
   isHidden: 0 | 1;

@@ -335,6 +335,16 @@ describe('TetrisBattleGateway', () => {
     const client = createClient();
     await expect(gateway.handleListRooms(client, {})).resolves.toEqual({ ok: true, data: { rooms: [{ code: CODE }] } });
     expect(client.join).toHaveBeenCalledWith(LOBBY);
+    expect(service.consumeRateLimit).toHaveBeenCalledWith('listRoomsSocket', client.id);
+  });
+
+  it('listRooms 빈도 한도(소켓·IP)를 넘으면 RATE_LIMITED, 목록을 읽지도 로비를 구독하지도 않는다 (BT-02)', async () => {
+    service.consumeRateLimit.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const client = createClient();
+    await expect(gateway.handleListRooms(client, {})).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(service.consumeRateLimit).toHaveBeenLastCalledWith('listRoomsIp', expect.any(String));
+    expect(service.listRooms).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
   });
 
   it('leaveRoom: 방 채널에서 빠지고 남은 사람에게 roomState', async () => {
@@ -529,6 +539,23 @@ describe('TetrisBattleGateway', () => {
       await gateway.handleHeartbeat(createClient(), { code: CODE });
 
       expect(recordHeartbeat.mock.calls).toEqual([[CODE, 'sock-a']]);
+    });
+
+    it('같은 소켓의 heartbeat는 1초 안에 다시 오면 버린다 (BT-07)', async () => {
+      Object.assign(service, { recordHeartbeat: jest.fn().mockResolvedValue(undefined) });
+      const recordHeartbeat = (service as unknown as { recordHeartbeat: jest.Mock }).recordHeartbeat;
+      const client = createClient({ authResolved: true, userId: null, room: { code: CODE, playerId: 'p2' } });
+      const now = jest.spyOn(Date, 'now');
+
+      now.mockReturnValue(10_000);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockReturnValue(10_999);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockReturnValue(11_000);
+      await gateway.handleHeartbeat(client, { code: CODE });
+      now.mockRestore();
+
+      expect(recordHeartbeat).toHaveBeenCalledTimes(2);
     });
   });
 

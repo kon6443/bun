@@ -24,6 +24,13 @@ export const GameSessionInvalidErrorResponseDto = defineDomainError({
   message: '게임 세션이 만료되었거나 이미 사용되었습니다. 새 게임을 시작해주세요.',
 });
 
+/** 같은 보드에 같은 리플레이가 이미 등록됨 (409) — 세션 소모. 새 게임을 해야 한다 (games-polish D-003) */
+export const GameReplayDuplicateErrorResponseDto = defineDomainError({
+  code: 'GAME_REPLAY_DUPLICATE',
+  status: 409,
+  message: '이미 등록된 플레이 기록입니다.',
+});
+
 /** 게임 세션 저장소(Redis)를 쓸 수 없음 (503) — 플레이는 가능하지만 랭킹 등록 불가 */
 export const GameSessionUnavailableErrorResponseDto = defineDomainError({
   code: 'GAME_SESSION_UNAVAILABLE',

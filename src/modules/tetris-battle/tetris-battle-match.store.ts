@@ -44,6 +44,8 @@ export const sentLogKey = (matchId: string, playerId: string) => `tetris-battle:
 export const submissionsKey = (matchId: string) => `tetris-battle:match:${matchId}:subs`;
 export const savedGuardKey = (matchId: string) => `tetris-battle:match:${matchId}:saved`;
 export const verifyingKey = (matchId: string, playerId: string) => `tetris-battle:match:${matchId}:verifying:${playerId}`;
+/** 저장 대기 매치 — ZSET(점수 = 저장 예정 시각 ms). 깨우기 타이머가 레플리카 재시작으로 사라져도 스윕이 찾는다(games-polish BT-05) */
+export const pendingSavesKey = 'tetris-battle:pending-saves';
 
 /** lock·KO 스크립트 공통 — KEYS[1] 매치 Hash, KEYS[2..] pids 순서의 가비지 로그. ARGV[1] now, ARGV[2] 끊김 유예, ARGV[3] TTL */
 const LUA_PRELUDE = `
@@ -538,11 +540,11 @@ export class TetrisBattleMatchStore {
     redis: Redis,
     matchId: string,
     playerId: string,
-  ): Promise<{ id: number; lines: number; hole: number; at: number | null }[]> {
+  ): Promise<{ id: number; lines: number; hole: number; at: number | null; from: string | null }[]> {
     const entries = await redis.lrange(garbageLogKey(matchId, playerId), 0, -1);
     return entries.map((e) => {
-      const g = JSON.parse(e) as { id: number; lines: number; hole: number; at?: number };
-      return { id: g.id, lines: g.lines, hole: g.hole, at: g.at ?? null };
+      const g = JSON.parse(e) as { id: number; lines: number; hole: number; at?: number; from?: string };
+      return { id: g.id, lines: g.lines, hole: g.hole, at: g.at ?? null, from: g.from ?? null };
     });
   }
 
@@ -621,6 +623,25 @@ export class TetrisBattleMatchStore {
   /** 경기 중·마감 전 토큰 재발급을 매치에 반영 — 매치 키가 있을 때만(리뷰 L7) */
   async setTokenHash(redis: Redis, matchId: string, playerId: string, tokenHash: string): Promise<void> {
     await redis.eval(MATCH_SET_TOKEN_SCRIPT, 1, matchKey(matchId), `p:${playerId}:tokenHash`, tokenHash);
+  }
+
+  /** 저장 대기 등록 — 키 TTL은 매치 TTL로 갱신한다(대기 매치가 오래 없으면 키도 사라진다) */
+  async markPendingSave(redis: Redis, matchId: string, dueAt: number): Promise<void> {
+    await redis.multi().zadd(pendingSavesKey, dueAt, matchId).expire(pendingSavesKey, MATCH_TTL_SECONDS).exec();
+  }
+
+  /** 저장 예정 시각이 지난 대기 매치 — 오래된 순, 최대 limit개 */
+  async duePendingSaves(redis: Redis, now: number, limit: number): Promise<string[]> {
+    return redis.zrangebyscore(pendingSavesKey, 0, now, 'LIMIT', 0, limit);
+  }
+
+  async clearPendingSave(redis: Redis, matchId: string): Promise<void> {
+    await redis.zrem(pendingSavesKey, matchId);
+  }
+
+  /** 매치 Hash가 아직 있는지 — TTL로 사라졌으면 더 저장할 수 없다 */
+  async exists(redis: Redis, matchId: string): Promise<boolean> {
+    return (await redis.exists(matchKey(matchId))) === 1;
   }
 
   /** 저장 실패 시 가드를 풀어 다음 제출·조회가 다시 시도하게 한다 */

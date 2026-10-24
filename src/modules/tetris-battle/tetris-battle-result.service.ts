@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import type { Redis } from 'ioredis';
@@ -16,6 +18,9 @@ import {
   SURVIVOR_FRAME_SLACK,
   MATCH_ID_PATTERN,
   MATCH_START_DELAY_MS,
+  PENDING_SAVE_RETRY_MS,
+  PENDING_SAVE_SWEEP_ENVS,
+  PENDING_SAVE_SWEEP_LIMIT,
   REPLAY_SUBMIT_DEADLINE_MS,
   WAKE_MARGIN_MS,
 } from './tetris-battle.constants';
@@ -40,7 +45,7 @@ interface StoredSubmission {
   /** 제출 요청의 로그인 사용자 (없으면 null → 방 입장 때 신원) */
   userId: number | null;
   battleEngineVersion: number;
-  /** gzip(JSON {seed, das, arr, frames, inputs, garbage}) base64 */
+  /** gzip(JSON {seed, das, arr, frames, inputs, garbage, garbageFrom}) base64 */
   replay: string;
 }
 
@@ -52,10 +57,28 @@ interface StoredReplayBody {
   frames: number;
   inputs: number[];
   garbage: number[];
+  /**
+   * 받은 가비지별 공격자 playerId — `garbage`의 이벤트 순서와 같다(서버 가비지 로그의 from, 모르면 null).
+   * 다시보기의 "누가 누구에게" 연출용(games-polish D-006). 도입 전 기록에는 없다
+   */
+  garbageFrom?: (string | null)[];
 }
 
 const PLAYER_ID_PATTERN = /^p\d{1,6}$/;
+
+/** 리플레이 가비지 이벤트([deltaFrame, id, lines, hole, ...]) 순서대로 서버 로그의 공격자를 붙인다 — 로그에 없는 id는 null */
+const garbageSenders = (garbage: readonly number[], log: readonly { id: number; from?: string | null }[]): (string | null)[] => {
+  const fromById = new Map(log.map((g) => [g.id, g.from ?? null]));
+  const senders: (string | null)[] = [];
+  for (let i = 0; i + 3 < garbage.length; i += 4) senders.push(fromById.get(garbage[i + 1]) ?? null);
+  return senders;
+};
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
+const isForeignKeyViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
+
 
 /**
  * 테트리스 대전 경기 후 검증·결과 저장·조회 (docs/tasks/tetris-battle DESIGN §17, D-021)
@@ -66,14 +89,12 @@ const sha256Hex = (value: string) => createHash('sha256').update(value).digest('
  *   미제출은 MISSING. INVALID가 하나라도 있으면 경기 DISPUTED(표시용). 저장 실패면 가드를 풀어 다음 계기에 다시 시도한다
  * - 조회: 숨김 아님이면 DISPUTED도 공개(tetris-audit D-004 — 검증 실패는 참가자 단위). 재생은 VERIFIED 참가자만
  */
-/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
-const isForeignKeyViolation = (error: unknown): boolean =>
-  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
-
 @Injectable()
 export class TetrisBattleResultService {
   private readonly logger = new Logger(TetrisBattleResultService.name);
   private readonly matches = new TetrisBattleMatchStore();
+  /** 저장 대기 스윕을 이 레플리카에서 돌리는지 — ENV 화이트리스트 + TASK_SLOT 1 (data-access 스케줄러 2단 가드) */
+  private readonly runsPendingSaveSweep: boolean;
 
   constructor(
     private readonly roomService: TetrisBattleRoomService,
@@ -87,14 +108,54 @@ export class TetrisBattleResultService {
     private readonly userRepository: Repository<User>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    configService: ConfigService,
   ) {
-    // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06)
-    this.roomService.setMatchFinishedListener((matchId) =>
-      this.roomService.scheduleWake(
-        () => this.finalizeIfDue(matchId, Date.now()),
-        REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS,
-      ),
-    );
+    const env = configService.get<string>('ENV')?.toUpperCase() ?? '';
+    const taskSlot = Number(configService.get<number>('TASK_SLOT')) || 1;
+    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && taskSlot === 1;
+
+    // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06).
+    // 타이머는 레플리카 메모리라 재시작하면 사라진다 → Redis 저장 대기에도 올려 스윕이 대신 깨운다(games-polish BT-05)
+    this.roomService.setMatchFinishedListener((matchId) => {
+      const delayMs = REPLAY_SUBMIT_DEADLINE_MS + WAKE_MARGIN_MS;
+      this.roomService.scheduleWake(() => this.finalizeIfDue(matchId, Date.now()), delayMs);
+      void this.markPendingSave(matchId, Date.now() + delayMs);
+    });
+  }
+
+  private async markPendingSave(matchId: string, dueAt: number): Promise<void> {
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) return;
+    try {
+      await this.matches.markPendingSave(redis, matchId, dueAt);
+    } catch (error) {
+      this.logger.warn(`저장 대기 등록 실패: match=${matchId}`, toErrorDetail(error));
+    }
+  }
+
+  /**
+   * 저장 대기 스윕 — 마감이 지난 매치를 저장하고, 저장됐거나 매치가 사라졌으면 대기에서 뺀다.
+   * 저장 자체는 finalize의 SET NX 가드로 1번이라 다른 계기(제출·조회·깨우기)와 겹쳐도 안전하다
+   */
+  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'tetrisBattlePendingSaves' })
+  async sweepPendingSaves(now = Date.now()): Promise<void> {
+    if (!this.runsPendingSaveSweep) return;
+    const redis = this.roomService.readyRedisClient();
+    if (!redis) return;
+    try {
+      const due = await this.matches.duePendingSaves(redis, now, PENDING_SAVE_SWEEP_LIMIT);
+      for (const matchId of due) {
+        await this.finalizeIfDue(matchId, now);
+        if ((await this.matches.isSaved(redis, matchId)) || !(await this.matches.exists(redis, matchId))) {
+          await this.matches.clearPendingSave(redis, matchId);
+        } else {
+          // 아직 저장 못 함(마감 전·저장 실패) — 뒤로 미뤄 다른 대기 매치가 앞 20개에 막히지 않게 한다
+          await this.matches.markPendingSave(redis, matchId, now + PENDING_SAVE_RETRY_MS);
+        }
+      }
+    } catch (error) {
+      this.logger.warn('저장 대기 스윕 실패', toErrorDetail(error));
+    }
   }
 
   // ==================== 제출 ====================
@@ -170,6 +231,7 @@ export class TetrisBattleResultService {
       frames: replay.frames,
       inputs: replay.inputs,
       garbage: replay.garbage,
+      garbageFrom: garbageSenders(replay.garbage, context.garbage),
     };
     const record: StoredSubmission = {
       verdict: result.verdict,
@@ -303,6 +365,8 @@ export class TetrisBattleResultService {
     const redis = this.roomService.readyRedisClient();
     if (!redis) return;
     try {
+      // 이미 저장된 경기의 조회가 대부분이다 — 매치 Hash 전체(HGETALL) 대신 저장 표시(HEXISTS)부터 본다(games-polish BT-09)
+      if (await this.matches.isSaved(redis, matchId)) return;
       const snap = await this.matches.snapshot(redis, matchId);
       if (snap && snap.status === 'ENDED' && this.isPastDeadline(snap, now)) await this.finalize(redis, snap);
     } catch (error) {

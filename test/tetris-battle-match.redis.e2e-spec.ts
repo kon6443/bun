@@ -17,6 +17,9 @@ import {
 } from '../src/modules/tetris-battle/battle-engine';
 import golden from '../src/modules/tetris-battle/battle-engine/__fixtures__/golden-battle-replays.json';
 
+/** 공격 상한 검사(games-polish BT-01)를 넉넉히 통과하는 고정(공격표 14) — 이 스펙은 Lua 라우팅·기록만 본다 */
+const LOCK_ATTACK_ROOM = { lines: 4, tSpin: 'none' as const, pc: true };
+
 /**
  * 실제 Redis 대상 대전 매치(P2) 검증 — **opt-in** (`TETRIS_BATTLE_REDIS_TEST_PORT`).
  * 로컬: `TETRIS_BATTLE_REDIS_TEST_PORT=6380 npx jest --config ./test/jest-e2e.json --testPathPatterns 'test/tetris-battle-'`
@@ -88,7 +91,7 @@ describeIfRedis('테트리스 대전 매치 — 실제 Redis (Lua)', () => {
     return svc.lock(
       code,
       who(i).socketId,
-      { matchId, seq: seqs[key], frame: seqs[key] * 10, sent, combo: sent > 0 ? 1 : -1, b2b: false, board: EMPTY_BOARD, pending: 0 },
+      { ...LOCK_ATTACK_ROOM, matchId, seq: seqs[key], frame: seqs[key] * 10, sent, combo: sent > 0 ? 1 : -1, b2b: false, board: EMPTY_BOARD, pending: 0 },
       now,
     );
   };
@@ -151,7 +154,7 @@ describeIfRedis('테트리스 대전 매치 — 실제 Redis (Lua)', () => {
 
   it('seq 중복은 성공·방송 없음, seq 역행·frame 비증가는 INVALID_PAYLOAD', async () => {
     const { code, matchId } = await startMatchWith(2);
-    const base = { matchId, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 };
+    const base = { ...LOCK_ATTACK_ROOM, matchId, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 };
     const first = await a.lock(code, who(1).socketId, { ...base, seq: 5, frame: 100, sent: 2 }, T0);
     const dup = await b.lock(code, who(1).socketId, { ...base, seq: 5, frame: 100, sent: 2 }, T0);
 
@@ -195,7 +198,7 @@ describeIfRedis('테트리스 대전 매치 — 실제 Redis (Lua)', () => {
     // 끝난 매치에 늦게 온 lock은 무시하고 성공(리뷰 H7) — 다른 matchId는 MATCH_NOT_FOUND
     await expect(lock(a, code, matchId, 1, 1)).resolves.toMatchObject({ targetId: null, garbage: null });
     await expect(
-      codeOf(a.lock(code, who(1).socketId, { matchId: 'z'.repeat(16), seq: 99, frame: 9999, sent: 0, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0)),
+      codeOf(a.lock(code, who(1).socketId, { ...LOCK_ATTACK_ROOM, matchId: 'z'.repeat(16), seq: 99, frame: 9999, sent: 0, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 }, T0)),
     ).resolves.toBe('MATCH_NOT_FOUND');
   });
 
@@ -331,7 +334,7 @@ describeIfRedis('테트리스 대전 매치 — 실제 Redis (Lua)', () => {
   });
 
   describe('lock 남발 상한 — 게임 시간 근거 (메인 결정 7)', () => {
-    const base = (matchId: string) => ({ matchId, sent: 0, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 });
+    const base = (matchId: string) => ({ ...LOCK_ATTACK_ROOM, matchId, sent: 0, combo: -1, b2b: false, board: EMPTY_BOARD, pending: 0 });
 
     it('경기 시작(카운트다운 3초) 전의 lock은 거부한다', async () => {
       const created = await a.createRoom({ name: '시계', maxPlayers: 2, playerName: '플1' }, who(1), T0);

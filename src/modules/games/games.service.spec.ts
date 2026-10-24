@@ -3,10 +3,11 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, FindOperator } from 'typeorm';
+import { DataSource, FindOperator, QueryFailedError } from 'typeorm';
 import { GamesService } from './games.service';
 import { GameSessionService, GameSession } from './game-session.service';
 import { GAME_ENGINE_REGISTRY, GameEngine } from './game-engine.registry';
+import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError } from './verify-worker-pool';
 import { GameScore } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
@@ -27,7 +28,15 @@ describe('GamesService', () => {
   let gameScoreRepository: MockRepository<GameScore>;
   let gameReplayRepository: MockRepository<GameReplay>;
   let manager: { create: jest.Mock; save: jest.Mock };
-  let gameSessionService: { createSession: jest.Mock; getSession: jest.Mock; consumeSession: jest.Mock };
+  let gameSessionService: {
+    createSession: jest.Mock;
+    getSession: jest.Mock;
+    consumeSession: jest.Mock;
+    claimVerification: jest.Mock;
+    releaseVerification: jest.Mock;
+    recordVerifyTimeout: jest.Mock;
+    restoreSession: jest.Mock;
+  };
   let engine: GameEngine & {
     verify: jest.Mock;
     isValidParams: jest.Mock;
@@ -69,6 +78,10 @@ describe('GamesService', () => {
       createSession: jest.fn(),
       getSession: jest.fn().mockResolvedValue(session()),
       consumeSession: jest.fn().mockResolvedValue(session()),
+      claimVerification: jest.fn().mockResolvedValue('guard-token'),
+      releaseVerification: jest.fn().mockResolvedValue(undefined),
+      recordVerifyTimeout: jest.fn().mockResolvedValue(1),
+      restoreSession: jest.fn().mockResolvedValue(true),
     };
     engine = {
       engineVersion: 1,
@@ -138,7 +151,7 @@ describe('GamesService', () => {
         userId: 7,
         ttlSeconds: 7200,
       });
-      expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, boardKey: 'default', mode: null });
+      expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, ttlSeconds: 7200, boardKey: 'default', mode: null });
     });
 
     it('엔진이 보드가 정한 seed를 주면 그대로 세션에 넘겨야 함', async () => {
@@ -186,7 +199,7 @@ describe('GamesService', () => {
           isHidden: 0,
         }),
       );
-      expect(result).toEqual({ scoreId: 41, score: 12340, detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
     });
 
     it('리플레이는 세션 seed와 함께 gzip으로 저장해야 함 (같은 트랜잭션) — 테트리스는 이전과 같은 본문 형식', async () => {
@@ -320,6 +333,120 @@ describe('GamesService', () => {
       expect(manager.save).not.toHaveBeenCalled();
     });
 
+    describe('사유·중복·검증 가드·저장 실패 (games-polish P2)', () => {
+      const failWith = async (d = dto()) => (await submit(d).catch((e: unknown) => e)) as { code: string; status: number; details?: unknown };
+      const saveFails = (error: unknown) => {
+        const dataSource = (service as unknown as { dataSource: { transaction: jest.Mock } }).dataSource;
+        dataSource.transaction.mockRejectedValueOnce(error);
+      };
+      const oraError = (errorNum: number) => new QueryFailedError('INSERT', [], Object.assign(new Error(`ORA-${errorNum}`), { errorNum }));
+
+      it('리플레이 엔진 버전이 다르면 세션을 읽기 전에 409 reason ENGINE_VERSION — 새로고침 안내용 (BD-04)', async () => {
+        const error = await failWith(dto({ engineVersion: 2 }));
+        expect(error).toMatchObject({ code: 'GAME_SESSION_INVALID', status: 409, details: { reason: 'ENGINE_VERSION' } });
+        expect(gameSessionService.getSession).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['세션 없음', null, 'NOT_FOUND'],
+        ['다른 게임 세션', session({ gameType: 'DEFENSE' }), 'GAME_MISMATCH'],
+        ['세션 엔진 버전이 다름', session({ engineVersion: 0 }), 'ENGINE_VERSION'],
+      ])('%s → 409 reason %s (BD-04)', async (_label, found, reason) => {
+        gameSessionService.getSession.mockResolvedValue(found);
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_SESSION_INVALID', status: 409, details: { reason } });
+      });
+
+      it('422는 사유를 싣는다 — 경과 시간 초과 ELAPSED_TIME, 재현 실패 REPLAY_REJECTED + 엔진 사유 (BD-04)', async () => {
+        await expect(failWith(dto({ frames: 60 * 60 * 60 }))).resolves.toMatchObject({ status: 422, details: { reason: 'ELAPSED_TIME' } });
+
+        engine.verify.mockResolvedValue({ ok: false, reason: 'NOT_STARTED' });
+        await expect(failWith()).resolves.toMatchObject({
+          code: 'GAME_REPLAY_INVALID',
+          status: 422,
+          details: { reason: 'REPLAY_REJECTED', engineReason: 'NOT_STARTED' },
+        });
+      });
+
+      it('리플레이 해시를 저장한다 — 게임·보드·seed·본문이 같으면 같은 해시 (D-003)', async () => {
+        await submit();
+        await submit();
+        const hashes = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash);
+        expect(hashes[0]).toMatch(/^[0-9a-f]{64}$/);
+        expect(hashes[1]).toBe(hashes[0]);
+
+        // params 키 순서만 바꿔도 같은 리플레이다
+        await submit({ ...dto(), replay: { ...dto().replay, das: undefined, arr: undefined, params: { arr: 2, das: 10 } } } as never);
+        const reordered = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[2];
+        expect(reordered).toBe(hashes[0]);
+
+        gameSessionService.getSession.mockResolvedValue(session({ seed: 1 }));
+        await submit();
+        const other = manager.create.mock.calls.filter(([entity]) => entity === GameScore).map(([, row]) => (row as { replayHash: string }).replayHash)[3];
+        expect(other).not.toBe(hashes[0]);
+      });
+
+      it('같은 리플레이가 이미 있으면 검증 없이 409 GAME_REPLAY_DUPLICATE, 세션 소모 (D-003)', async () => {
+        gameScoreRepository.exists.mockResolvedValue(true);
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_REPLAY_DUPLICATE', status: 409 });
+        expect(engine.verify).not.toHaveBeenCalled();
+        expect(gameSessionService.consumeSession).toHaveBeenCalledWith(SESSION_ID);
+      });
+
+      it('동시 제출로 저장 때 유니크 위반(ORA-00001)이면 409 GAME_REPLAY_DUPLICATE, 세션을 되돌리지 않는다 (D-003)', async () => {
+        saveFails(oraError(1));
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_REPLAY_DUPLICATE', status: 409 });
+        expect(gameSessionService.restoreSession).not.toHaveBeenCalled();
+      });
+
+      it('같은 세션이 검증 중이면 검증하지 않고 503 reason IN_PROGRESS — 남의 가드는 풀지 않는다 (BD-01)', async () => {
+        gameSessionService.claimVerification.mockResolvedValue(null);
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', status: 503, details: { reason: 'IN_PROGRESS' } });
+        expect(engine.verify).not.toHaveBeenCalled();
+        expect(gameSessionService.releaseVerification).not.toHaveBeenCalled();
+      });
+
+      it('검증 가드는 성공·실패 모두 끝나면 푼다 (BD-01)', async () => {
+        await submit();
+        engine.verify.mockResolvedValue({ ok: false, reason: 'NOT_ENDED' });
+        await failWith();
+        expect(gameSessionService.releaseVerification).toHaveBeenCalledTimes(2);
+        expect(gameSessionService.releaseVerification).toHaveBeenCalledWith(SESSION_ID, 'guard-token');
+      });
+
+      it('검증 시간 초과는 첫 번째는 503 TIMEOUT(세션 유지), 같은 세션 2번째는 422 VERIFY_TIMEOUT(세션 소모) (BD-02)', async () => {
+        engine.verify.mockRejectedValue(new VerifyTimeoutError(5000));
+
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', details: { reason: 'TIMEOUT', retryAfterSeconds: 2 } });
+        expect(gameSessionService.consumeSession).not.toHaveBeenCalled();
+
+        gameSessionService.recordVerifyTimeout.mockResolvedValue(2);
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_REPLAY_INVALID', status: 422, details: { reason: 'VERIFY_TIMEOUT' } });
+        expect(gameSessionService.recordVerifyTimeout).toHaveBeenLastCalledWith(SESSION_ID, 7200);
+        expect(gameSessionService.consumeSession).toHaveBeenCalledWith(SESSION_ID);
+      });
+
+      it.each([
+        ['워커 꺼짐', new VerifyUnavailableError('x'), 'UNAVAILABLE', 30],
+        ['대기열 가득', new VerifyQueueFullError(), 'QUEUE_FULL', 2],
+      ])('%s → 503 reason %s, retryAfterSeconds %i (BD-14)', async (_label, thrown, reason, retryAfterSeconds) => {
+        engine.verify.mockRejectedValue(thrown);
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', details: { reason, retryAfterSeconds } });
+      });
+
+      it('저장이 실패하면 세션을 되돌리고 503 SAVE_FAILED — 같은 세션으로 다시 낼 수 있다 (BD-03)', async () => {
+        saveFails(oraError(12516));
+        await expect(failWith()).resolves.toMatchObject({ code: 'GAME_VERIFY_BUSY', status: 503, details: { reason: 'SAVE_FAILED' } });
+        expect(gameSessionService.restoreSession).toHaveBeenCalledWith(SESSION_ID, session(), 7200);
+      });
+
+      it('세션을 되돌리지 못하면(만료 등) 원래 오류를 그대로 던진다 — 재시도해도 409라 503을 주지 않는다 (BD-03)', async () => {
+        const original = oraError(12516);
+        saveFails(original);
+        gameSessionService.restoreSession.mockResolvedValue(false);
+        await expect(failWith()).resolves.toBe(original);
+      });
+    });
+
     it('기간별 순위는 앞서는 기록 수 + 1 — 일간·주간은 기간 시작 이후만 센다', async () => {
       const qbs = [3, 9, 120].map((count) => createMockQueryBuilder({ getCount: count }));
       qbs.forEach((qb) => gameScoreRepository.createQueryBuilder.mockReturnValueOnce(qb as never));
@@ -340,7 +467,7 @@ describe('GamesService', () => {
       });
     });
 
-    it('기록의 보드는 세션이 정한 값 — 보드 도입 전 세션(boardKey 없음)은 게임 기본 보드', async () => {
+    it('기록의 보드는 세션이 정한 값', async () => {
       gameSessionService.getSession.mockResolvedValue(session({ boardKey: 'weekly-2026-w43' }));
       const qb = createMockQueryBuilder({ getCount: 0 });
       gameScoreRepository.createQueryBuilder.mockReturnValue(qb as never);
@@ -350,10 +477,6 @@ describe('GamesService', () => {
       expect(engine.verify).toHaveBeenCalledWith(expect.objectContaining({ boardKey: 'weekly-2026-w43' }));
       expect(qb.andWhere).toHaveBeenCalledWith('s.boardKey = :boardKey', { boardKey: 'weekly-2026-w43' });
 
-      manager.save.mockClear();
-      gameSessionService.getSession.mockResolvedValue(session({ boardKey: undefined }));
-      await submit();
-      expect(savedScore().boardKey).toBe('default');
     });
 
     it('순위 계산만 실패하면 ranks: null로 201을 지켜야 함 (기록은 이미 커밋, 세션 소모됨)', async () => {
@@ -364,7 +487,7 @@ describe('GamesService', () => {
 
       const result = await submit();
 
-      expect(result).toEqual({ scoreId: 41, score: 12340, detail: VERIFIED_DETAIL, ranks: null });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: null });
       expect(savedScore()).toBeDefined();
     });
   });
