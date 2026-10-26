@@ -12,7 +12,7 @@
 ## 결론
 
 - 백·프 모두 **영향 API 직접 사용 0건** — 간접 경로(fetch의 br 자동 해제·next-auth 기본 Agent)는 고정 신뢰 호스트뿐 (D-001)
-- 운영 백엔드 런타임 **v24.22.1 확인**(사용자 실행 `docker exec … node -v`). 프론트 운영 런타임은 **미확인**
+- 운영 백엔드 런타임 **v24.22.1 확인**(사용자 실행 `docker exec … node -v`). 프론트 운영 런타임은 고정 이미지(`node:24.22.1-bookworm-slim`) 배포로 해소(next-bun#388, 2026-10-26)
 - Node 24 LTS 유지, 26 전환 안 함 · Next 16·Nest 12 메이저 업그레이드 안 함 (D-002·D-003)
 
 ## 범위
@@ -23,12 +23,12 @@
 - [x] `@types/node` `^22` → `^24` (런타임 일치)
 - [x] 미사용 `express`(^4, 직접 의존) · `swagger-ui-express` 제거 (D-005)
 - [x] `docs/deploy.md` 베이스 이미지 표기 갱신
-- [ ] 커밋·PR — 사용자 지시 대기
+- [x] 커밋·PR·배포 — bun#300 → release bun#302
 
 ### 프론트 (next-bun-0c)
 - [x] Dockerfile 두 FROM `node:24.22.1-bookworm-slim` · dependabot docker · `@types/node` `^20` → `^24` (타입 에러 0) · CI gha 캐시는 수정 불필요(buildx가 FROM 태그를 매번 다시 확인)
 - 검증(next-bun-0c): lint 0 · typecheck 0 · test 1699 통과/12 skip · build 61/61 · 신규 경고 0
-- [ ] 커밋·PR — 사용자 지시 대기
+- [x] 커밋·PR·배포 — next-bun#385 → release #388
 
 ## 검증 (백엔드)
 
@@ -41,11 +41,11 @@
 
 - 머지 전 차단: 없음
 - 배포 직후 조치: 없음 (런타임은 이미 24.22.1 → 고정 태그와 동일)
-- 후속: 프론트 운영 런타임 `node -v` 확인 · `DockerfileBun`(미참조, `oven/bun:latest`) 삭제 여부 — 사용자 결정 · README 테스트 기준선 수치 재측정
+- 후속 완료: `DockerfileBun` 삭제 · README 테스트 기준선 재측정 (`chore-onam-ci-followups`)
 
 ## 다음 할 일
 
-- 백·프 커밋·PR 지시 대기 · 프론트 운영 런타임 `node -v` 확인(사용자)
+- 완료
 
 ## 리뷰
 

@@ -6,8 +6,8 @@
 
 | 역할 | 세션 | 레포 | 브랜치 |
 |---|---|---|---|
-| 메인 | bun 메인 세션 | bun | 문서만 — 현재 `chore-onam-node-runtime` worktree에 함께 있음 |
-| 프론트 | next-bun-0c | next-bun | `perf-onam-tetris-render` (origin/main 54265df 이후 기준) |
+| 메인 | bun 메인 세션 | bun | 문서만 |
+| 프론트 | next-bun-0c | next-bun | `perf-onam-tetris-render` (PR next-bun#387) |
 
 ## 원인 판정
 
@@ -16,9 +16,9 @@
 
 ## 범위 (사용자 승인 순서)
 
-- [ ] a3 저사양 감지 지속형(이동 평균 + 히스테리시스) — `TetrisCanvas.tsx`
-- [ ] a1 판 테두리 네온 오프스크린 캐시 — `effectsRenderer.ts`
-- [ ] a2 고스트 외곽선 shadowBlur 캐시 또는 lite에서 끔 — `renderer.ts`
+- [x] a3 저사양 감지 지속형(이동 평균 + 히스테리시스) — `TetrisCanvas.tsx`
+- [x] a1 판 테두리 네온 오프스크린 캐시 — `effectsRenderer.ts`
+- [x] a2 고스트 외곽선 shadowBlur 캐시 또는 lite에서 끔 — `renderer.ts`
 - 후속(미착수): b1 HUD 리렌더 축소 · b2 프레임 할당 제거 · b3 큰 연출 shadowBlur lite에서 끔
 
 ## 제약 (bun-a1 확인)
@@ -38,6 +38,16 @@
 - 2026-10-26 분석 완료(누적 원인 배제) → 사용자 승인(a3→a1→a2) → bun-a1 충돌 확인 → 프론트 구현 착수
 - 프론트 세션은 이 작업 뒤 Node 런타임 고정 작업(`docs/tasks/node-runtime-2026-10/`)을 이어서 한다
 
+## 결과 (2026-10-26 배포, release next-bun#388)
+
+- 매 프레임 shadowBlur: full 2.42 → 0.98회/프레임(남은 것은 이벤트 연출), 테두리·고스트 0회. WebKit drawGame full 0.80 → 0.09ms, lite 1.43 → 0.07ms (next-bun-0c headless 측정)
+- 픽셀 동일성 800케이스(DPR 5종 × 판 4 × 스킨 4 × 품질·이동) 최대 차 4/255
+- a3 판정: 평균 20ms 30표본 연속 초과 시 lite, 18ms 미만 복귀, 최소 유지 10s(재진입 시 2배, 상한 5분), 표본은 실제 그린 프레임의 rAF 간격만
+- 리뷰: review-front + Opus 4라운드, must 0
+- 메인 Playwright(WebKit 26.6, DPR 2·1.1): `/games/tetris/play` 테두리·고스트 정상, pageerror 0, rAF p50 17ms·p95 18ms
+- 미확인: 스킨 전환·리플레이 seek·대전 화면(로그인·백엔드 필요), 배포본 나란히 비교
+
 ## 다음 할 일
 
-- 프론트 세션 구현 결과 수신 → 수치·diff 대조 → 메인 Playwright 시각 확인 → 사용자 보고. 커밋·push는 사용자 지시 후.
+- 사용자: 맥북 Safari 장시간 플레이 체감 확인 → 렉 지속 시 Web Inspector Timelines 1분/20분 비교
+- 후속(미착수): b1 HUD 리렌더 축소 · b2 프레임 할당 제거 · b3 큰 연출 shadowBlur lite에서 끔

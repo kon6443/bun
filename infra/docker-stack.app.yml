@@ -18,9 +18,12 @@ services:
       - /home/ubuntu/desktop/deploy/sys/shared:/app/shared
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3500/api/v1/health-check"]
-      # 롤백 판정이 작동하려면 unhealthy 판정 시간이 update_config.monitor(90s)보다 짧아야 한다. 값을 바꾸면 monitor도 같이 맞춘다.
-      # healthy 전 실패는 업데이트 실패로 바로 잡히고, monitor는 healthy 뒤 다시 죽는 경우(최대 retries × (interval + timeout) = 45s)를 본다.
-      # monitor를 태스크 시작부터 세는 경우의 최악(start_period 포함 85s)까지 덮도록 90s로 둔다 (docs/tasks/ci-deploy-speed-2026-10)
+      # 롤백 판정이 작동하려면 healthy 뒤 실패가 update_config.monitor(65s) 안에 관측돼야 한다. 값을 바꾸면 monitor도 같이 맞춘다.
+      # 근거(소스 원문): moby executor/container/controller.go — Start는 healthy까지 막혀 있고, 이후 unhealthy면 Shutdown이
+      # 서비스 바인딩 해제 뒤 gossip 수렴 대기(2s)를 거쳐 컨테이너를 stop한다(stop grace 기본 10s).
+      # swarmkit updater.go failureTriggersAction — RUNNING 전 실패는 언제든, RUNNING 뒤에는 그 시각부터 monitor 안의 종료를 센다.
+      # 최악 = retries × (interval + timeout) 45s + gossip 2s + stop grace 10s = 57s → 여유를 두고 65s
+      # (docs/tasks/ci-deploy-speed-2026-10)
       interval: 10s
       timeout: 5s
       retries: 3
@@ -34,7 +37,7 @@ services:
         parallelism: 1
         order: start-first
         failure_action: rollback
-        monitor: 90s   # healthcheck 판정 시간보다 길게(위 healthcheck 주석) — 헬스체크 실패도 롤백으로 잡는다
+        monitor: 65s   # healthy 뒤 실패 관측 최악(57s)보다 길게(위 healthcheck 주석) — 헬스체크 실패도 롤백으로 잡는다
         max_failure_ratio: 0
       rollback_config:
         parallelism: 1
@@ -43,7 +46,9 @@ services:
         monitor: 5s
         max_failure_ratio: 0
       restart_policy:
-        condition: on-failure
+        # any — unhealthy로 내려진 컨테이너는 graceful shutdown(SIGTERM → exit 0, src/main.ts)으로 끝나 Completed가 된다.
+        # on-failure는 Completed를 재시작하지 않아(swarmkit restart.go shouldRestart) 레플리카가 다음 배포까지 빠진 채 남는다
+        condition: any
         # 재시작 횟수 상한(max_attempts)은 두지 않는다 — 헬스체크가 DB ping이라, DB 장애 중 상한에 닿으면
         # Swarm이 태스크를 포기해 DB 복구 후에도 서비스가 내려간 채 남는다. 크래시 루프는 간격으로만 늦춘다.
         delay: 10s
