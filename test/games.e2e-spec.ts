@@ -65,6 +65,7 @@ describe('E2E 게임', () => {
   let gameReplayRepository: MockRepository<GameReplay>;
   let viewStatRepository: MockRepository<GameReplayViewStat>;
   let skinEquipRepository: MockRepository<UserSkinEquip>;
+  let userRepository: MockRepository<User>;
   let saved: Record<string, unknown>[];
   /** 레지스트리 — 테스트가 검증기를 바꿔 끼울 수 있게 매번 새 객체 */
   let engines: Record<string, GameEngine>;
@@ -99,6 +100,8 @@ describe('E2E 게임', () => {
 
     skinEquipRepository = createMockRepository<UserSkinEquip>();
     skinEquipRepository.find.mockResolvedValue([]);
+    userRepository = createMockRepository<User>();
+    userRepository.find.mockResolvedValue([]);
     e2e = await createE2eApp({
       controllers: [GamesController],
       providers: [
@@ -115,8 +118,8 @@ describe('E2E 게임', () => {
         // 보드 주인 스킨 — 장착 없음(모두 default)
         UserSkinService,
         { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
-        // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존 — 토큰이 없으면 쓰지 않는다
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
+        // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존이자 로그인 기록의 표시 이름(계정 이름) 조회 — 기본은 사용자 없음
+        { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: ConfigService, useValue: { get: (key: string) => env[key] } },
         {
           provide: getDataSourceToken(),
@@ -408,6 +411,62 @@ describe('E2E 게임', () => {
     it.each([['period=monthly'], ['limit=101'], ['limit=0'], ['board=endless-s1'], ['board=BAD_KEY']])('%s → 422', async (query) => {
       await request(app.getHttpServer()).get(e2e.url(`/games/tetris/rankings?${query}`)).expect(422);
     });
+
+    describe('내 기록(isMine) — 선택 인증, 무효 토큰은 비로그인으로', () => {
+      const rows = [
+        { scoreId: 1, boardKey: 'default', playerName: '옛이름', userId: 7, score: 900, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-21T00:00:00.000Z') },
+        { scoreId: 2, boardKey: 'default', playerName: '손님', userId: null, score: 800, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-21T00:00:00.000Z') },
+      ] as GameScore[];
+
+      beforeEach(() => {
+        env.JWT_SECRET = 'e2e-jwt';
+        gameScoreRepository.find.mockResolvedValue(rows);
+        userRepository.findOne.mockResolvedValue(createUser({ userId: 7 }));
+        userRepository.find.mockResolvedValue([createUser({ userId: 7, userName: '계정이름' })]);
+      });
+
+      it('유효한 토큰 → 내 로그인 기록만 isMine true, 이름은 계정 이름, 사용자 ID는 싣지 않는다', async () => {
+        const res = await request(app.getHttpServer())
+          .get(e2e.url('/games/tetris/rankings'))
+          .set('Authorization', `Bearer ${sign({ sub: 7 }, 'e2e-jwt')}`)
+          .expect(200);
+
+        expect(res.body.data.items.map((i: { playerName: string; isMine: boolean }) => [i.playerName, i.isMine])).toEqual([
+          ['계정이름', true],
+          ['손님', false],
+        ]);
+        expect(res.body.data.items[0]).not.toHaveProperty('userId');
+      });
+
+      it.each([
+        ['만료된 토큰', () => sign({ sub: 7, exp: Math.floor(Date.now() / 1000) - 60 }, 'e2e-jwt')],
+        ['서명이 다른 토큰', () => sign({ sub: 7 }, 'other')],
+      ])('%s → 401이 아니라 200 + 비로그인 조회', async (_name, token) => {
+        const res = await request(app.getHttpServer())
+          .get(e2e.url('/games/tetris/rankings'))
+          .set('Authorization', `Bearer ${token()}`)
+          .expect(200);
+
+        expect(res.body.data.items.every((i: { isMine: boolean }) => !i.isMine)).toBe(true);
+      });
+
+      it('GET .../me/best — 로그인이면 내 최고 기록, 비로그인이면 모두 null', async () => {
+        gameScoreRepository.findOne.mockResolvedValue({ scoreId: 128, score: 281542, boardKey: 'default' } as GameScore);
+
+        const mine = await request(app.getHttpServer())
+          .get(e2e.url('/games/tetris/me/best'))
+          .set('Authorization', `Bearer ${sign({ sub: 7 }, 'e2e-jwt')}`)
+          .expect(200);
+        const anonymous = await request(app.getHttpServer()).get(e2e.url('/games/tetris/me/best')).expect(200);
+
+        expect(mine.body.data).toEqual({ score: 281542, scoreId: 128, boardKey: 'default' });
+        expect(anonymous.body.data).toEqual({ score: null, scoreId: null, boardKey: null });
+      });
+
+      it('GET .../me/best?board=BAD_KEY → 422', async () => {
+        await request(app.getHttpServer()).get(e2e.url('/games/tetris/me/best?board=BAD_KEY')).expect(422);
+      });
+    });
   });
 
   describe('GET /games/:gameType/scores/:scoreId (기록 요약)', () => {
@@ -416,7 +475,7 @@ describe('E2E 게임', () => {
 
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41')).expect(200);
 
-      expect(res.body.data).toEqual({ rank: 3, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, createdAt: '2026-10-21T00:00:00.000Z' });
+      expect(res.body.data).toEqual({ rank: 3, scoreId: 41, playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, isMine: false, createdAt: '2026-10-21T00:00:00.000Z' });
     });
 
     it.each([
@@ -553,17 +612,18 @@ describe('E2E 게임', () => {
       await request(app.getHttpServer()).get(e2e.url('/games/tetris/rankings?board=daily-2999-01-01')).expect(422);
     });
 
-    it('GET .../hall-of-fame — 기간별 시상대, 사용자 ID는 싣지 않는다', async () => {
+    it('GET .../hall-of-fame — 기간별 시상대, 사용자 ID는 싣지 않고 로그인 기록은 현재 계정 이름으로', async () => {
       gameScoreRepository.find.mockResolvedValue([
         { scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-12T00:00:00.000Z'), userId: 7 },
       ] as GameScore[]);
+      userRepository.find.mockResolvedValue([createUser({ userId: 7, userName: '계정이름' })]);
 
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/hall-of-fame')).expect(200);
 
       expect(res.body.data.periods.length).toBeGreaterThan(0);
       expect(res.body.data.periods[0]).toEqual(expect.objectContaining({ kind: 'weekly', boardKey: 'default' }));
       expect(res.body.data.periods[0].podium[0]).toEqual(
-        expect.objectContaining({ rank: 1, scoreId: 41, trophies: expect.objectContaining({ gold: expect.any(Number) }) }),
+        expect.objectContaining({ rank: 1, scoreId: 41, playerName: '계정이름', trophies: expect.objectContaining({ gold: expect.any(Number) }) }),
       );
       expect(res.body.data.periods[0].podium[0]).not.toHaveProperty('userId');
     });

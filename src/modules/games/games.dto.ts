@@ -280,7 +280,7 @@ export class TrophiesDto {
 export class RankingItemDto {
   @ApiProperty({ description: '순위 (1부터)', example: 1 }) rank: number;
   @ApiProperty({ description: '기록 ID', example: 41 }) scoreId: number;
-  @ApiProperty({ description: '표시 이름', example: '테트리스왕' }) playerName: string;
+  @ApiProperty({ description: '표시 이름 — 로그인 기록은 현재 계정 이름(USERS.USER_NAME), 비로그인 기록은 제출할 때 입력한 이름', example: '테트리스왕' }) playerName: string;
   @ApiProperty({ description: '랭킹 보드 키', example: 'default' }) boardKey: string;
   @ApiProperty({ description: '점수', example: 12340 }) score: number;
   @ApiProperty({ description: '게임별 상세 값', type: Object }) detail: Record<string, unknown>;
@@ -294,6 +294,11 @@ export class RankingItemDto {
     nullable: true,
   })
   trophies: TrophiesDto | null;
+  @ApiProperty({
+    description: '요청자의 로그인 기록인지 — 유효한 토큰으로 조회했고 그 사용자의 기록일 때만 true. 비로그인·만료 토큰·비로그인 기록은 false',
+    example: false,
+  })
+  isMine: boolean;
   @ApiProperty({ description: '등록 시각 (ISO, UTC)', example: '2026-10-21T06:00:00.000Z' }) createdAt: Date;
 }
 
@@ -438,6 +443,25 @@ export class GameReplayWatchResponseDto extends ApiSuccessResponseDto {
 
 export class PopularReplayListResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ type: PopularReplayListDto }) data: PopularReplayListDto;
+}
+
+export class GetMyBestQueryDto {
+  @ApiPropertyOptional({ description: '보드 키 — 생략하면 그 게임의 모든 보드에서 최고점', example: 'default' })
+  @IsOptional()
+  @IsString()
+  @Matches(BOARD_KEY_PATTERN, { message: 'board는 소문자·숫자·하이픈 1~40자여야 합니다.' })
+  board?: string;
+}
+
+/** 내 최고 기록 — 비로그인(토큰 없음·만료)이거나 기록이 없으면 모두 null */
+export class MyBestScoreDto {
+  @ApiProperty({ description: '최고 점수', example: 281542, nullable: true, type: Number }) score: number | null;
+  @ApiProperty({ description: '그 기록 ID', example: 128, nullable: true, type: Number }) scoreId: number | null;
+  @ApiProperty({ description: '그 기록의 보드 키', example: 'default', nullable: true, type: String }) boardKey: string | null;
+}
+
+export class MyBestScoreResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: MyBestScoreDto }) data: MyBestScoreDto;
 }
 
 export class HallOfFameResponseDto extends ApiSuccessResponseDto {

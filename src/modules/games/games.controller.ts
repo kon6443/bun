@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
+import { ViewerJwtAuthGuard } from '../../common/guards/viewer-jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
   ApiCommonInternalServerErrorResponse,
@@ -31,9 +32,11 @@ import {
   GameScoreSummaryResponseDto,
   GameScoreSubmittedResponseDto,
   GameSessionResponseDto,
+  GetMyBestQueryDto,
   GetPopularReplaysQueryDto,
   GetRankingsQueryDto,
   HallOfFameResponseDto,
+  MyBestScoreResponseDto,
   PopularReplayListResponseDto,
   RankingListResponseDto,
   SubmitGameScoreDto,
@@ -191,25 +194,27 @@ export class GamesController {
     return { code: 'SUCCESS', data, message: '' };
   }
 
+  @UseGuards(ViewerJwtAuthGuard)
   @Get(':gameType/rankings')
   @ApiOperation({
     summary: '보드·기간별 랭킹',
-    description: '점수 내림차순, 같은 점수면 먼저 저장된 기록이 위. 일간·주간 경계는 KST. board 생략 시 게임 기본 보드, 모르는 보드는 422',
+    description: '점수 내림차순, 같은 점수면 먼저 저장된 기록이 위. 일간·주간 경계는 KST. board 생략 시 게임 기본 보드, 모르는 보드는 422 · 로그인 토큰이 유효하면 항목의 isMine을 채운다(없거나 만료·무효면 비로그인으로 조회 — 401 없음)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS', type: RankingListResponseDto })
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
   @ApiCommonValidationResponse()
   @ApiCommonInternalServerErrorResponse()
-  async getRankings(@Param('gameType') gameType: string, @Query() query: GetRankingsQueryDto) {
-    const data = await this.gamesService.getRankings(gameType, query);
+  async getRankings(@Param('gameType') gameType: string, @Query() query: GetRankingsQueryDto, @CurrentUser() user?: User) {
+    const data = await this.gamesService.getRankings(gameType, query, user?.userId ?? null);
     return { code: 'SUCCESS', data, message: '' };
   }
 
+  @UseGuards(ViewerJwtAuthGuard)
   @Get(':gameType/scores/:scoreId')
   @ApiOperation({
     summary: '기록 요약',
-    description: '누구나 조회. 리플레이 입력 없이 이름·점수·상세 값·전체 순위만 — 공유 링크 미리보기(OG)용 (docs/tasks/game-share D-008)',
+    description: '누구나 조회. 리플레이 입력 없이 이름·점수·상세 값·전체 순위만 — 공유 링크 미리보기(OG)용 (docs/tasks/game-share D-008) · 로그인 토큰이 유효하면 항목의 isMine을 채운다(없거나 만료·무효면 비로그인으로 조회 — 401 없음)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiParam({ name: 'scoreId', description: '랭킹 기록 ID', type: Number })
@@ -217,8 +222,8 @@ export class GamesController {
   @ApiResponse({ status: 400, description: 'scoreId가 숫자가 아님 (BAD_REQUEST)' })
   @ApiResponse({ status: 404, description: 'GAME_NOT_FOUND · GAME_SCORE_NOT_FOUND(없음·숨김)', type: GameScoreNotFoundErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
-  async getScore(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number) {
-    const data = await this.gamesService.getScore(gameType, scoreId);
+  async getScore(@Param('gameType') gameType: string, @Param('scoreId', ParseIntPipe) scoreId: number, @CurrentUser() user?: User) {
+    const data = await this.gamesService.getScore(gameType, scoreId, user?.userId ?? null);
     return { code: 'SUCCESS', data, message: '' };
   }
 
@@ -247,6 +252,7 @@ export class GamesController {
   ) {
     const data = await this.gamesService.getReplay(gameType, scoreId);
     // 입력 기록(큰 본문)은 등록 뒤 바뀌지 않는다 — 공유 링크·재방문의 반복 조회를 브라우저가 잠깐 재사용한다(games-polish BD-06).
+    // public 캐시라 요청자마다 달라지는 값을 싣지 않는다 — 요청자를 보지 않아 isMine은 항상 false
     // 성공 응답에만 단다(404는 주간 공개 전일 수 있어 캐시하지 않는다). 순위·숨김 반영이 최대 60초 늦을 수 있다
     res.setHeader('Cache-Control', `public, max-age=${GAME_REPLAY_CACHE_MAX_AGE_SECONDS}`);
     return { code: 'SUCCESS', data, message: '' };
@@ -308,34 +314,54 @@ export class GamesController {
     return { code: 'SUCCESS', data, message: '' };
   }
 
+  @UseGuards(ViewerJwtAuthGuard)
   @Get(':gameType/hall-of-fame')
   @ApiOperation({
     summary: '명예의 전당',
     description:
-      '누구나 조회. 끝났고 재생이 공개된 기간별 1~3위 — TETRIS 지난 8주(기본 보드)·지난 7일(오늘의 테트리스), DEFENSE 지난 8주(주간 보드). 최대 10분 늦게 반영 (docs/tasks/games-growth D-010)',
+      '누구나 조회. 끝났고 재생이 공개된 기간별 1~3위 — TETRIS 지난 8주(기본 보드)·지난 7일(오늘의 테트리스), DEFENSE 지난 8주(주간 보드). 최대 10분 늦게 반영 (docs/tasks/games-growth D-010) · 로그인 토큰이 유효하면 항목의 isMine을 채운다(없거나 만료·무효면 비로그인으로 조회 — 401 없음)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS', type: HallOfFameResponseDto })
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
   @ApiCommonInternalServerErrorResponse()
-  async getHallOfFame(@Param('gameType') gameType: string) {
-    const data = await this.gamesService.getHallOfFame(gameType);
+  async getHallOfFame(@Param('gameType') gameType: string, @CurrentUser() user?: User) {
+    const data = await this.gamesService.getHallOfFame(gameType, user?.userId ?? null);
     return { code: 'SUCCESS', data, message: '' };
   }
 
+  @UseGuards(ViewerJwtAuthGuard)
   @Get(':gameType/popular-replays')
   @ApiOperation({
     summary: '기간별 인기 리플레이',
     description:
-      '누구나 조회. 보드 안에서 기간(KST) 동안 조회수(sort=views) 또는 시청시간(sort=watch) 합이 큰 순. 숨김 제외, 진행 중인 DEFENSE 주간 보드는 빈 목록 (docs/tasks/replay-views D-005)',
+      '누구나 조회. 보드 안에서 기간(KST) 동안 조회수(sort=views) 또는 시청시간(sort=watch) 합이 큰 순. 숨김 제외, 진행 중인 DEFENSE 주간 보드는 빈 목록 (docs/tasks/replay-views D-005) · 로그인 토큰이 유효하면 항목의 isMine을 채운다(없거나 만료·무효면 비로그인으로 조회 — 401 없음)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS', type: PopularReplayListResponseDto })
   @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
   @ApiCommonValidationResponse()
   @ApiCommonInternalServerErrorResponse()
-  async getPopularReplays(@Param('gameType') gameType: string, @Query() query: GetPopularReplaysQueryDto) {
-    const data = await this.gamesService.getPopularReplays(gameType, query);
+  async getPopularReplays(@Param('gameType') gameType: string, @Query() query: GetPopularReplaysQueryDto, @CurrentUser() user?: User) {
+    const data = await this.gamesService.getPopularReplays(gameType, query, user?.userId ?? null);
+    return { code: 'SUCCESS', data, message: '' };
+  }
+
+  @UseGuards(ViewerJwtAuthGuard)
+  @Get(':gameType/me/best')
+  @ApiOperation({
+    summary: '내 최고 기록',
+    description:
+      '로그인 사용자의 숨기지 않은 기록 중 최고점(같으면 먼저 등록된 기록). board를 주면 그 보드만. ' +
+      '비로그인·만료 토큰·기록 없음은 200 + 모두 null — 프론트는 이 브라우저 기록으로 대신한다',
+  })
+  @ApiParam(GAME_TYPE_PARAM)
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: MyBestScoreResponseDto })
+  @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
+  @ApiCommonValidationResponse()
+  @ApiCommonInternalServerErrorResponse()
+  async getMyBest(@Param('gameType') gameType: string, @Query() query: GetMyBestQueryDto, @CurrentUser() user?: User) {
+    const data = await this.gamesService.getMyBest(gameType, user?.userId ?? null, query.board);
     return { code: 'SUCCESS', data, message: '' };
   }
 }

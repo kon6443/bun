@@ -7,6 +7,7 @@ import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repos
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
+import { User } from '../../entities/User';
 import { type SkinCollection, UserSkinService } from '../users/user-skin.service';
 import { type TetrisBoardSkins, defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
 import {
@@ -40,6 +41,7 @@ import {
   GetPopularReplaysQueryDto,
   GetRankingsQueryDto,
   HallOfFameDto,
+  MyBestScoreDto,
   PopularReplayListDto,
   RANKING_PERIODS,
   RankingItemDto,
@@ -68,11 +70,15 @@ type StoredReplay = { frames: number; inputs: number[] } & Record<string, number
 /** 순위를 셀 기록 — 같은 보드 안에서만 비교한다 */
 type RankTarget = Pick<GameScore, 'scoreId' | 'score' | 'boardKey'>;
 
-/** 랭킹 항목으로 읽는 컬럼 — IP_HASH·USER_ID는 응답에 싣지 않으므로 조회하지 않는다 */
+/**
+ * 랭킹 항목으로 읽는 컬럼 — IP_HASH는 조회하지 않는다.
+ * USER_ID는 표시 이름(로그인 기록은 계정 이름)과 내 기록 여부(isMine)를 정하는 데만 쓰고 응답에 싣지 않는다 — viewOf
+ */
 const RANKING_ITEM_SELECT = {
   scoreId: true,
   boardKey: true,
   playerName: true,
+  userId: true,
   score: true,
   detail: true,
   durationMs: true,
@@ -80,7 +86,10 @@ const RANKING_ITEM_SELECT = {
 } as const;
 
 /** 랭킹 항목을 만드는 데 필요한 기록 컬럼 — RANKING_ITEM_SELECT와 같다 */
-type RankingRow = Pick<GameScore, 'scoreId' | 'boardKey' | 'playerName' | 'score' | 'detail' | 'durationMs' | 'crtdAt'>;
+type RankingRow = Pick<GameScore, 'scoreId' | 'boardKey' | 'playerName' | 'userId' | 'score' | 'detail' | 'durationMs' | 'crtdAt'>;
+
+/** 랭킹 항목을 보는 쪽 문맥 — 로그인 기록의 표시 이름, 요청자(내 기록 판별) */
+type RankingView = { ownerNames: Map<number, string>; viewerId: number | null };
 
 /** 조회 집계 누적 값 — 집계 행이 없으면 0 */
 type ReplayStats = { viewCount: number; watchMs: number };
@@ -131,6 +140,8 @@ export class GamesService {
     private readonly gameReplayRepository: Repository<GameReplay>,
     @InjectRepository(GameReplayViewStat)
     private readonly viewStatRepository: Repository<GameReplayViewStat>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(GAME_ENGINE_REGISTRY)
@@ -434,7 +445,7 @@ export class GamesService {
   }
 
   /** 보드·기간별 랭킹 — SCORE DESC, 같은 점수면 먼저 저장된 기록(SCORE_ID 작은 쪽)이 위. 숨김 제외 */
-  async getRankings(gameTypeParam: string, query: GetRankingsQueryDto): Promise<RankingListDto> {
+  async getRankings(gameTypeParam: string, query: GetRankingsQueryDto, viewerId: number | null = null): Promise<RankingListDto> {
     const gameType = this.toGameType(gameTypeParam);
     const engine = this.engines[gameType];
     const boardKey = query.board ?? engine.defaultBoardKey;
@@ -452,28 +463,33 @@ export class GamesService {
     });
 
     const scoreIds = rows.map((row) => row.scoreId);
-    const [stats, trophies] = await Promise.all([this.statTotals(scoreIds), this.trophiesOf(gameType, scoreIds)]);
+    const [stats, trophies, view] = await Promise.all([
+      this.statTotals(scoreIds),
+      this.trophiesOf(gameType, scoreIds),
+      this.viewOf(rows, viewerId),
+    ]);
     return {
       boardKey,
-      items: rows.map((row, index) => this.toRankingItem(row, index + 1, stats.get(row.scoreId), trophies.get(row.scoreId))),
+      items: rows.map((row, index) => this.toRankingItem(row, index + 1, view, stats.get(row.scoreId), trophies.get(row.scoreId))),
       periodStart,
     };
   }
 
   /** 기록 요약 — 누구나 조회, 숨김·없음은 404. 링크 미리보기(OG)용이라 리플레이 입력은 싣지 않는다 (docs/tasks/game-share D-008) */
-  async getScore(gameTypeParam: string, scoreId: number): Promise<RankingItemDto> {
+  async getScore(gameTypeParam: string, scoreId: number, viewerId: number | null = null): Promise<RankingItemDto> {
     const gameType = this.toGameType(gameTypeParam);
     const score = await this.findVisibleScore(gameType, scoreId);
-    const [rank, stats, trophies] = await Promise.all([
+    const [rank, stats, trophies, view] = await Promise.all([
       this.rankOf(gameType, score, null),
       this.statTotals([scoreId]),
       this.trophiesOf(gameType, [scoreId]),
+      this.viewOf([score], viewerId),
     ]);
-    return this.toRankingItem(score, rank, stats.get(scoreId), trophies.get(scoreId));
+    return this.toRankingItem(score, rank, view, stats.get(scoreId), trophies.get(scoreId));
   }
 
   /** 리플레이 재생 데이터 — 누구나 조회, 숨김 기록·아직 공개하지 않는 보드(디펜스 진행 중 주간)의 기록은 404 (D-011) */
-  async getReplay(gameTypeParam: string, scoreId: number): Promise<GameReplayDetailDto> {
+  async getReplay(gameTypeParam: string, scoreId: number, viewerId: number | null = null): Promise<GameReplayDetailDto> {
     const gameType = this.toGameType(gameTypeParam);
     const score = await this.findVisibleScore(gameType, scoreId);
     if (!this.engines[gameType].isReplayPublic(score.boardKey, new Date())) {
@@ -483,17 +499,18 @@ export class GamesService {
     if (!replay) {
       throw new GameScoreNotFoundErrorResponseDto();
     }
-    const [rank, stats, trophies] = await Promise.all([
+    const [rank, stats, trophies, view] = await Promise.all([
       this.rankOf(gameType, score, null),
       this.statTotals([scoreId]),
       this.trophiesOf(gameType, [scoreId]),
+      this.viewOf([score], viewerId),
     ]);
 
     const { frames, inputs, ...stored } = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
     const params = stored as Record<string, number>;
     const topLevel = Object.fromEntries(this.engines[gameType].topLevelReplayParams.map((key) => [key, params[key]]));
     return {
-      ...this.toRankingItem(score, rank, stats.get(scoreId), trophies.get(scoreId)),
+      ...this.toRankingItem(score, rank, view, stats.get(scoreId), trophies.get(scoreId)),
       engineVersion: replay.engineVersion,
       seed: replay.seed,
       // 게임별 기존 계약 필드(테트리스 das·arr)는 최상위에도 둔다
@@ -556,7 +573,7 @@ export class GamesService {
    * 기간별 인기 리플레이 — 기간 안 조회수(views) 또는 시청시간(watch) 합이 큰 순, 같으면 먼저 등록된 기록 (D-005).
    * 보드 단위다. 재생을 공개하지 않는 보드(디펜스 진행 중 주간)는 빈 목록 — 여기서 링크를 내주면 재생이 404라서
    */
-  async getPopularReplays(gameTypeParam: string, query: GetPopularReplaysQueryDto): Promise<PopularReplayListDto> {
+  async getPopularReplays(gameTypeParam: string, query: GetPopularReplaysQueryDto, viewerId: number | null = null): Promise<PopularReplayListDto> {
     const gameType = this.toGameType(gameTypeParam);
     const engine = this.engines[gameType];
     const boardKey = query.board ?? engine.defaultBoardKey;
@@ -601,6 +618,7 @@ export class GamesService {
       this.statTotals(scoreIds),
       this.trophiesOf(gameType, scoreIds),
     ]);
+    const view = await this.viewOf(rows, viewerId);
     const rowById = new Map(rows.map((row) => [row.scoreId, row]));
     // 두 조회 사이에 숨겨지거나 지워진 기록은 빼고 순서를 다시 매긴다
     const items = ranked
@@ -609,7 +627,7 @@ export class GamesService {
         return row ? [{ row, stat }] : [];
       })
       .map(({ row, stat }, index) => ({
-        ...this.toRankingItem(row, index + 1, totals.get(row.scoreId), trophies.get(row.scoreId)),
+        ...this.toRankingItem(row, index + 1, view, totals.get(row.scoreId), trophies.get(row.scoreId)),
         periodViewCount: Number(stat.viewCount),
         periodWatchMs: Number(stat.watchMs),
       }));
@@ -627,19 +645,37 @@ export class GamesService {
   }
 
   /** 명예의 전당 — 끝난 기간별 1~3위 (games-growth D-007·D-010). 사용자 ID는 배지 계산에만 쓰고 싣지 않는다 */
-  async getHallOfFame(gameTypeParam: string): Promise<HallOfFameDto> {
+  async getHallOfFame(gameTypeParam: string, viewerId: number | null = null): Promise<HallOfFameDto> {
     const gameType = this.toGameType(gameTypeParam);
     const podiums = await this.hallOfFameService.getPodiums(gameType);
     const trophiesByUser = trophiesFromPodiums(podiums);
-    const stats = await this.statTotals(podiums.flatMap(({ rows }) => rows.map((row) => row.scoreId)));
+    const allRows = podiums.flatMap(({ rows }) => rows);
+    // 표시 이름·내 기록은 캐시 밖에서 정한다 — 계정 이름을 바꾸면 명예의 전당 캐시가 남아 있어도 바로 반영된다
+    const [stats, view] = await Promise.all([this.statTotals(allRows.map((row) => row.scoreId)), this.viewOf(allRows, viewerId)]);
     return {
       periods: podiums.map(({ rows, ...period }) => ({
         ...period,
         podium: rows.map((row, index) =>
-          this.toRankingItem(row, index + 1, stats.get(row.scoreId), row.userId === null ? undefined : trophiesByUser.get(row.userId)),
+          this.toRankingItem(row, index + 1, view, stats.get(row.scoreId), row.userId === null ? undefined : trophiesByUser.get(row.userId)),
         ),
       })),
     };
+  }
+
+  /**
+   * 요청자의 최고 기록 — 숨기지 않은 로그인 기록 중 최고점, 같으면 먼저 저장된 기록.
+   * 비로그인이면 조회하지 않고 null — 프론트는 이 브라우저 기록으로 대신한다
+   */
+  async getMyBest(gameTypeParam: string, viewerId: number | null, board?: string): Promise<MyBestScoreDto> {
+    const gameType = this.toGameType(gameTypeParam);
+    const none: MyBestScoreDto = { score: null, scoreId: null, boardKey: null };
+    if (viewerId === null) return none;
+    const best = await this.gameScoreRepository.findOne({
+      select: { scoreId: true, score: true, boardKey: true },
+      where: { gameType, userId: viewerId, isHidden: 0, ...(board !== undefined && { boardKey: board }) },
+      order: { score: 'DESC', scoreId: 'ASC' },
+    });
+    return best ? { score: best.score, scoreId: best.scoreId, boardKey: best.boardKey } : none;
   }
 
   /**
@@ -652,7 +688,7 @@ export class GamesService {
     try {
       const trophiesByUser = await this.hallOfFameService.trophiesByUser(gameType);
       if (trophiesByUser.size === 0) return result;
-      // 랭킹 항목 조회(RANKING_ITEM_SELECT)는 USER_ID를 읽지 않는다 — 배지 계산용으로만 따로 읽는다
+      // scoreId만 받는 공용 경로라 배지 계산용 USER_ID를 따로 읽는다
       const owners = await this.gameScoreRepository.find({ select: { scoreId: true, userId: true }, where: { scoreId: In(scoreIds), gameType } });
       for (const { scoreId, userId } of owners) {
         const trophies = userId === null ? undefined : trophiesByUser.get(userId);
@@ -708,7 +744,7 @@ export class GamesService {
     return new Map(rows.map((row) => [Number(row.scoreId), { viewCount: Number(row.viewCount), watchMs: Number(row.watchMs) }]));
   }
 
-  /** 숨기지 않은 기록 1건 — 없으면 404. IP_HASH·USER_ID는 조회하지 않는다 */
+  /** 숨기지 않은 기록 1건 — 없으면 404. IP_HASH는 조회하지 않는다 */
   private async findVisibleScore(gameType: GameType, scoreId: number): Promise<GameScore> {
     const score = await this.gameScoreRepository.findOne({
       select: RANKING_ITEM_SELECT,
@@ -770,12 +806,39 @@ export class GamesService {
     return Object.values(merged).every((value) => Number.isSafeInteger(value)) ? (merged as Record<string, number>) : null;
   }
 
-  private toRankingItem(row: RankingRow, rank: number, stats: ReplayStats = NO_STATS, trophies?: Trophies): RankingItemDto {
+  /**
+   * 랭킹 항목 문맥 — 로그인 기록의 표시 이름(사용자 ID → 현재 계정 이름 USERS.USER_NAME)과 요청자.
+   * 기록에 저장된 이름(PLAYER_NAME)은 제출 당시 입력값이라 계정 이름을 바꾸면 기록마다 달라진다.
+   * 계정 이름이 비었거나 랭킹 이름 정책(checkPlayerName)을 통과하지 못하면 맵에 넣지 않아 저장된 이름을 그대로 쓴다
+   */
+  private async viewOf(rows: Pick<GameScore, 'userId'>[], viewerId: number | null): Promise<RankingView> {
+    const userIds = [...new Set(rows.flatMap(({ userId }) => (typeof userId === 'number' ? [userId] : [])))];
+    if (userIds.length === 0) return { ownerNames: new Map(), viewerId };
+    const users = await this.userRepository.find({ select: { userId: true, userName: true }, where: { userId: In(userIds) } });
+    // 계정 이름은 랭킹 이름 정책(길이·문자·금칙어)을 거치지 않고 바뀔 수 있다 — 제출 때와 같은 정규화·판정을 통과한 이름만 쓴다
+    const ownerNames = new Map(
+      users.flatMap(({ userId, userName }) => {
+        const name = userName?.trim().replace(/\s+/g, ' ');
+        return name && checkPlayerName(name) === null ? [[userId, name] as const] : [];
+      }),
+    );
+    return { ownerNames, viewerId };
+  }
+
+  private toRankingItem(
+    row: RankingRow,
+    rank: number,
+    { ownerNames, viewerId }: RankingView,
+    stats: ReplayStats = NO_STATS,
+    trophies?: Trophies,
+  ): RankingItemDto {
     return {
       rank,
       scoreId: row.scoreId,
       boardKey: row.boardKey,
-      playerName: row.playerName,
+      playerName: (typeof row.userId === 'number' && ownerNames.get(row.userId)) || row.playerName,
+      // 요청자의 로그인 기록인지 — 사용자 ID 자체는 싣지 않는다
+      isMine: viewerId !== null && row.userId === viewerId,
       score: row.score,
       detail: JSON.parse(row.detail) as Record<string, unknown>,
       durationMs: row.durationMs,
