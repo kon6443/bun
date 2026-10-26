@@ -7,7 +7,7 @@ import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repos
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
-import { UserSkinService } from '../users/user-skin.service';
+import { type SkinCollection, UserSkinService } from '../users/user-skin.service';
 import { type TetrisBoardSkins, defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 import {
   GAME_POPULAR_DEFAULT_LIMIT,
@@ -217,6 +217,13 @@ export class GamesService {
   }
 
   /** 랭킹 보드 목록 — 현재·지난 보드 */
+  /** 스킨 도감 — 스킨이 있는 게임은 TETRIS뿐, 그 외는 빈 목록 (tetris-skins D-005) */
+  async listSkins(gameTypeParam: string, userId: number | null): Promise<SkinCollection> {
+    const gameType = this.toGameType(gameTypeParam);
+    if (gameType !== 'TETRIS') return { signedIn: userId !== null, slots: [] };
+    return this.userSkinService.collection(userId);
+  }
+
   listBoards(gameTypeParam: string): GameBoardListDto {
     const gameType = this.toGameType(gameTypeParam);
     return { items: this.engines[gameType].listBoards(new Date()) };

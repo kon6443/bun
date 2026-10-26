@@ -22,6 +22,12 @@ export interface SkinCatalogEntry {
   owned: boolean;
 }
 
+/** 도감 — 누구나 보는 전체 목록 + 로그인이면 보유·장착 표시 (D-005) */
+export interface SkinCollection {
+  signedIn: boolean;
+  slots: { slot: TetrisSkinSlot; items: { id: string; unlock: SkinItem['unlock']; owned: boolean; equipped: boolean }[] }[];
+}
+
 export interface UserSkins {
   equipped: TetrisSkinSet;
   catalog: Record<TetrisSkinSlot, SkinCatalogEntry[]>;
@@ -65,6 +71,23 @@ export class UserSkinService {
       await this.saveEquip(userId, TETRIS_SKIN_SLOT_KEYS[slot], id);
     }
     return this.getSkins(userId);
+  }
+
+  /** 도감 — 게스트(null)는 보유·장착 모두 false(보유는 계정 기준). 로그인이면 장착 상태를 한 번 읽는다 */
+  async collection(userId: number | null): Promise<SkinCollection> {
+    const equipped = userId === null ? null : await this.equippedOf(userId);
+    return {
+      signedIn: userId !== null,
+      slots: TETRIS_SKIN_SLOTS.map((slot) => ({
+        slot,
+        items: TETRIS_SKIN_CATALOG[slot].map((item) => ({
+          id: item.id,
+          unlock: item.unlock,
+          owned: userId !== null && this.isOwned(userId, item),
+          equipped: equipped?.[slot] === item.id,
+        })),
+      })),
+    };
   }
 
   /** 장착 세트 — 행 없는 슬롯·카탈로그에서 빠진 아이템은 default */

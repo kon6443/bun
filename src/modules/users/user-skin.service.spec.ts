@@ -58,6 +58,28 @@ describe('UserSkinService (tetris-skins D-003)', () => {
     });
   });
 
+  describe('도감 (D-005)', () => {
+    it('게스트 — 전체 슬롯·아이템을 보이고 보유·장착은 모두 false, DB는 읽지 않는다', async () => {
+      const collection = await service.collection(null);
+      expect(collection.signedIn).toBe(false);
+      expect(collection.slots.map((s) => s.slot)).toEqual([...TETRIS_SKIN_SLOTS]);
+      expect(collection.slots[0].items.map((item) => item.id)).toEqual(TETRIS_SKIN_CATALOG.block.map((item) => item.id));
+      expect(collection.slots.flatMap((s) => s.items).every((item) => !item.owned && !item.equipped)).toBe(true);
+      expect(repository.find).not.toHaveBeenCalled();
+    });
+
+    it('로그인 — 보유 표시, 슬롯마다 장착한 아이템 하나만 equipped(장착 없는 슬롯은 default)', async () => {
+      repository.find.mockResolvedValue([row(1, 'TETRIS_BLOCK', 'neon')]);
+      const collection = await service.collection(1);
+      expect(collection.signedIn).toBe(true);
+      const block = collection.slots.find((s) => s.slot === 'block')!;
+      expect(block.items.filter((item) => item.equipped).map((item) => item.id)).toEqual(['neon']);
+      const effect = collection.slots.find((s) => s.slot === 'effect')!;
+      expect(effect.items.filter((item) => item.equipped).map((item) => item.id)).toEqual(['default']);
+      expect(block.items.every((item) => item.owned)).toBe(true);
+    });
+  });
+
   describe('장착', () => {
     it('보낸 슬롯만 DB 슬롯 키로 저장한다', async () => {
       await service.equip(1, { block: 'gameboy', background: 'neon' });

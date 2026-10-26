@@ -34,7 +34,7 @@ describe('GamesService', () => {
   let viewStatRepository: MockRepository<GameReplayViewStat>;
   let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
   let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
-  let userSkinService: { boardSkinsOf: jest.Mock };
+  let userSkinService: { boardSkinsOf: jest.Mock; collection: jest.Mock };
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: {
     createSession: jest.Mock;
@@ -83,7 +83,10 @@ describe('GamesService', () => {
     viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
     // 입상자 없음 — 배지 null
     hallOfFameService = { getPodiums: jest.fn().mockResolvedValue([]), trophiesByUser: jest.fn().mockResolvedValue(new Map()) };
-    userSkinService = { boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default' }) };
+    userSkinService = {
+      boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default' }),
+      collection: jest.fn().mockResolvedValue({ signedIn: true, slots: [{ slot: 'block', items: [] }] }),
+    };
     gameViewService = { claimView: jest.fn().mockResolvedValue(true), claimWatchMs: jest.fn((_id, _key, ms: number) => Promise.resolve(ms)) };
     manager = {
       create: jest.fn((_entity: unknown, data: unknown) => data),
@@ -306,6 +309,22 @@ describe('GamesService', () => {
         expect(engine.verify).toHaveBeenCalledWith(expect.objectContaining({ seed: 777, boardKey: 'challenge-41' }));
         expect(savedScore()).toEqual(expect.objectContaining({ boardKey: 'challenge-41' }));
       });
+    });
+  });
+
+  describe('listSkins (tetris-skins D-005)', () => {
+    it('TETRIS는 도감을 요청 사용자 기준으로', async () => {
+      await expect(service.listSkins('tetris', 7)).resolves.toEqual({ signedIn: true, slots: [{ slot: 'block', items: [] }] });
+      expect(userSkinService.collection).toHaveBeenCalledWith(7);
+    });
+
+    it('스킨이 없는 게임은 빈 목록 — 스킨 조회를 하지 않는다', async () => {
+      await expect(service.listSkins('defense', null)).resolves.toEqual({ signedIn: false, slots: [] });
+      expect(userSkinService.collection).not.toHaveBeenCalled();
+    });
+
+    it('모르는 게임은 404 GAME_NOT_FOUND', async () => {
+      await expect(service.listSkins('pacman', null)).rejects.toMatchObject({ status: 404, code: 'GAME_NOT_FOUND' });
     });
   });
 

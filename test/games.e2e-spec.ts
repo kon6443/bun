@@ -24,6 +24,8 @@ import { createMockQueryBuilder, createMockRepository, MockRepository } from '..
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
 import { UserSkinService } from '../src/modules/users/user-skin.service';
 import { UserSkinEquip } from '../src/entities/UserSkinEquip';
+import { sign } from 'jsonwebtoken';
+import { createUser } from '../src/entities/__spec__/entity.factory';
 
 type GoldenCase = { name: string; input: { seed: number; das: number; arr: number; frames: number; inputs: number[] }; expected: Record<string, unknown> };
 const CASES = golden as GoldenCase[];
@@ -460,6 +462,40 @@ describe('E2E 게임', () => {
       gameScoreRepository.findOne.mockResolvedValue({ ...owned, userId: null });
       const anonymous = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
       expect(anonymous.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default' });
+    });
+  });
+
+  describe('GET /games/:gameType/skins (tetris-skins D-005)', () => {
+    it('게스트도 200 — 슬롯별 전체 아이템·획득 방식, 보유·장착은 false', async () => {
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/skins')).expect(200);
+      expect(res.body.code).toBe('SUCCESS');
+      expect(res.body.data.signedIn).toBe(false);
+      expect(res.body.data.slots.map((s: { slot: string }) => s.slot)).toEqual(['block', 'effect', 'board', 'background']);
+      expect(res.body.data.slots[0].items[0]).toEqual({ id: 'default', unlock: 'default', owned: false, equipped: false });
+      expect(skinEquipRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('로그인 토큰이 있으면 보유·장착 표시 — 장착한 아이템만 equipped', async () => {
+      env.JWT_SECRET = 'e2e-jwt';
+      app.get<MockRepository<User>>(getRepositoryToken(User)).findOne.mockResolvedValue(createUser({ userId: 7 }));
+      skinEquipRepository.find.mockResolvedValue([{ userId: 7, slot: 'TETRIS_EFFECT', skinId: 'neon' }] as UserSkinEquip[]);
+
+      const res = await request(app.getHttpServer())
+        .get(e2e.url('/games/tetris/skins'))
+        .set('Authorization', `Bearer ${sign({ sub: 7 }, 'e2e-jwt')}`)
+        .expect(200);
+
+      expect(res.body.data.signedIn).toBe(true);
+      const effect = res.body.data.slots.find((s: { slot: string }) => s.slot === 'effect');
+      expect(effect.items.filter((item: { equipped: boolean }) => item.equipped).map((item: { id: string }) => item.id)).toEqual(['neon']);
+      expect(effect.items.every((item: { owned: boolean }) => item.owned)).toBe(true);
+    });
+
+    it('스킨이 없는 게임은 빈 목록, 모르는 게임은 404', async () => {
+      const defense = await request(app.getHttpServer()).get(e2e.url('/games/defense/skins')).expect(200);
+      expect(defense.body.data).toEqual({ signedIn: false, slots: [] });
+      const unknown = await request(app.getHttpServer()).get(e2e.url('/games/pacman/skins')).expect(404);
+      expect(unknown.body.code).toBe('GAME_NOT_FOUND');
     });
   });
 
