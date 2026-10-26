@@ -3,7 +3,9 @@ module.exports = {
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
   transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
+    // 테스트는 파일 단위 트랜스파일만 한다(타입 검사 생략) — 타입 검사는 `pnpm typecheck`(tsc --noEmit, 테스트 포함)가 맡는다.
+    // ts-jest의 타입 인지 변환은 파일마다 프로그램을 만들어 단위 테스트 시간의 대부분을 차지했다 (docs/tasks/ci-deploy-speed-2026-10)
+    '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.spec.json' }],
   },
   collectCoverageFrom: ['**/*.(t|j)s'],
   // 테스트 코드 자체는 커버리지 분모에서 뺀다 — 넣으면 "무엇이 검증되지 않았는지"라는
