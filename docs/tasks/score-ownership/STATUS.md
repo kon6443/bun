@@ -9,7 +9,7 @@
 | 역할 | 세션 | 레포 | 브랜치 |
 |---|---|---|---|
 | 메인(백엔드) | bun 메인 세션 | bun | `feat-onam-score-owner-name` |
-| 프론트 | next-bun-0c | next-bun | (구현 중) |
+| 프론트 | next-bun-0c | next-bun | `feat-onam-server-mine` (next-bun#393) |
 
 ## 결정
 
@@ -44,6 +44,10 @@
 
 ## 남은 것
 
-- [ ] 리뷰 루프(백·프) → 백엔드 배포 → 프론트 배포
+- [x] 배포(2026-10-26): 백엔드 bun#309 → release #310 · CORS preflight maxAge 600 bun#311 → #312 · 프론트 next-bun#393 → release #394
+  - 프론트 결정: 로그인 상태 확정 뒤 1회 조회(첫 표시 1왕복 지연) · 홈 내 최고 점수는 me/best(board 생략 — 로컬 최고점이 보드 구분 없이 셈) 우선, 없으면 로컬 · 결과 화면 문구 "이 기기 최고 기록" · 명예의 전당 "나" 배지·디펜스 내 최고는 범위 밖
+  - 운영 확인(Playwright WebKit, 비로그인): 랭킹·인기 리플레이·명예의 전당 200, 항목에 isMine, Authorization 미첨부, 새 브라우저 "나" 배지 0, 계정 연결 기록은 '개발자'로 표시, 디펜스 랭킹 정상, pageerror 0
+  - 참고: API가 프론트와 같은 출처(동일 도메인)라 브라우저 preflight는 실제로 생기지 않는다 — maxAge는 다른 출처 호출(로컬 개발 등)에만 효과
+  - 미검증(로그인 필요): 옛 이름 기록의 "나" 표시, 홈 최고점 서버값 — 사용자 확인
 - [ ] 후속: `GET me/best`용 인덱스 `(GAME_TYPE, USER_ID, SCORE DESC, SCORE_ID)` 마이그레이션(지금 데이터량에선 영향 작음, 미측정) · `PUT /users/me`에 랭킹 이름 정책 적용 검토 · ViewerJwtAuthGuard가 JWT_SECRET 누락도 비로그인으로 삼킴(다른 인증 라우트는 401이라 탐지 가능)
 - [ ] 비로그인으로 저장된 SCORE_ID 102 계정 연결 여부 — 사용자가 직접 UPDATE(AI는 DB 변경 실행 안 함)
