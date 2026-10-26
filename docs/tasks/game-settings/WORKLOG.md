@@ -80,3 +80,7 @@
 - 함께 수정 de43c1e: 375×667 일시정지 메뉴가 넘쳐 제목이 잘림(Overlay items-center + overflow-y-auto) → 안쪽 m-auto. 터치 기기 일시정지의 패드 안내 제거(준비 화면에만)
 - 게이트 1745, 브랜치 54265df 이후 20커밋·51파일. 프론트 리뷰(review-front + Opus) 진행 중 · 백엔드 429 변경 Opus 리뷰 진행 중
 - 로컬 백엔드 3500을 game-settings 브랜치로 재기동(통합 검증용)
+
+## 2026-10-26 — 백엔드 리뷰 (429 변경, Opus)
+- 동작 결함 확정 0: 헤더(Retry-After-short/long)는 throw 전에 붙음, ThrottlerException 경로는 throwThrottlingException 하나, @Throttle 9곳 모두 전역 가드 경유, WS 게이트웨이엔 APP_GUARD 미적용(무관), 필터 매핑·warn 로그 정상, e2e message 단정이 변경 없이 실패함 확인
+- 낡은 서술 2건 수정(커밋): api-error-response.decorator.ts 주석 · docs/blog-api-throttling.md 429 예시·설명
