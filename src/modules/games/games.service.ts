@@ -301,7 +301,10 @@ export class GamesService {
     let verified: VerifiedReplay & { ok: true };
     let crtdAt: Date;
     try {
-      ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
+      // 제출이 익명(토큰 없음·만료 토큰을 거절당한 뒤 토큰 없이 재시도)이어도 세션을 받은 로그인 사용자의 기록으로 남긴다 —
+      // 세션 id는 발급받은 사람만 아는 값이다. 대전 결과의 입장 userId 폴백과 같은 규칙(docs/tasks/tetris-skins D-002)
+      const ownerId = userId ?? session.userId ?? null;
+      ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId: ownerId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
     } finally {
       await this.gameSessionService.releaseVerification(dto.sessionId, guard);
     }

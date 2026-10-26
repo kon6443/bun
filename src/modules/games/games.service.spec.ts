@@ -15,6 +15,7 @@ import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { SubmitGameScoreDto } from './games.dto';
+import { UserSkinService } from '../users/user-skin.service';
 
 /**
  * GamesService — 리플레이 검증 후 랭킹 등록 (docs/tasks/games D-003·D-005·D-010·D-011).
@@ -33,6 +34,7 @@ describe('GamesService', () => {
   let viewStatRepository: MockRepository<GameReplayViewStat>;
   let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
   let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
+  let userSkinService: { boardSkinsOf: jest.Mock };
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: {
     createSession: jest.Mock;
@@ -81,6 +83,7 @@ describe('GamesService', () => {
     viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
     // 입상자 없음 — 배지 null
     hallOfFameService = { getPodiums: jest.fn().mockResolvedValue([]), trophiesByUser: jest.fn().mockResolvedValue(new Map()) };
+    userSkinService = { boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default' }) };
     gameViewService = { claimView: jest.fn().mockResolvedValue(true), claimWatchMs: jest.fn((_id, _key, ms: number) => Promise.resolve(ms)) };
     manager = {
       create: jest.fn((_entity: unknown, data: unknown) => data),
@@ -124,6 +127,7 @@ describe('GamesService', () => {
         { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
         { provide: GameViewService, useValue: gameViewService },
         { provide: GameHallOfFameService, useValue: hallOfFameService },
+        { provide: UserSkinService, useValue: userSkinService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)) } as unknown as DataSource,
@@ -334,6 +338,16 @@ describe('GamesService', () => {
         }),
       );
       expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
+    });
+
+    it.each([
+      ['제출이 익명이면 세션을 받은 로그인 사용자로 저장한다(만료 토큰 거절 뒤 토큰 없이 재시도 — tetris-skins D-002)', null, 7, 7],
+      ['제출 토큰 사용자가 있으면 그 사용자가 우선', 9, 7, 9],
+      ['세션도 익명이면 익명', null, null, null],
+    ])('%s', async (_name, submitUserId, sessionUserId, savedUserId) => {
+      gameSessionService.getSession.mockResolvedValue(session({ userId: sessionUserId }));
+      await submit(dto(), submitUserId);
+      expect(savedScore()).toEqual(expect.objectContaining({ userId: savedUserId }));
     });
 
     it('리플레이는 세션 seed와 함께 gzip으로 저장해야 함 (같은 트랜잭션) — 테트리스는 이전과 같은 본문 형식', async () => {
