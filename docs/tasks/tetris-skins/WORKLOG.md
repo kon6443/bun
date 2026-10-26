@@ -43,3 +43,10 @@
 - cd92ad2 `GET /games/:gameType/skins`(OptionalJwtAuthGuard) → `UserSkinService.collection(userId|null)`. 게스트는 DB를 읽지 않고 owned·equipped false, DEFENSE 빈 목록, 모르는 게임 404
 - 테스트: 단위(게스트·로그인 장착 표시·listSkins 3) · E2E(게스트 200, 실제 OptionalJwt 가드로 로그인 토큰 → 장착 표시, DEFENSE 빈 목록·pacman 404) · ci:core 1774 · lint 경고 6
 - 프론트에 도감 페이지 지시(401 → D-pad → A0 → A 다음)
+
+## 2026-10-26 — 프론트 401·D-pad·A0·A 완료 (로컬 커밋, 커밋마다 lint·typecheck·test:run 통과, 마지막 1665)
+- 83865cd 401: 세션·제출 모두 토큰 없이 재시도 제거. 제출 401 → 보관 + "로그인이 만료됐어요. 다시 로그인하면 등록됩니다" + 재로그인 버튼(로그인 뒤 홈 보관분 재제출). 세션 401 → 등록 없이 플레이 안내. 재제출 401도 보관 유지. 대전 리플레이 제출의 같은 패턴은 유지 — 백엔드가 입장 userId로 폴백(`tetris-battle-result.service.ts:409-410`)
+- ff2de48 D-pad: 십자(game-pad-dpad)에만 touchstart passive:false 취소(루트 → 십자로 축소: 오른쪽 버튼 :active 판정을 에뮬레이터로 못 해 위험 낮은 쪽). **iOS·Android 실기기 확인 필요**
+- c31f8ac A0: useMiniCell `(min-width:640px) and (min-height:600px)` — 844×390 대전 잘림 해소(계산 8 → 10·12)
+- 752062e A(세로 전용): 두 배치의 셀을 비교해 높이 한계일 때만 상대 미니보드를 판 왼쪽 세로 줄로. 실측(preview 봇 페이지, Chromium 에뮬): 375×667 1명 셀 12 → 17(+42%)·3명 14 → 17 · 390×664 1명 12 → 16·3명 14 → 16 · 390×844 20·22 그대로. 공격 궤적 시작점 = 미니보드 중심 ±1px(6경우)
+- 남은 확인: RankedPlay.test ResizeObserver 미정의 간헐 실패 원인(프론트 조사 지시 — "부하" 결론 보류)
