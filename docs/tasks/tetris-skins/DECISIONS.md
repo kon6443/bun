@@ -48,3 +48,12 @@
   - 백: `GET /games/:gameType/skins`(누구나, OptionalJwtAuthGuard) → `{ signedIn, slots: [{ slot, items: [{ id, unlock, owned, equipped }] }] }`. 게스트는 `owned·equipped` 모두 false(보유 = 계정 기준), `signedIn` false. 스킨이 없는 게임(DEFENSE)은 `slots: []`. 획득 방식은 `unlock`(지금 default·free — 업적·출석이 생기면 조건 필드를 함께 싣는다). 기존 `/users/me/skins`(장착 화면용)는 유지
   - 프: 도감 페이지(슬롯 탭·아이템 카드 = 미리보기·이름·획득 방법·보유/장착 배지, 로그인이면 바로 장착, 게스트는 로그인 유도). 진입점은 테트리스 홈·스킨 장착 모달에서
   - 이름·미리보기는 프론트 레지스트리, 획득 방법 문구는 `unlock` 종류별 프론트 문구(조건 값이 생기면 서버 값으로 채운다)
+
+## D-006 — 대전 리플레이는 그 경기 당시의 스킨으로 (2026-10-26, 사용자) — supersedes D-003의 "대전 경기 조회 = 주인의 현재 장착"
+- **맥락**: 사용자 — "지금 스킨을 바꿔도 대전 리플레이에서는 그 판 당시에 쓰던 스킨으로"
+- **결정**:
+  - 경기 시작 때 각 자리의 보드 스킨(방 상태 `StoredPlayer.skins` — 입장 때 계정 장착)을 매치 상태(Redis `p:{pid}:skins`)에 복사하고, 경기 저장 때 `TETRIS_BATTLE_PLAYERS.BOARD_SKINS`(JSON 문자열)에 남긴다
+  - `GET /tetris-battle/matches/:matchId` `players[].skins`는 저장값을 그대로 돌려준다. 값이 없는 경기(이 기능 전 — 그때는 스킨이 없어 기본 화면이었다)는 default
+  - 경기 중 장착을 바꿔도 그 경기 기록은 바뀌지 않는다(시작 시점 고정). 실시간 방 상태(D-003)는 그대로
+  - 싱글 리플레이는 이번 요청 범위 밖 — 지금은 주인의 현재 장착(D-003). 같은 규칙 적용 여부는 사용자 확인
+- **영향**: 마이그레이션(TETRIS_BATTLE_PLAYERS 컬럼 추가) — 실행 전 배포 금지(머지 전 차단). 백엔드 매치 저장·조회, 프론트 변경 없음(응답 형태 동일)
