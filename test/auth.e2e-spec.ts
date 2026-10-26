@@ -11,6 +11,8 @@ import { User } from '../src/entities/User';
 import { createUser } from '../src/entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 
 const JWT_SECRET = 'e2e-test-secret';
 const KAKAO_ID = '987654321';
@@ -51,7 +53,9 @@ describe('E2E 인증 (카카오 로그인)', () => {
       providers: [
         AuthService,
         UsersService,
+        UserSkinService,
         { provide: getRepositoryToken(User), useValue: userRepository },
+        { provide: getRepositoryToken(UserSkinEquip), useValue: createMockRepository<UserSkinEquip>() },
         {
           provide: ConfigService,
           useValue: { get: jest.fn((k: string) => (k === 'JWT_SECRET' ? JWT_SECRET : undefined)) },
