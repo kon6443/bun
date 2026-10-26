@@ -99,3 +99,7 @@
 - 마이그레이션 `1792985826082-AddGameReplaysBoardSkins`(VARCHAR2(400) NULL + CHECK IS JSON) — D-006 파일과 별도(1파일 1목적), 둘 다 미실행
 - 테스트: 세션 스킨 보관·게스트 미보관·조회 실패 시 발급 유지 · 등록 시 저장 · 조회 저장값/NULL/깨짐 · E2E(지금 장착과 무관함 확인). 변이(조회를 default 고정·저장을 null 고정) 각각 실패 확인
 - 검증: ci:core 1787 · lint 경고 6 · E2E 277 pass / 58 skip · Redis E2E 56 pass / 2 skip
+
+## 2026-10-26 — 마이그레이션 2개 실행(사용자) · 스키마 확인
+- 사용자 실행 `pnpm db:migrate:up` → AddTetrisBattlePlayersBoardSkins1792985407425 · AddGameReplaysBoardSkins1792985826082 성공(19 → 21)
+- `pnpm db:select` 확인: GAME_REPLAYS·TETRIS_BATTLE_PLAYERS `BOARD_SKINS VARCHAR2(400) NULL` · 제약 GAME_REPLAYS_SKINS_CK·TB_PLAYERS_SKINS_CK ENABLED
