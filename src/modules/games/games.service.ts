@@ -7,6 +7,8 @@ import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repos
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
+import { type SkinCollection, UserSkinService } from '../users/user-skin.service';
+import { type TetrisBoardSkins, defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
 import {
   GAME_POPULAR_DEFAULT_LIMIT,
   GAME_RANKING_DEFAULT_LIMIT,
@@ -137,6 +139,7 @@ export class GamesService {
     private readonly gameViewService: GameViewService,
     private readonly hallOfFameService: GameHallOfFameService,
     private readonly configService: ConfigService,
+    private readonly userSkinService: UserSkinService,
   ) {}
 
   /** 경로의 게임 이름(소문자) → 코드값. 모르는 게임은 404 */
@@ -173,6 +176,7 @@ export class GamesService {
       userId,
       ttlSeconds: engine.sessionTtlSeconds,
       challengeOf: resolved.challengeOf,
+      skins: await this.sessionSkinsOf(gameType, userId),
     });
     return {
       sessionId,
@@ -214,6 +218,13 @@ export class GamesService {
   }
 
   /** 랭킹 보드 목록 — 현재·지난 보드 */
+  /** 스킨 도감 — 스킨이 있는 게임은 TETRIS뿐, 그 외는 빈 목록 (tetris-skins D-005) */
+  async listSkins(gameTypeParam: string, userId: number | null): Promise<SkinCollection> {
+    const gameType = this.toGameType(gameTypeParam);
+    if (gameType !== 'TETRIS') return { signedIn: userId !== null, slots: [] };
+    return this.userSkinService.collection(userId);
+  }
+
   listBoards(gameTypeParam: string): GameBoardListDto {
     const gameType = this.toGameType(gameTypeParam);
     return { items: this.engines[gameType].listBoards(new Date()) };
@@ -301,7 +312,10 @@ export class GamesService {
     let verified: VerifiedReplay & { ok: true };
     let crtdAt: Date;
     try {
-      ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
+      // 제출이 익명(토큰 없음·만료 토큰을 거절당한 뒤 토큰 없이 재시도)이어도 세션을 받은 로그인 사용자의 기록으로 남긴다 —
+      // 세션 id는 발급받은 사람만 아는 값이다. 대전 결과의 입장 userId 폴백과 같은 규칙(docs/tasks/tetris-skins D-002)
+      const ownerId = userId ?? session.userId ?? null;
+      ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId: ownerId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
     } finally {
       await this.gameSessionService.releaseVerification(dto.sessionId, guard);
     }
@@ -389,6 +403,7 @@ export class GamesService {
             seed: session.seed,
             replay: gzipSync(JSON.stringify(storedReplay)),
             crtdAt,
+            boardSkins: session.skins ? JSON.stringify(session.skins) : null,
           }),
         );
         return score;
@@ -486,7 +501,23 @@ export class GamesService {
       params,
       frames,
       inputs,
+      // 그 판 당시의 보드 스킨(D-007) — 기능 전 기록·게스트·DEFENSE는 default
+      skins: parseBoardSkins(replay.boardSkins) ?? toBoardSkins(defaultSkinSet()),
     };
+  }
+
+  /**
+   * 판 시작 때의 보드 스킨 — 세션에 보관했다가 리플레이에 남긴다(tetris-skins D-007). 스킨은 TETRIS 로그인 사용자만.
+   * 조회가 실패해도 판은 시작한다(그 판은 default로 남는다)
+   */
+  private async sessionSkinsOf(gameType: GameType, userId: number | null): Promise<TetrisBoardSkins | null> {
+    if (gameType !== 'TETRIS' || userId === null) return null;
+    try {
+      return await this.userSkinService.boardSkinsOf(userId);
+    } catch (error) {
+      this.logger.warn(`sessionSkinsOf(): 스킨 조회 실패 — 이 판은 기본 스킨으로 남는다 (${error instanceof Error ? error.message : String(error)})`);
+      return null;
+    }
   }
 
   /**

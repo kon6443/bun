@@ -19,6 +19,7 @@ import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 import { BATTLE_ENGINE_VERSION, MAX_BATTLE_FRAMES, MAX_GARBAGE_EVENTS } from './battle-engine';
 import { ARR_MAX, ARR_MIN, DAS_MAX, DAS_MIN, MAX_INPUT_LENGTH, SEED_MAX } from './battle-engine/engine';
 import { MATCH_LIST_DEFAULT_LIMIT, MATCH_LIST_MAX_LIMIT } from './tetris-battle.constants';
+import { BoardSkinsDto } from '../games/games.dto';
 
 // ==================== Request ====================
 
@@ -110,6 +111,8 @@ export class BattleMatchPlayerDto {
     description: '리플레이 판정 — 재생은 VERIFIED만. INVALID(검증 실패)여도 순위·통계는 서버 기록 그대로다',
   })
   verdict: 'VERIFIED' | 'MISSING' | 'INVALID';
+  @ApiProperty({ type: BoardSkinsDto, description: '이 참가자 보드를 그릴 스킨(보드 슬롯) — 그 경기 시작 때의 장착(이후 바꿔도 그대로), 게스트·스킨 기능 전 경기는 default (tetris-skins D-006)' })
+  skins: BoardSkinsDto;
 }
 
 export class BattleMatchDto {

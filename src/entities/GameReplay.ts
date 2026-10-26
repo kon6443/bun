@@ -29,4 +29,9 @@ export class GameReplay {
 
   @Column({ name: 'CRTD_AT', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   crtdAt: Date;
+
+  // 판 시작 때의 보드 스킨 JSON {"block","effect","board"} — 리플레이를 당시 모습으로(docs/tasks/tetris-skins D-007).
+  // NULL = 기능 전 기록·게스트·스킨 없는 게임(default). 스키마: migrations/*-AddGameReplaysBoardSkins.ts
+  @Column({ name: 'BOARD_SKINS', type: 'varchar2', length: 400, nullable: true })
+  boardSkins: string | null;
 }

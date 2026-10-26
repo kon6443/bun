@@ -37,6 +37,7 @@ import { MatchPlayerSnapshot, MatchSnapshot, TetrisBattleMatchStore } from './te
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { BattleMatchDto, BattleReplayDetailDto, BattleReplayDto } from './tetris-battle-result.dto';
 import { VerificationContext, verifyBattleReplay } from './tetris-battle-verify';
+import { defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
 
 /** Redis 제출 기록 (DB 저장 전까지) */
 interface StoredSubmission {
@@ -279,6 +280,8 @@ export class TetrisBattleResultService {
         frames: p.frames,
         koReason: p.koReason,
         verdict: p.verdict,
+        // 그 경기 당시의 보드 스킨(D-006) — 기능 전 경기는 default
+        skins: parseBoardSkins(p.boardSkins) ?? toBoardSkins(defaultSkinSet()),
       })),
     };
   }
@@ -461,6 +464,8 @@ export class TetrisBattleResultService {
             frames: p.frames ?? p.frame,
             koReason: p.alive ? null : p.koReason,
             verdict: verdictOf(p.playerId),
+            // 시작 시점 스킨이 없는 경기(배포 직전에 시작)는 NULL — 조회 때 default
+            boardSkins: p.skins ? JSON.stringify(p.skins) : null,
           }),
         );
       }

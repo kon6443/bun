@@ -304,6 +304,34 @@ export class RankingListDto {
   periodStart: Date | null;
 }
 
+export class SkinCollectionItemDto {
+  @ApiProperty({ description: '아이템 id — 이름·미리보기는 프론트 레지스트리', example: 'gameboy' }) id: string;
+  @ApiProperty({ description: '획득 방식 — default(기본 제공)·free(누구나). 업적·출석은 이후 조건 필드와 함께 추가', example: 'free' }) unlock: string;
+  @ApiProperty({ description: '내가 보유했는지 — 게스트는 false(보유는 계정 기준)', example: true }) owned: boolean;
+  @ApiProperty({ description: '지금 장착 중인지 — 게스트는 false', example: false }) equipped: boolean;
+}
+
+export class SkinCollectionSlotDto {
+  @ApiProperty({ description: '슬롯 — block·effect·board·background', example: 'block' }) slot: string;
+  @ApiProperty({ type: [SkinCollectionItemDto], description: '서버 카탈로그 순서' }) items: SkinCollectionItemDto[];
+}
+
+export class SkinCollectionDto {
+  @ApiProperty({ description: '로그인 여부 — false면 보유·장착 표시가 모두 false', example: true }) signedIn: boolean;
+  @ApiProperty({ type: [SkinCollectionSlotDto], description: '슬롯별 전체 아이템. 스킨이 없는 게임은 빈 배열' }) slots: SkinCollectionSlotDto[];
+}
+
+export class SkinCollectionResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ type: SkinCollectionDto }) data: SkinCollectionDto;
+}
+
+/** 보드 슬롯 스킨 — 화면 배경(background)은 보는 사람 자신의 것이라 싣지 않는다 (tetris-skins D-003) */
+export class BoardSkinsDto {
+  @ApiProperty({ description: '블록 스킨 id', example: 'default' }) block: string;
+  @ApiProperty({ description: '이펙트 스킨 id', example: 'default' }) effect: string;
+  @ApiProperty({ description: '판 배경 스킨 id', example: 'default' }) board: string;
+}
+
 export class GameReplayDetailDto extends RankingItemDto {
   @ApiProperty({ description: '엔진 버전 — 재생에는 같은 버전 엔진 필요', example: 1 }) engineVersion: number;
   @ApiProperty({ description: '시드', example: 123456789 }) seed: number;
@@ -317,6 +345,11 @@ export class GameReplayDetailDto extends RankingItemDto {
   params: Record<string, number>;
   @ApiProperty({ description: '게임 종료 틱 수 (게임별 틱레이트)', example: 7200 }) frames: number;
   @ApiProperty({ description: '입력 로그 [deltaFrame, actionCode, ...]', type: [Number] }) inputs: number[];
+  @ApiProperty({
+    type: BoardSkinsDto,
+    description: '보드를 그릴 스킨(보드 슬롯) — 그 판을 시작할 때의 장착(이후 바꿔도 그대로). 기능 전 기록·게스트·DEFENSE는 default (docs/tasks/tetris-skins D-007)',
+  })
+  skins: BoardSkinsDto;
 }
 
 export class GameReplayViewDto {

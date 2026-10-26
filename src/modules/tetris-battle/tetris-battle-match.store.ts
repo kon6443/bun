@@ -3,6 +3,7 @@ import { FRAMES_PER_SECOND, SPAWN_DELAY_FRAMES } from '../games/tetris-engine';
 import { DISCONNECT_GRACE_MS, LOCK_FRAME_SLACK, MATCH_START_DELAY_MS, MATCH_TTL_SECONDS } from './tetris-battle.constants';
 import { MAX_GARBAGE_EVENTS } from './battle-engine';
 import { GarbagePayload, KoReason } from './tetris-battle.events';
+import { type TetrisBoardSkins, parseBoardSkins } from '../users/skin-catalog';
 
 /**
  * 매치 상태 저장소 — 방 JSON과 **분리된** Redis Hash + Lua (DESIGN §8, 리뷰 P2 동시성 요구)
@@ -29,6 +30,7 @@ import { GarbagePayload, KoReason } from './tetris-battle.events';
  *  - clockStart: 서버 기준 경기 0프레임 시각(ms) = 생성 시각(Redis TIME) + MATCH_START_DELAY_MS — lock 프레임 상한의 기준
  *  - endedClock: 종료 시각(Redis TIME, ms) — 생존자 리플레이 frames 상한(P5)의 기준 · roomName: 방 이름(P5 저장)
  *  - p:{pid}:tokenHash: 시작 시점의 재연결 토큰 해시 — 리플레이 제출 인증(P5, rematch·이탈 뒤에도 그 경기 기준)
+ *  - p:{pid}:skins: 시작 시점의 보드 스킨 JSON — 경기 기록·리플레이를 당시 모습으로(tetris-skins D-006)
  *  - p:{pid}:name·userId·alive('1'|'0')·seq·frame·pieces·sent·recv·maxCombo·kos·combo·b2b·board·pending
  *  - p:{pid}:cursor(이 공격자가 마지막으로 공격한 대상)·gid(이 플레이어가 받은 마지막 가비지 id)·lastFrom(마지막 공격자)
  *  - p:{pid}:discAt(끊긴 시각 ms, ''면 연결)·place·koReason·koBy·frames(탈락/종료 프레임)·koClock(탈락 Redis 시각 ms, P5)
@@ -312,6 +314,8 @@ export interface MatchPlayerSnapshot {
   koClock: number | null;
   /** 시작 시점 재연결 토큰 해시(sha256 hex) — 리플레이 제출 인증 */
   tokenHash: string | null;
+  /** 경기 시작 때의 보드 스킨. 이 필드가 없던 시절 시작한 경기는 null(default) */
+  skins: TetrisBoardSkins | null;
 }
 
 export interface MatchSnapshot {
@@ -362,7 +366,7 @@ export class TetrisBattleMatchStore {
       seed: number;
       startedAt: number;
       roomName: string;
-      players: { playerId: string; name: string; userId: number | null; tokenHash: string }[];
+      players: { playerId: string; name: string; userId: number | null; tokenHash: string; skins: TetrisBoardSkins }[];
     },
   ): Promise<void> {
     // 경기 시계는 Redis 시각 기준 — lock 프레임 상한을 레플리카 시계와 무관하게 판정한다
@@ -384,6 +388,8 @@ export class TetrisBattleMatchStore {
       fields[`p:${p.playerId}:alive`] = '1';
       fields[`p:${p.playerId}:discAt`] = '';
       fields[`p:${p.playerId}:tokenHash`] = p.tokenHash;
+      // 경기 시작 때의 보드 스킨 — 경기 기록·리플레이는 이 값으로 그린다(tetris-skins D-006)
+      fields[`p:${p.playerId}:skins`] = JSON.stringify(p.skins);
     }
     await redis.multi().hset(matchKey(match.matchId), fields).expire(matchKey(match.matchId), MATCH_TTL_SECONDS).exec();
   }
@@ -517,6 +523,7 @@ export class TetrisBattleMatchStore {
         disconnectedAt: f('discAt') ? Number(f('discAt')) : null,
         koClock: f('koClock') ? Number(f('koClock')) : null,
         tokenHash: f('tokenHash') || null,
+        skins: parseBoardSkins(f('skins')),
       };
     });
     return {

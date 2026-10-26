@@ -14,6 +14,7 @@ import { GameViewService } from './game-view.service';
 import { GameHallOfFameService } from './game-hall-of-fame.service';
 import { User } from '../../entities/User';
 import { createMockRepository } from '../../common/__spec__/mock-repository';
+import { UserSkinEquip } from '../../entities/UserSkinEquip';
 
 /** AppModule이 주는 DataSource(TypeOrmModule.forRoot)를 대신한다 — 연결 없음 */
 @Global()
@@ -42,6 +43,8 @@ describe('GamesModule', () => {
       .useValue(createMockRepository<GameReplayViewStat>())
       .overrideProvider(getRepositoryToken(User))
       .useValue(createMockRepository<User>())
+      .overrideProvider(getRepositoryToken(UserSkinEquip))
+      .useValue(createMockRepository<UserSkinEquip>())
       .compile();
 
     expect(moduleRef.get(GamesController)).toBeInstanceOf(GamesController);
@@ -78,6 +81,8 @@ describe('GamesModule', () => {
           .useValue(createMockRepository<GameReplayViewStat>())
           .overrideProvider(getRepositoryToken(User))
           .useValue(createMockRepository<User>())
+          .overrideProvider(getRepositoryToken(UserSkinEquip))
+          .useValue(createMockRepository<UserSkinEquip>())
           .compile();
       const now = new Date('2026-10-22T03:00:00.000Z');
 

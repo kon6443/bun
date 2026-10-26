@@ -15,6 +15,7 @@ import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { SubmitGameScoreDto } from './games.dto';
+import { UserSkinService } from '../users/user-skin.service';
 
 /**
  * GamesService — 리플레이 검증 후 랭킹 등록 (docs/tasks/games D-003·D-005·D-010·D-011).
@@ -33,6 +34,7 @@ describe('GamesService', () => {
   let viewStatRepository: MockRepository<GameReplayViewStat>;
   let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
   let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
+  let userSkinService: { boardSkinsOf: jest.Mock; collection: jest.Mock };
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: {
     createSession: jest.Mock;
@@ -81,6 +83,10 @@ describe('GamesService', () => {
     viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
     // 입상자 없음 — 배지 null
     hallOfFameService = { getPodiums: jest.fn().mockResolvedValue([]), trophiesByUser: jest.fn().mockResolvedValue(new Map()) };
+    userSkinService = {
+      boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default' }),
+      collection: jest.fn().mockResolvedValue({ signedIn: true, slots: [{ slot: 'block', items: [] }] }),
+    };
     gameViewService = { claimView: jest.fn().mockResolvedValue(true), claimWatchMs: jest.fn((_id, _key, ms: number) => Promise.resolve(ms)) };
     manager = {
       create: jest.fn((_entity: unknown, data: unknown) => data),
@@ -124,6 +130,7 @@ describe('GamesService', () => {
         { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
         { provide: GameViewService, useValue: gameViewService },
         { provide: GameHallOfFameService, useValue: hallOfFameService },
+        { provide: UserSkinService, useValue: userSkinService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)) } as unknown as DataSource,
@@ -168,8 +175,25 @@ describe('GamesService', () => {
         userId: 7,
         ttlSeconds: 7200,
         challengeOf: null,
+        // 판 시작 때의 보드 스킨(tetris-skins D-007)
+        skins: { block: 'default', effect: 'default', board: 'default' },
       });
+      expect(userSkinService.boardSkinsOf).toHaveBeenCalledWith(7);
       expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, ttlSeconds: 7200, boardKey: 'default', mode: null });
+    });
+
+    it('게스트 세션에는 스킨을 싣지 않는다 — 조회하지 않는다 (D-007)', async () => {
+      gameSessionService.createSession.mockResolvedValue({ sessionId: SESSION_ID, session: session(), expiresAt: new Date(NOW) });
+      await service.createSession('tetris', null);
+      expect(gameSessionService.createSession).toHaveBeenCalledWith(expect.objectContaining({ skins: null }));
+      expect(userSkinService.boardSkinsOf).not.toHaveBeenCalled();
+    });
+
+    it('스킨 조회가 실패해도 세션은 발급한다 — 그 판은 default로 남는다 (D-007)', async () => {
+      userSkinService.boardSkinsOf.mockRejectedValueOnce(new Error('ORA-03113'));
+      gameSessionService.createSession.mockResolvedValue({ sessionId: SESSION_ID, session: session({ userId: 7 }), expiresAt: new Date(NOW) });
+      await expect(service.createSession('tetris', 7)).resolves.toMatchObject({ sessionId: SESSION_ID });
+      expect(gameSessionService.createSession).toHaveBeenCalledWith(expect.objectContaining({ skins: null }));
     });
 
     it('엔진이 보드가 정한 seed를 주면 그대로 세션에 넘겨야 함', async () => {
@@ -305,6 +329,22 @@ describe('GamesService', () => {
     });
   });
 
+  describe('listSkins (tetris-skins D-005)', () => {
+    it('TETRIS는 도감을 요청 사용자 기준으로', async () => {
+      await expect(service.listSkins('tetris', 7)).resolves.toEqual({ signedIn: true, slots: [{ slot: 'block', items: [] }] });
+      expect(userSkinService.collection).toHaveBeenCalledWith(7);
+    });
+
+    it('스킨이 없는 게임은 빈 목록 — 스킨 조회를 하지 않는다', async () => {
+      await expect(service.listSkins('defense', null)).resolves.toEqual({ signedIn: false, slots: [] });
+      expect(userSkinService.collection).not.toHaveBeenCalled();
+    });
+
+    it('모르는 게임은 404 GAME_NOT_FOUND', async () => {
+      await expect(service.listSkins('pacman', null)).rejects.toMatchObject({ status: 404, code: 'GAME_NOT_FOUND' });
+    });
+  });
+
   describe('listBoards', () => {
     it('엔진의 보드 목록을 그대로 돌려줘야 함', () => {
       expect(service.listBoards('tetris')).toEqual({ items: [{ boardKey: 'default', mode: null, current: true, startsAt: null, endsAt: null }] });
@@ -336,11 +376,27 @@ describe('GamesService', () => {
       expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
     });
 
+    it.each([
+      ['제출이 익명이면 세션을 받은 로그인 사용자로 저장한다(만료 토큰 거절 뒤 토큰 없이 재시도 — tetris-skins D-002)', null, 7, 7],
+      ['제출 토큰 사용자가 있으면 그 사용자가 우선', 9, 7, 9],
+      ['세션도 익명이면 익명', null, null, null],
+    ])('%s', async (_name, submitUserId, sessionUserId, savedUserId) => {
+      gameSessionService.getSession.mockResolvedValue(session({ userId: sessionUserId }));
+      await submit(dto(), submitUserId);
+      expect(savedScore()).toEqual(expect.objectContaining({ userId: savedUserId }));
+    });
+
+    it('세션에 보관한 판 시작 때의 보드 스킨을 리플레이에 남긴다 (D-007)', async () => {
+      gameSessionService.getSession.mockResolvedValue(session({ userId: 7, skins: { block: 'neon', effect: 'neon', board: 'gameboy' } }));
+      await submit(dto(), 7);
+      expect(savedReplay().boardSkins).toBe(JSON.stringify({ block: 'neon', effect: 'neon', board: 'gameboy' }));
+    });
+
     it('리플레이는 세션 seed와 함께 gzip으로 저장해야 함 (같은 트랜잭션) — 테트리스는 이전과 같은 본문 형식', async () => {
       await submit();
 
       const replay = savedReplay();
-      expect(replay).toEqual(expect.objectContaining({ scoreId: 41, gameType: 'TETRIS', engineVersion: 1, seed: 123456789 }));
+      expect(replay).toEqual(expect.objectContaining({ scoreId: 41, gameType: 'TETRIS', engineVersion: 1, seed: 123456789, boardSkins: null }));
       expect(JSON.parse(gunzipSync(replay.replay as Buffer).toString('utf8'))).toEqual({ das: 10, arr: 2, frames: 10800, inputs: [30, 2, 12, 3, 5, 8] });
     });
 
@@ -705,6 +761,23 @@ describe('GamesService', () => {
   });
 
   describe('getReplay', () => {
+    it('보드 스킨은 그 판 당시 저장값 — 없거나(기능 전 기록·게스트) 깨진 값이면 default, 소유자·장착을 읽지 않는다 (D-007)', async () => {
+      gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date(NOW) } as GameScore);
+      const replayRow = (boardSkins: string | null) => ({
+        scoreId: 41, gameType: 'TETRIS' as const, engineVersion: 1, seed: 99,
+        replay: gzipSync(JSON.stringify({ das: 8, arr: 1, frames: 600, inputs: [] })), crtdAt: new Date(NOW), boardSkins,
+      });
+      const DEFAULT = { block: 'default', effect: 'default', board: 'default' };
+
+      gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow(JSON.stringify({ block: 'neon', effect: 'gameboy', board: 'high-contrast' })));
+      expect((await service.getReplay('tetris', 41)).skins).toEqual({ block: 'neon', effect: 'gameboy', board: 'high-contrast' });
+      gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow(null));
+      expect((await service.getReplay('tetris', 41)).skins).toEqual(DEFAULT);
+      gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow('{"block":"neon"}'));
+      expect((await service.getReplay('tetris', 41)).skins).toEqual(DEFAULT);
+      expect(userSkinService.boardSkinsOf).not.toHaveBeenCalled();
+    });
+
     it('숨김이 아닌 기록이면 gzip을 풀어 재생 데이터를 돌려줘야 함', async () => {
       gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date(NOW) } as GameScore);
       gameReplayRepository.findOneBy.mockResolvedValue({
@@ -714,6 +787,7 @@ describe('GamesService', () => {
         seed: 99,
         replay: gzipSync(JSON.stringify({ das: 8, arr: 1, frames: 600, inputs: [1, 6] })),
         crtdAt: new Date(NOW),
+        boardSkins: null,
       });
 
       const result = await service.getReplay('tetris', 41);
@@ -789,6 +863,7 @@ describe('GamesService', () => {
         seed: 99,
         replay: gzipSync(JSON.stringify({ frames: 600, inputs: [0, 0] })),
         crtdAt: new Date(NOW),
+        boardSkins: null,
       });
 
       const result = await service.getReplay('tetris', 41);

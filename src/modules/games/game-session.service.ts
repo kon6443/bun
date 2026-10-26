@@ -4,12 +4,13 @@ import type { Redis } from 'ioredis';
 import type { GameType } from '../../entities/GameScore';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { GameSessionUnavailableErrorResponseDto } from './games-error.dto';
+import type { TetrisBoardSkins } from '../users/skin-catalog';
 
 /**
  * 게임 세션 (docs/tasks/games DESIGN.md §2)
  *
  * Redis 키 패턴 (game: prefix):
- * - game:session:{sessionId} → JSON { gameType, boardKey, seed, engineVersion, startedAt, userId } (TTL = 엔진별 sessionTtlSeconds)
+ * - game:session:{sessionId} → JSON { gameType, boardKey, seed, engineVersion, startedAt, userId, skins? } (TTL = 엔진별 sessionTtlSeconds)
  * - game:session:{sessionId}:verifying → 검증 진행 가드, 값 = 소유 토큰 (TTL 60초)
  * - game:session:{sessionId}:timeouts → 검증 시간 초과 횟수 (TTL = 세션 TTL)
  *
@@ -29,6 +30,8 @@ export interface GameSession {
   userId: number | null;
   /** 도전장 세션이면 원본 기록 ID — 원본 리플레이를 그대로 낸 제출을 거른다(games-growth D-009). 도입 전 세션에는 없다 */
   challengeOf?: number | null;
+  /** 판 시작 때 로그인 사용자의 보드 스킨 — 리플레이를 당시 모습으로 남긴다(tetris-skins D-007). 게스트·스킨 없는 게임·도입 전 세션에는 없다 */
+  skins?: TetrisBoardSkins;
 }
 
 /** seed 범위 0 ~ 2^32 − 1 (randomInt의 상한은 미포함) */
@@ -62,6 +65,7 @@ export class GameSessionService {
     userId,
     ttlSeconds,
     challengeOf = null,
+    skins = null,
   }: {
     gameType: GameType;
     boardKey: string;
@@ -72,6 +76,8 @@ export class GameSessionService {
     ttlSeconds: number;
     /** 도전장 세션의 원본 기록 ID (games-growth D-009) */
     challengeOf?: number | null;
+    /** 판 시작 때의 보드 스킨 (tetris-skins D-007) */
+    skins?: TetrisBoardSkins | null;
   }): Promise<{ sessionId: string; session: GameSession; expiresAt: Date }> {
     const redis = this.requireRedis();
     const sessionId = randomUUID();
@@ -84,6 +90,7 @@ export class GameSessionService {
       userId,
       // 도전장 세션에만 싣는다 — 기존 세션 형식은 그대로
       ...(challengeOf !== null && { challengeOf }),
+      ...(skins !== null && { skins }),
     };
 
     try {

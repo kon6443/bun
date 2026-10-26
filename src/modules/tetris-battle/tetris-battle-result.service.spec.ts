@@ -47,11 +47,13 @@ const snapshot = (over: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
       playerId: 'p1', name: '우승자', userId: 42, alive: true, seq: SURVIVOR_SIM.pieces, frame: 1100, pieces: SURVIVOR_SIM.pieces,
       sent: 5, received: 2, maxCombo: 1, kos: 1, board: null, pending: 0, combo: -1, b2b: false, place: 1, frames: 1100,
       koReason: null, disconnectedAt: null, koClock: null, tokenHash: hash(TOKEN(1)),
+      skins: { block: 'neon', effect: 'gameboy', board: 'high-contrast' },
     },
     {
       playerId: 'p2', name: '도전자', userId: null, alive: false, seq: 10, frame: 900, pieces: 10, sent: 2, received: 5,
       maxCombo: 0, kos: 0, board: null, pending: 0, combo: -1, b2b: false, place: 2, frames: 900, koReason: 'topout',
       disconnectedAt: null, koClock: 5_000, tokenHash: hash(TOKEN(2)),
+      skins: null, // 기능 전 시작한 경기 → 저장 NULL
     },
   ],
   ...over,
@@ -407,6 +409,18 @@ describe('TetrisBattleResultService', () => {
       ]);
     });
 
+    it('참가자 행에 경기 시작 때의 보드 스킨을 남긴다 — 매치 상태에 없으면(기능 전 시작) NULL (tetris-skins D-006)', async () => {
+      const base = snapshot();
+      store.snapshot.mockResolvedValue({ ...base, players: [base.players[0], { ...base.players[1], koReason: 'leave' }] });
+
+      await submit();
+
+      expect(saved.filter((s) => s.entity === 'TetrisBattlePlayer').map((s) => [s.row.playerId, s.row.boardSkins])).toEqual([
+        ['p1', JSON.stringify({ block: 'neon', effect: 'gameboy', board: 'high-contrast' })],
+        ['p2', null],
+      ]);
+    });
+
     it('즉시 저장 뒤에 비예상 제출자(기권 탈락자)가 내면 410 — 저장에 빠진 201이 생기지 않는다 (리뷰 L2)', async () => {
       const base = snapshot();
       store.snapshot.mockResolvedValue({ ...base, players: [base.players[0], { ...base.players[1], koReason: 'leave' }] });
@@ -555,6 +569,22 @@ describe('TetrisBattleResultService', () => {
         ['p2', 'MISSING'],
         ['p3', 'INVALID'],
       ]);
+    });
+
+    it('보드 스킨은 그 경기 당시 저장값 — 없거나(기능 전 경기) 깨진 값이면 default (tetris-skins D-006)', async () => {
+      matchRepository.findOne.mockResolvedValueOnce({
+        matchId: MATCH, roomName: '한판', playerCount: 3, startedAt: new Date(0), endedAt: new Date(1), status: 'VERIFIED',
+      } as TetrisBattleMatch);
+      playerRepository.find.mockResolvedValueOnce([
+        { playerId: 'p1', place: 1, verdict: 'VERIFIED', boardSkins: JSON.stringify({ block: 'neon', effect: 'gameboy', board: 'high-contrast' }) },
+        { playerId: 'p2', place: 2, verdict: 'VERIFIED', boardSkins: null },
+        { playerId: 'p3', place: 3, verdict: 'VERIFIED', boardSkins: '{"block":1}' },
+      ] as TetrisBattlePlayer[]);
+
+      const data = await service.getMatch(MATCH, T_END);
+
+      const DEFAULT = { block: 'default', effect: 'default', board: 'default' };
+      expect(data.players.map((p) => p.skins)).toEqual([{ block: 'neon', effect: 'gameboy', board: 'high-contrast' }, DEFAULT, DEFAULT]);
     });
 
     it('INVALID 참가자의 리플레이는 404 (D-004)', async () => {

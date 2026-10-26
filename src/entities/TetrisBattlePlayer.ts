@@ -58,4 +58,9 @@ export class TetrisBattlePlayer {
   // DB CHECK: TETRIS_BATTLE_VERDICTS
   @Column({ name: 'VERDICT', type: 'varchar2', length: 10 })
   verdict: TetrisBattleVerdict;
+
+  // 경기 시작 때의 보드 스킨 JSON {"block","effect","board"} — 리플레이를 당시 모습으로(docs/tasks/tetris-skins D-006).
+  // NULL = 스킨 기능 전 경기(default). 스키마: migrations/*-AddTetrisBattlePlayersBoardSkins.ts
+  @Column({ name: 'BOARD_SKINS', type: 'varchar2', length: 400, nullable: true })
+  boardSkins: string | null;
 }

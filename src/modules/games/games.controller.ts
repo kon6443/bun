@@ -24,6 +24,7 @@ import { GamesService } from './games.service';
 import {
   CreateGameSessionDto,
   GameBoardListResponseDto,
+  SkinCollectionResponseDto,
   GameReplayResponseDto,
   GameReplayViewResponseDto,
   GameReplayWatchResponseDto,
@@ -171,6 +172,23 @@ export class GamesController {
   @ApiCommonInternalServerErrorResponse()
   listBoards(@Param('gameType') gameType: string) {
     return { code: 'SUCCESS', data: this.gamesService.listBoards(gameType), message: '' };
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':gameType/skins')
+  @ApiOperation({
+    summary: '스킨 도감',
+    description:
+      '누구나 조회. 슬롯(block·effect·board·background)별 전체 아이템과 획득 방식. 로그인 토큰이 있으면 보유·장착 표시(게스트는 모두 false). 스킨이 없는 게임은 빈 목록 (docs/tasks/tetris-skins D-005)',
+  })
+  @ApiParam(GAME_TYPE_PARAM)
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: SkinCollectionResponseDto })
+  @ApiResponse({ status: 401, description: '만료·무효 토큰을 보냄 — 토큰 없이 다시 조회하면 게스트 도감', type: AuthUnauthorizedErrorResponseDto })
+  @ApiResponse({ status: 404, description: '지원하지 않는 게임', type: GameNotFoundErrorResponseDto })
+  @ApiCommonInternalServerErrorResponse()
+  async listSkins(@Param('gameType') gameType: string, @CurrentUser() user?: User) {
+    const data = await this.gamesService.listSkins(gameType, user?.userId ?? null);
+    return { code: 'SUCCESS', data, message: '' };
   }
 
   @Get(':gameType/rankings')

@@ -56,6 +56,7 @@ import {
 } from './tetris-battle-room.service';
 import { TetrisBattleSocket, TetrisBattleWsGuard } from './tetris-battle-ws.guard';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
+import { UserSkinService } from '../users/user-skin.service';
 
 const ok = <T>(data: T): TetrisBattleAck<T> => ({ ok: true, data });
 
@@ -101,7 +102,10 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
   /** 예약된 로비 방송(BE-09) — 있으면 새 방송을 예약하지 않는다 */
   private lobbyBroadcastTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly roomService: TetrisBattleRoomService) {}
+  constructor(
+    private readonly roomService: TetrisBattleRoomService,
+    private readonly userSkinService: UserSkinService,
+  ) {}
 
   /** 서비스에 생존 확인 함수·변경 알림을 주입한다(서비스가 socket.io 서버에 직접 의존하지 않게) */
   afterInit(): void {
@@ -187,7 +191,7 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
     return this.serialize(client, async () => {
       await this.consumeOrThrow('createRoomSocket', 'createRoomIp', client);
       // 이전 방 이탈은 검증을 통과한 뒤, 저장 직전에(리뷰 G6)
-      const result = await this.roomService.createRoom(dto, this.identity(client), undefined, () =>
+      const result = await this.roomService.createRoom(dto, await this.enterIdentity(client), undefined, () =>
         this.leavePrevious(client, null),
       );
       await this.enter(client, result);
@@ -208,7 +212,7 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
       // 채널 입장(enter)은 커밋 직후·놓친 가비지 조회 전에 서비스가 부른다(리뷰 H2)
       const result = await this.roomService.joinRoom(
         dto,
-        this.identity(client),
+        await this.enterIdentity(client),
         undefined,
         () => this.leavePrevious(client, dto.code),
         (entered) => this.enter(client, entered),
@@ -464,6 +468,21 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
 
   private identity(client: TetrisBattleSocket): SocketIdentity {
     return { socketId: client.id, userId: client.data.userId ?? null, ip: this.clientIp(client) };
+  }
+
+  /**
+   * 입장(create·join)용 신원 — 보드 주인 스킨(계정 장착, 보드 슬롯)을 붙인다(tetris-skins D-003). 클라이언트가 보낸 값은 받지 않는다.
+   * 조회가 실패해도 입장은 막지 않는다 — 새 자리는 기본 스킨, 기존 자리는 이전 스킨으로 들어가고 다음 입장 때 다시 읽는다
+   */
+  private async enterIdentity(client: TetrisBattleSocket): Promise<SocketIdentity> {
+    const who = this.identity(client);
+    try {
+      return { ...who, skins: await this.userSkinService.boardSkinsOf(who.userId) };
+    } catch (error) {
+      // skins 없이 넘긴다 — 새 자리는 default, 재입장은 이전 값을 유지한다(기본값으로 덮지 않게)
+      this.logger.warn(`enterIdentity(): 스킨 조회 실패 — 스킨 없이 입장 (${error instanceof Error ? error.message : String(error)})`);
+      return who;
+    }
   }
 
   /**

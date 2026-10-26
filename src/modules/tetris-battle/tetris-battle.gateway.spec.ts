@@ -7,6 +7,7 @@ import { RoomState, TetrisBattleServerEvents } from './tetris-battle.events';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleSocket } from './tetris-battle-ws.guard';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
+import { UserSkinService } from '../users/user-skin.service';
 
 const CODE = 'ABCDEF';
 const CHANNEL = `tetris-battle:room:${CODE}`;
@@ -38,6 +39,10 @@ const committingLater =
     return result;
   };
 
+const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default' };
+const NEON_SKINS = { block: 'neon', effect: 'neon', board: 'gameboy' };
+let boardSkinsOf: jest.Mock;
+
 const ROOM: RoomState = {
   code: CODE,
   name: '방',
@@ -45,7 +50,7 @@ const ROOM: RoomState = {
   locked: false,
   hostId: 'p1',
   status: 'WAITING',
-  players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: true }],
+  players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: true, skins: DEFAULT_SKINS }],
 };
 
 /**
@@ -106,7 +111,11 @@ describe('TetrisBattleGateway', () => {
       lock: jest.fn(),
       topOut: jest.fn(),
     };
-    gateway = new TetrisBattleGateway(service as unknown as TetrisBattleRoomService);
+    boardSkinsOf = jest.fn().mockResolvedValue(DEFAULT_SKINS);
+    gateway = new TetrisBattleGateway(
+      service as unknown as TetrisBattleRoomService,
+      { boardSkinsOf } as unknown as UserSkinService,
+    );
     gateway.server = { to: serverTo, in: jest.fn(() => ({ socketsLeave })) } as unknown as Server;
   });
 
@@ -157,7 +166,9 @@ describe('TetrisBattleGateway', () => {
       const ack = await gateway.handleCreateRoom(client, { name: '방', maxPlayers: 4, playerName: '방장' });
 
       expect(ack).toEqual({ ok: true, data: { room: ROOM, playerId: 'p1', playerToken: 'tok' } });
-      expect(service.createRoom.mock.calls[0][1]).toEqual({ socketId: 'sock-a', userId: 42, ip: '10.0.0.1' });
+      // 보드 주인 스킨은 소켓의 로그인 사용자로 서버가 읽어 붙인다(tetris-skins D-003)
+      expect(boardSkinsOf).toHaveBeenCalledWith(42);
+      expect(service.createRoom.mock.calls[0][1]).toEqual({ socketId: 'sock-a', userId: 42, ip: '10.0.0.1', skins: DEFAULT_SKINS });
       expect(client.leave).toHaveBeenCalledWith(LOBBY);
       // 방 채널 + 플레이어 채널(garbage 수신용, 리뷰 H2)
       expect(client.join).toHaveBeenCalledWith([CHANNEL, `tetris-battle:player:${CODE}:p1`]);
@@ -193,7 +204,20 @@ describe('TetrisBattleGateway', () => {
       const client = createClient();
       (client.handshake.headers as Record<string, string>)['x-forwarded-for'] = '6.6.6.6, 203.0.113.9';
       await gateway.handleJoinRoom(client, { code: CODE, playerName: '나', password: 'pw' });
-      expect(service.joinRoom.mock.calls[0][1]).toEqual({ socketId: 'sock-a', userId: null, ip: '203.0.113.9' });
+      expect(service.joinRoom.mock.calls[0][1]).toEqual({ socketId: 'sock-a', userId: null, ip: '203.0.113.9', skins: DEFAULT_SKINS });
+    });
+
+    it('입장 때 계정 장착 스킨을 붙인다 — 조회가 실패하면 스킨 없이 입장한다(새 자리 default·기존 자리 유지는 서비스) (tetris-skins D-003)', async () => {
+      service.joinRoom.mockImplementation(committing(entered));
+      boardSkinsOf.mockResolvedValueOnce(NEON_SKINS);
+      await gateway.handleJoinRoom(createClient({ authResolved: true, userId: 7 }), { code: CODE, playerName: '나' });
+      expect(service.joinRoom.mock.calls[0][1]).toMatchObject({ userId: 7, skins: NEON_SKINS });
+
+      boardSkinsOf.mockRejectedValueOnce(new Error('ORA-03113'));
+      const ack = await gateway.handleJoinRoom(createClient({ authResolved: true, userId: 7 }), { code: CODE, playerName: '나' });
+      expect(ack.ok).toBe(true);
+      expect(service.joinRoom.mock.calls[1][1]).toMatchObject({ userId: 7 });
+      expect(service.joinRoom.mock.calls[1][1]).not.toHaveProperty('skins');
     });
 
     it('IP는 X-Forwarded-For의 마지막 값(바로 앞 프록시)을 쓴다', async () => {
