@@ -15,3 +15,15 @@ updates:
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(ci)"
+
+  # Dockerfile 베이스 이미지(Node 패치 고정) 갱신 — 보안 릴리스를 놓치지 않게 주 1회, 메이저는 제외(LTS 전환은 사람이 결정)
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: develop
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(infra)"
