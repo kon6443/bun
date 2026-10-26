@@ -13,12 +13,15 @@ const row = (userId: number, slot: string, skinId: string) => ({ userId, slot, s
 describe('UserSkinService (tetris-skins D-003)', () => {
   let repository: MockRepository<UserSkinEquip>;
   let service: UserSkinService;
+  let transaction: jest.Mock;
 
   beforeEach(() => {
     repository = createMockRepository<UserSkinEquip>();
     repository.find.mockResolvedValue([]);
     repository.update.mockResolvedValue(updated(1));
-    service = new UserSkinService(repository as never);
+    // 장착 저장은 트랜잭션 매니저의 저장소로 — 같은 대역을 돌려준다
+    transaction = jest.fn(async (run: (manager: unknown) => unknown) => run({ getRepository: () => repository }));
+    service = new UserSkinService(repository as never, { transaction } as never);
   });
 
   describe('조회', () => {
@@ -89,6 +92,12 @@ describe('UserSkinService (tetris-skins D-003)', () => {
       expect(repository.insert).not.toHaveBeenCalled();
     });
 
+    it('여러 슬롯은 한 트랜잭션으로 저장한다', async () => {
+      await service.equip(1, { block: 'gameboy', effect: 'neon' });
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(repository.update).toHaveBeenCalledTimes(2);
+    });
+
     it('처음 장착하는 슬롯은 INSERT', async () => {
       repository.update.mockResolvedValue(updated(0));
       await service.equip(1, { effect: 'neon' });
@@ -116,6 +125,7 @@ describe('UserSkinService (tetris-skins D-003)', () => {
       });
       expect(repository.update).not.toHaveBeenCalled();
       expect(repository.insert).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
     });
 
     it('다른 슬롯의 아이템 id는 그 슬롯 카탈로그 기준으로 본다(빈 문자열 포함 거부)', async () => {

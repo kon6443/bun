@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { UserSkinEquip } from '../../entities/UserSkinEquip';
 import {
   SkinItem,
@@ -50,6 +50,8 @@ export class UserSkinService {
   constructor(
     @InjectRepository(UserSkinEquip)
     private readonly equipRepository: Repository<UserSkinEquip>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async getSkins(userId: number): Promise<UserSkins> {
@@ -67,9 +69,12 @@ export class UserSkinService {
       if (!item) throw new UserSkinUnknownErrorResponseDto({ details: { slot, id } });
       if (!this.isOwned(userId, item)) throw new UserSkinNotOwnedErrorResponseDto({ details: { slot, id } });
     }
-    for (const { slot, id } of entries) {
-      await this.saveEquip(userId, TETRIS_SKIN_SLOT_KEYS[slot], id);
-    }
+    // 여러 슬롯을 한 번에 바꾸면 전부 반영되거나 하나도 반영되지 않게
+    await this.dataSource.transaction(async (manager) => {
+      for (const { slot, id } of entries) {
+        await this.saveEquip(manager, userId, TETRIS_SKIN_SLOT_KEYS[slot], id);
+      }
+    });
     return this.getSkins(userId);
   }
 
@@ -130,16 +135,20 @@ export class UserSkinService {
     return item.unlock === 'default' || item.unlock === 'free';
   }
 
-  /** 행이 없으면 만들고 있으면 바꾼다 — 같은 슬롯의 첫 장착이 동시에 오면 늦은 INSERT가 PK 충돌하므로 UPDATE로 다시 한다 */
-  private async saveEquip(userId: number, slot: string, skinId: string): Promise<void> {
+  /**
+   * 행이 없으면 만들고 있으면 바꾼다 — 같은 슬롯의 첫 장착이 동시에 오면 늦은 INSERT가 PK 충돌하므로 UPDATE로 다시 한다.
+   * Oracle은 실패한 문장만 되돌리고 트랜잭션은 이어 가므로 같은 트랜잭션에서 다시 UPDATE할 수 있다
+   */
+  private async saveEquip(manager: EntityManager, userId: number, slot: string, skinId: string): Promise<void> {
+    const repository = manager.getRepository(UserSkinEquip);
     const values = { skinId, updatedAt: new Date() };
-    const { affected } = await this.equipRepository.update({ userId, slot }, values);
+    const { affected } = await repository.update({ userId, slot }, values);
     if (affected) return;
     try {
-      await this.equipRepository.insert({ userId, slot, ...values });
+      await repository.insert({ userId, slot, ...values });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      await this.equipRepository.update({ userId, slot }, values);
+      await repository.update({ userId, slot }, values);
     }
   }
 }

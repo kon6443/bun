@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { verify, JwtPayload } from 'jsonwebtoken';
 import { AuthController } from '../src/modules/auth/auth.controller';
@@ -56,6 +56,8 @@ describe('E2E 인증 (카카오 로그인)', () => {
         UserSkinService,
         { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: getRepositoryToken(UserSkinEquip), useValue: createMockRepository<UserSkinEquip>() },
+        // UserSkinService 의존(이 스펙은 스킨 API를 부르지 않는다)
+        { provide: getDataSourceToken(), useValue: {} },
         {
           provide: ConfigService,
           useValue: { get: jest.fn((k: string) => (k === 'JWT_SECRET' ? JWT_SECRET : undefined)) },

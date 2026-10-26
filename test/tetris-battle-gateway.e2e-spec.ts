@@ -1,4 +1,4 @@
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 import { Socket } from 'socket.io-client';
@@ -101,6 +101,8 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
         // 보드 주인 스킨 — 장착 없음(모두 default)
         UserSkinService,
         { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
+        // UserSkinService 의존(게이트웨이는 장착 조회만 — 저장하지 않는다)
+        { provide: getDataSourceToken(), useValue: {} },
         { provide: getRepositoryToken(User), useValue: userRepository },
         {
           provide: ConfigService,

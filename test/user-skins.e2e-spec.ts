@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { UsersController } from '../src/modules/users/users.controller';
 import { UsersService } from '../src/modules/users/users.service';
 import { UserSkinService } from '../src/modules/users/user-skin.service';
@@ -28,6 +28,8 @@ describe('E2E 사용자 스킨 /users/me/skins', () => {
         UserSkinService,
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
+        // 장착 저장 트랜잭션 — 매니저 저장소는 같은 대역
+        { provide: getDataSourceToken(), useValue: { transaction: (run: (m: unknown) => unknown) => run({ getRepository: () => skinEquipRepository }) } },
       ],
     });
     app = e2e.app;
