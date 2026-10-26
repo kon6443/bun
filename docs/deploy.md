@@ -10,7 +10,7 @@
 | `infra` | `infra_redis` | 1 | fs-01 (Manager) | `infra_redis:6379` |
 | `infra` | `infra_registry` | 1 | fs-02 | `infra_registry:5000` (영속 bind mount) |
 | `prod_nest` | `prod_nest_app` | 3 | fs-01 | `prod_nest_app:3500` |
-| `prod_next` | `prod_next_app` | 10 | fs-01 | `prod_next_app:3000` |
+| `prod_next` | `prod_next_app` | 4 | fs-01 | `prod_next_app:3000` |
 
 ### 노드
 
@@ -45,8 +45,8 @@
 ## Docker
 
 ### 이미지
-- NestJS: `node:24-bookworm-slim`(Node 24 Active LTS) 기반 멀티 스테이지. multi-arch (amd64 + arm64)
-- Next.js: `oven/bun:1` 기반 standalone. arm64 native (ARM runner 빌드)
+- NestJS: `node:24-bookworm-slim`(Node 24 Active LTS) 기반 멀티 스테이지. arm64 native (ARM runner 빌드 — `prod_nest`는 ARM64 fs-01에만 배치)
+- Next.js: `node:24-bookworm-slim` 기반 standalone(`node server.js`, 2026-10-16 Bun → Node 전환). arm64 native (ARM runner 빌드)
 - `ENV TZ=UTC` 명시 — 모든 날짜는 UTC로 저장/처리, 표시 단계에서만 KST 변환
 - Next.js 컨테이너는 `HOSTNAME=0.0.0.0` 환경변수로 모든 인터페이스 bind
 
