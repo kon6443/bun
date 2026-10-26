@@ -26,3 +26,7 @@
 - userId 폴백: `games.service.ts` 제출 저장 `userId ?? session.userId ?? null` — 단위 3케이스, 변이(폴백 제거) 시 실패 확인
 - 검증: ci:core 1769 tests · lint 경고 6(기준선) · E2E 274 pass / 58 skip(Redis 필요) — 신규 `test/user-skins.e2e-spec.ts`(401·부분 장착·422 USER_SKIN_UNKNOWN·VALIDATION_ERROR·숫자 암묵 변환), 리플레이·경기 조회 skins, 게이트웨이 입장 신원 skins
 - 메모: 숫자 `{ block: 3 }`은 전역 암묵 변환으로 "3"이 돼 VALIDATION_ERROR가 아니라 USER_SKIN_UNKNOWN(422) — 상태코드는 같다
+
+## 2026-10-26 — 마이그레이션 실행(사용자) · 스키마 확인
+- 사용자 실행 `pnpm db:migrate:up` → CreateUserSkinEquips1792974597822 성공(18 → 19)
+- `pnpm db:select` 확인: 컬럼 4개(USER_ID NUMBER · SLOT VARCHAR2(40) · SKIN_ID VARCHAR2(64) · UPDATED_AT TIMESTAMP(6) WITH TIME ZONE, 모두 NOT NULL) · 제약 PK_USER_SKIN_EQUIPS · FK_USER_SKIN_EQUIPS_USER(CASCADE) · SLOT_CK · SKIN_CK
