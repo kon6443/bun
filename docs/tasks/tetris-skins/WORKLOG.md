@@ -38,3 +38,8 @@
 - 개선안: A0 `useMiniCell`에 min-height 조건(가로 잘림 해소, 한 줄) · A 상대 미니보드를 판 옆 세로 줄로(높이 한계일 때만, 대전 1명 375 12→16, 가로 8→14) · B 패드 낮추기(HOLD 위치 변경 — 사용자 결정 필요, 375 싱글 16→18) · C 반투명 오버레이(판 가림, 비권장) · D 패드 크기 설정
 - D-pad 롱프레스: CSS user-select·callout·onContextMenu는 적용돼 있으나 **touchstart 취소가 없음**(preventDefault는 pointerdown에서만 — 터치 기본 동작은 못 막음, iOS는 롱프레스에 contextmenu를 안 보냄). D-pad에서만 보이는 건 길게 누르는 조작이 ←→↓뿐이라서. 수정: 패드 루트에 touchstart `passive:false` 취소. iOS 실기기 판정은 미확정
 - 진행: D-pad 수정은 사용자 요청("disable 처리")에 따라 프론트 진행 지시. 보드 크기는 사용자 결정 대기
+
+## 2026-10-26 — 스킨 도감 API (D-005)
+- cd92ad2 `GET /games/:gameType/skins`(OptionalJwtAuthGuard) → `UserSkinService.collection(userId|null)`. 게스트는 DB를 읽지 않고 owned·equipped false, DEFENSE 빈 목록, 모르는 게임 404
+- 테스트: 단위(게스트·로그인 장착 표시·listSkins 3) · E2E(게스트 200, 실제 OptionalJwt 가드로 로그인 토큰 → 장착 표시, DEFENSE 빈 목록·pacman 404) · ci:core 1774 · lint 경고 6
+- 프론트에 도감 페이지 지시(401 → D-pad → A0 → A 다음)
