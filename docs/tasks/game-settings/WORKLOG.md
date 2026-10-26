@@ -39,3 +39,9 @@
 ## 2026-10-26 — 다른 메인 세션(bun-c8)과 겹침 조율
 - bun-c8 → next-bun-0c: 테트리스 Safari 렌더 성능(저사양 감지 지속형 — TetrisCanvas, 판 테두리 네온 shadowBlur 오프스크린 캐시 — effectsRenderer, 고스트 shadowBlur — renderer) 예정
 - 답변: 스킨(main 54265df) 위에서 작업할 것, 캐시 키에 board·block 스킨 id 포함 필수. 이 브랜치의 renderer.ts computeLayout(S3 검토)과 충돌 가능 — S3 결정 시 통보. 머지는 먼저 끝난 쪽 기준으로 나머지가 main merge
+
+## 2026-10-26 — 설정 시트 2단계 · C3 판정 분석 (프론트)
+- 0c86f04: `createLocalSettingsStore`(_shared/lib/settingsStore.ts) + `useTetrisSettings` — 홈·플레이 같은 값 구독, localStorage 키·형식 유지. DAS·ARR은 판 시작 때만 읽음(대전 입장 스냅샷 유지). 회귀 테스트 "판 도중 바꾼 DAS·ARR은 다음 판부터"(되돌리면 실패 확인). lint·typecheck·test:run 1711
+- dev SSR 500(`tetrisSettingsStore` undefined)은 테스트 중 파일 교체로 Turbopack 캐시가 낡은 것 — 재시작 후 200
+- C3 판정(padDirection 원본으로 300×300 격자): C3a(가상 정사각형 중심·반지름 유지)는 ←·→·↓ 판정 현재와 동일, ↓에서 위로 미끄러지면 중심 넘어 무동작 유지 → 채택. C3b(T자 중심 재계산) ↓ 61.8%·오판 31.9% → 기각
+- C3 뒤 오른쪽 열(드롭 64 + 틈 16 + A·B ≈ 178px)이 새 병목 → B4(드롭 48·틈 12) 결합 승인(D-004 범위 — 조작 의미 변화 없음)
