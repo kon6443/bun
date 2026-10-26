@@ -37,6 +37,8 @@ import { MatchPlayerSnapshot, MatchSnapshot, TetrisBattleMatchStore } from './te
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { BattleMatchDto, BattleReplayDetailDto, BattleReplayDto } from './tetris-battle-result.dto';
 import { VerificationContext, verifyBattleReplay } from './tetris-battle-verify';
+import { UserSkinService } from '../users/user-skin.service';
+import { defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 
 /** Redis 제출 기록 (DB 저장 전까지) */
 interface StoredSubmission {
@@ -109,6 +111,7 @@ export class TetrisBattleResultService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     configService: ConfigService,
+    private readonly userSkinService: UserSkinService,
   ) {
     const env = configService.get<string>('ENV')?.toUpperCase() ?? '';
     const taskSlot = Number(configService.get<number>('TASK_SLOT')) || 1;
@@ -260,6 +263,8 @@ export class TetrisBattleResultService {
     const match = await this.matchRepository.findOne({ where: { matchId, isHidden: 0 } });
     if (!match) throw new TetrisBattleMatchNotFoundErrorResponseDto();
     const players = await this.playerRepository.find({ where: { matchId }, order: { place: 'ASC' } });
+    // 보드 주인 스킨 — 계정의 현재 장착(보드 슬롯, tetris-skins D-003)
+    const skins = await this.userSkinService.boardSkinsOfMany(players.map((p) => p.userId));
     return {
       matchId: match.matchId,
       roomName: match.roomName,
@@ -279,6 +284,7 @@ export class TetrisBattleResultService {
         frames: p.frames,
         koReason: p.koReason,
         verdict: p.verdict,
+        skins: (p.userId === null ? undefined : skins.get(p.userId)) ?? toBoardSkins(defaultSkinSet()),
       })),
     };
   }

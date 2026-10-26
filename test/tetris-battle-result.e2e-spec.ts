@@ -18,6 +18,8 @@ import { TetrisBattleReplay } from '../src/entities/TetrisBattleReplay';
 import { User } from '../src/entities/User';
 import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 
 const MATCH = 'AbCdEfGhIjKlMnOp';
 const TOKEN_P1 = 'A'.repeat(32);
@@ -61,6 +63,7 @@ describe('E2E 테트리스 대전 결과', () => {
   let matchRepository: MockRepository<TetrisBattleMatch>;
   let playerRepository: MockRepository<TetrisBattlePlayer>;
   let replayRepository: MockRepository<TetrisBattleReplay>;
+  let skinEquipRepository: MockRepository<UserSkinEquip>;
   let saved: unknown[];
   let lobbySummary: jest.Mock;
 
@@ -107,6 +110,8 @@ describe('E2E 테트리스 대전 결과', () => {
       save: async (row: unknown) => (saved.push(row), row),
     };
 
+    skinEquipRepository = createMockRepository<UserSkinEquip>();
+    skinEquipRepository.find.mockResolvedValue([]);
     e2e = await createE2eApp({
       controllers: [TetrisBattleResultController],
       providers: [
@@ -119,6 +124,9 @@ describe('E2E 테트리스 대전 결과', () => {
         { provide: getRepositoryToken(TetrisBattleMatch), useValue: matchRepository },
         { provide: getRepositoryToken(TetrisBattlePlayer), useValue: playerRepository },
         { provide: getRepositoryToken(TetrisBattleReplay), useValue: replayRepository },
+        // 보드 주인 스킨 — 장착 없음(모두 default)
+        UserSkinService,
+        { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
         { provide: getDataSourceToken(), useValue: { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource },
         // OptionalJwtAuthGuard 의존 — 토큰이 없으면 쓰지 않는다
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
@@ -268,8 +276,14 @@ describe('E2E 테트리스 대전 결과', () => {
         matchId: MATCH, roomName: '한판', playerCount: 2, startedAt: new Date('2026-10-22T00:00:00Z'), endedAt: new Date('2026-10-22T00:01:00Z'),
       } as TetrisBattleMatch);
       playerRepository.find.mockResolvedValueOnce([
-        { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED' },
+        { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED', userId: 7 },
+        { playerId: 'p2', name: '게스트', place: 2, kos: 0, sent: 0, received: 4, pieces: 9, maxCombo: 0, frames: 900, koReason: 'topout', verdict: 'VERIFIED', userId: null },
       ] as TetrisBattlePlayer[]);
+      // 보드 주인 스킨 — 계정의 현재 장착(보드 슬롯만, tetris-skins D-003). 게스트는 default
+      skinEquipRepository.find.mockResolvedValueOnce([
+        { userId: 7, slot: 'TETRIS_BLOCK', skinId: 'gameboy' },
+        { userId: 7, slot: 'TETRIS_BACKGROUND', skinId: 'neon' },
+      ] as UserSkinEquip[]);
 
       const res = await request(app.getHttpServer()).get(e2e.url(`/tetris-battle/matches/${MATCH}`)).expect(200);
 
@@ -284,7 +298,14 @@ describe('E2E 테트리스 대전 결과', () => {
           endedAt: '2026-10-22T00:01:00.000Z',
           disputed: false,
           players: [
-            { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED' },
+            {
+              playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED',
+              skins: { block: 'gameboy', effect: 'default', board: 'default' },
+            },
+            {
+              playerId: 'p2', name: '게스트', place: 2, kos: 0, sent: 0, received: 4, pieces: 9, maxCombo: 0, frames: 900, koReason: 'topout', verdict: 'VERIFIED',
+              skins: { block: 'default', effect: 'default', board: 'default' },
+            },
           ],
         },
       });

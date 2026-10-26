@@ -22,6 +22,8 @@ import { GameReplayViewStat } from '../src/entities/GameReplayViewStat';
 import { User } from '../src/entities/User';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 
 type GoldenCase = { name: string; input: { seed: number; das: number; arr: number; frames: number; inputs: number[] }; expected: Record<string, unknown> };
 const CASES = golden as GoldenCase[];
@@ -60,6 +62,7 @@ describe('E2E 게임', () => {
   let gameScoreRepository: MockRepository<GameScore>;
   let gameReplayRepository: MockRepository<GameReplay>;
   let viewStatRepository: MockRepository<GameReplayViewStat>;
+  let skinEquipRepository: MockRepository<UserSkinEquip>;
   let saved: Record<string, unknown>[];
   /** 레지스트리 — 테스트가 검증기를 바꿔 끼울 수 있게 매번 새 객체 */
   let engines: Record<string, GameEngine>;
@@ -92,6 +95,8 @@ describe('E2E 게임', () => {
       },
     };
 
+    skinEquipRepository = createMockRepository<UserSkinEquip>();
+    skinEquipRepository.find.mockResolvedValue([]);
     e2e = await createE2eApp({
       controllers: [GamesController],
       providers: [
@@ -105,6 +110,9 @@ describe('E2E 게임', () => {
         { provide: getRepositoryToken(GameScore), useValue: gameScoreRepository },
         { provide: getRepositoryToken(GameReplay), useValue: gameReplayRepository },
         { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
+        // 보드 주인 스킨 — 장착 없음(모두 default)
+        UserSkinService,
+        { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
         // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존 — 토큰이 없으면 쓰지 않는다
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: { get: (key: string) => env[key] } },
@@ -427,6 +435,31 @@ describe('E2E 게임', () => {
 
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(404);
       expect(res.body.code).toBe('GAME_SCORE_NOT_FOUND');
+    });
+
+    it('보드 스킨은 기록 주인의 현재 장착(보드 슬롯만) — 화면 배경은 싣지 않는다, 익명 기록은 default (tetris-skins D-003)', async () => {
+      const owned = { scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-21T00:00:00.000Z'), userId: 7 } as GameScore;
+      gameReplayRepository.findOneBy.mockResolvedValue({
+        scoreId: 41,
+        gameType: 'TETRIS',
+        engineVersion: 1,
+        seed: 5,
+        replay: gzipSync(JSON.stringify({ das: 10, arr: 2, frames: 30, inputs: [] })),
+        crtdAt: new Date(),
+      } as GameReplay);
+      skinEquipRepository.find.mockResolvedValue([
+        { userId: 7, slot: 'TETRIS_BLOCK', skinId: 'gameboy' },
+        { userId: 7, slot: 'TETRIS_BACKGROUND', skinId: 'neon' },
+      ] as UserSkinEquip[]);
+
+      gameScoreRepository.findOne.mockResolvedValue(owned);
+      const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
+      expect(res.body.data.skins).toEqual({ block: 'gameboy', effect: 'default', board: 'default' });
+      expect(res.body.data).not.toHaveProperty('userId');
+
+      gameScoreRepository.findOne.mockResolvedValue({ ...owned, userId: null });
+      const anonymous = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
+      expect(anonymous.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default' });
     });
   });
 

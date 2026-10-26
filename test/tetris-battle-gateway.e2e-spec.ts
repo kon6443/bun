@@ -16,6 +16,8 @@ import { User } from '../src/entities/User';
 import { createUser } from '../src/entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createWsApp, WsE2eApp, waitFor, expectNoEvent, emitWithAck } from './helpers/ws-e2e-app';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 
 const JWT_SECRET = 'e2e-ws-secret';
 const NS = '/tetris-battle';
@@ -31,8 +33,8 @@ const roomOf = (players: RoomState['players'], hostId = 'p1'): RoomState => ({
   status: 'WAITING',
   players,
 });
-const P1 = { playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false };
-const P2 = { playerId: 'p2', name: '도전자', ready: false, connected: true, isGuest: true };
+const P1 = { playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false, skins: { block: 'default', effect: 'default', board: 'default' } };
+const P2 = { playerId: 'p2', name: '도전자', ready: false, connected: true, isGuest: true, skins: { block: 'default', effect: 'default', board: 'default' } };
 
 type Ack<T = unknown> = TetrisBattleAck<T>;
 
@@ -89,11 +91,16 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
       topOut: jest.fn(),
     };
 
+    const skinEquipRepository = createMockRepository<UserSkinEquip>();
+    skinEquipRepository.find.mockResolvedValue([]);
     ws = await createWsApp({
       gateways: [TetrisBattleGateway],
       providers: [
         TetrisBattleWsGuard,
         { provide: TetrisBattleRoomService, useValue: service },
+        // 보드 주인 스킨 — 장착 없음(모두 default)
+        UserSkinService,
+        { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
         { provide: getRepositoryToken(User), useValue: userRepository },
         {
           provide: ConfigService,
@@ -115,8 +122,8 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
     await emitWithAck(member, C.CREATE_ROOM, { name: '한판', maxPlayers: 4, playerName: '방장' });
     await emitWithAck(guest, C.CREATE_ROOM, { name: '한판', maxPlayers: 4, playerName: '게스트' });
 
-    expect(service.createRoom.mock.calls[0][1]).toEqual({ socketId: member.id, userId: USER.userId, ip: expect.any(String) });
-    expect(service.createRoom.mock.calls[1][1]).toEqual({ socketId: guest.id, userId: null, ip: expect.any(String) });
+    expect(service.createRoom.mock.calls[0][1]).toEqual({ socketId: member.id, userId: USER.userId, ip: expect.any(String), skins: { block: 'default', effect: 'default', board: 'default' } });
+    expect(service.createRoom.mock.calls[1][1]).toEqual({ socketId: guest.id, userId: null, ip: expect.any(String), skins: { block: 'default', effect: 'default', board: 'default' } });
   });
 
   it('로비 구독 → 방 생성 → 비번 입장: roomState는 방 멤버만, roomsChanged는 로비에 남은 소켓만 받는다', async () => {
@@ -278,7 +285,7 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
   describe('매치 (P2) — 방송 대상', () => {
     const MATCH = 'M'.repeat(16);
     const BOARD = Buffer.alloc(200).toString('base64');
-    const P3 = { playerId: 'p3', name: '셋째', ready: false, connected: true, isGuest: true };
+    const P3 = { playerId: 'p3', name: '셋째', ready: false, connected: true, isGuest: true, skins: { block: 'default', effect: 'default', board: 'default' } };
     const lockPayload = { matchId: MATCH, seq: 1, frame: 30, sent: 2, combo: 0, b2b: false, tSpin: 'none', lines: 2, pc: false, board: BOARD, pending: 0 };
 
     /** 3인이 같은 방 채널에 들어간 상태 */

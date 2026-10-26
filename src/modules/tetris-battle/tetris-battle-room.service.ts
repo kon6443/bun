@@ -55,6 +55,7 @@ import {
   RoomSummary,
   TetrisBattleEmoteId,
 } from './tetris-battle.events';
+import { type TetrisBoardSkins, defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 
 
 /**
@@ -135,6 +136,8 @@ export interface StoredPlayer {
   userId: number | null;
   /** sha256(playerToken) hex */
   tokenHash: string;
+  /** 이 플레이어의 보드를 그릴 스킨(보드 슬롯) — 입장·자리 넘겨받기 때 계정 장착(게스트 default, tetris-skins D-003). 이 필드가 없던 시절에 저장된 방은 undefined */
+  skins?: TetrisBoardSkins;
   /** 지금 이 플레이어를 대표하는 소켓. 끊기면 null */
   socketId: string | null;
   /**
@@ -215,6 +218,8 @@ export type MatchEventListener = (code: string, events: MatchEvents) => void;
 export interface SocketIdentity {
   socketId: string;
   userId: number | null;
+  /** 입장(create·join)에서만 — 게이트웨이가 계정 장착을 읽어 붙인다(클라이언트 페이로드에서 받지 않는다). 없으면 자리의 기존 값 유지 */
+  skins?: TetrisBoardSkins;
   /** 빈도 제한·비밀번호 잠금용 IP (X-Forwarded-For 마지막 값 — 게이트웨이 clientIp) */
   ip: string;
 }
@@ -692,6 +697,8 @@ export class TetrisBattleRoomService {
     const previous = player.socketId !== who.socketId ? player.socketId : null;
     player.socketId = who.socketId;
     player.tabId = client.tabId ?? null;
+    // 경기 중 설정을 바꿨으면 다음 입장·재연결 때 반영된다(D-002)
+    if (who.skins) player.skins = who.skins;
     player.heartbeat = client.heartbeat === true;
     player.connected = true;
     player.connectedAt = now;
@@ -1617,6 +1624,7 @@ export class TetrisBattleRoomService {
       connected: true,
       userId: who.userId,
       tokenHash,
+      skins: who.skins ?? toBoardSkins(defaultSkinSet()),
       socketId: who.socketId,
       tabId: client.tabId ?? null,
       heartbeat: client.heartbeat === true,
@@ -1656,6 +1664,7 @@ export class TetrisBattleRoomService {
           ready: p.ready,
           connected: p.connected,
           isGuest: p.userId === null,
+          skins: p.skins ?? toBoardSkins(defaultSkinSet()),
         }),
       ),
     };

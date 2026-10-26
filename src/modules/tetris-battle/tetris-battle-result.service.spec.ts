@@ -14,6 +14,7 @@ import { PENDING_SAVE_RETRY_MS, REPLAY_SUBMIT_DEADLINE_MS, WAKE_MARGIN_MS } from
 import { MatchSnapshot, TetrisBattleMatchStore } from './tetris-battle-match.store';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleResultService } from './tetris-battle-result.service';
+import { UserSkinService } from '../users/user-skin.service';
 
 const MATCH = 'AbCdEfGhIjKlMnOp';
 const T_END = 1_800_000_100_000;
@@ -170,6 +171,8 @@ describe('TetrisBattleResultService', () => {
     service = createService(roomService, { ENV: 'PROD', TASK_SLOT: 1 });
   });
 
+  // 보드 주인 스킨 — 저장된 장착이 없는 사용자는 결과에 없다(서비스가 default로 채운다)
+  const skinService = { boardSkinsOfMany: jest.fn().mockResolvedValue(new Map()) } as unknown as UserSkinService;
   const createService = (roomService: TetrisBattleRoomService, env: Record<string, unknown>) =>
     new TetrisBattleResultService(
       roomService,
@@ -179,6 +182,7 @@ describe('TetrisBattleResultService', () => {
       userRepository as never,
       { transaction } as unknown as DataSource,
       { get: (key: string) => env[key] } as unknown as ConfigService,
+      skinService,
     );
 
   afterEach(() => jest.restoreAllMocks());

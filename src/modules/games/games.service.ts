@@ -7,6 +7,8 @@ import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repos
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
+import { UserSkinService } from '../users/user-skin.service';
+import { type TetrisBoardSkins, defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 import {
   GAME_POPULAR_DEFAULT_LIMIT,
   GAME_RANKING_DEFAULT_LIMIT,
@@ -137,6 +139,7 @@ export class GamesService {
     private readonly gameViewService: GameViewService,
     private readonly hallOfFameService: GameHallOfFameService,
     private readonly configService: ConfigService,
+    private readonly userSkinService: UserSkinService,
   ) {}
 
   /** 경로의 게임 이름(소문자) → 코드값. 모르는 게임은 404 */
@@ -471,10 +474,11 @@ export class GamesService {
     if (!replay) {
       throw new GameScoreNotFoundErrorResponseDto();
     }
-    const [rank, stats, trophies] = await Promise.all([
+    const [rank, stats, trophies, skins] = await Promise.all([
       this.rankOf(gameType, score, null),
       this.statTotals([scoreId]),
       this.trophiesOf(gameType, [scoreId]),
+      this.boardSkinsOf(gameType, scoreId),
     ]);
 
     const { frames, inputs, ...stored } = JSON.parse(gunzipSync(replay.replay).toString('utf8')) as StoredReplay;
@@ -489,7 +493,18 @@ export class GamesService {
       params,
       frames,
       inputs,
+      skins,
     };
+  }
+
+  /**
+   * 리플레이 보드를 그릴 스킨 — 기록 주인의 **현재** 장착(보드 슬롯, tetris-skins D-001·D-003). 익명 기록·스킨이 없는 게임은 default.
+   * 랭킹 항목 조회는 USER_ID를 읽지 않으므로 따로 읽는다
+   */
+  private async boardSkinsOf(gameType: GameType, scoreId: number): Promise<TetrisBoardSkins> {
+    if (gameType !== 'TETRIS') return toBoardSkins(defaultSkinSet());
+    const owner = await this.gameScoreRepository.findOne({ select: { scoreId: true, userId: true }, where: { scoreId, gameType } });
+    return this.userSkinService.boardSkinsOf(owner?.userId ?? null);
   }
 
   /**

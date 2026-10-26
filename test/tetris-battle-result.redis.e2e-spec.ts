@@ -21,6 +21,7 @@ import {
 } from '../src/modules/tetris-battle/battle-engine';
 import golden from '../src/modules/tetris-battle/battle-engine/__fixtures__/golden-battle-replays.json';
 import { createMockRepository } from '../src/common/__spec__/mock-repository';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
 
 /** 공격 상한 검사(games-polish BT-01)를 넉넉히 통과하는 고정(공격표 14) — 이 스펙은 Lua 라우팅·기록만 본다 */
 const LOCK_ATTACK_ROOM = { lines: 4, tSpin: 'none' as const, pc: true };
@@ -236,6 +237,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
       { get: () => undefined } as unknown as ConfigService,
+      { boardSkinsOfMany: async () => new Map() } as unknown as UserSkinService,
     );
     const submit = (token: string, r: BattleReplayInput) =>
       result.submitReplay({ matchId, playerToken: token, replay: r, userId: null, now: T0 + 1_000 });
@@ -268,6 +270,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
       { get: () => undefined } as unknown as ConfigService,
+      { boardSkinsOfMany: async () => new Map() } as unknown as UserSkinService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
 
@@ -322,6 +325,7 @@ describeIfRedis('테트리스 대전 경기 후 검증 — 실제 Redis', () => 
       createMockRepository() as never,
       { transaction: (run: (m: typeof manager) => unknown) => run(manager) } as unknown as DataSource,
       { get: () => undefined } as unknown as ConfigService,
+      { boardSkinsOfMany: async () => new Map() } as unknown as UserSkinService,
     );
     const replay = (golden as unknown as { name: string; input: BattleReplayInput }[]).find((c) => c.name === 'survivor')!.input;
     // 리플레이 내용은 이 경기와 무관해 INVALID지만, 인증(토큰)은 통과해야 한다

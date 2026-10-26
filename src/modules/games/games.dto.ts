@@ -304,6 +304,13 @@ export class RankingListDto {
   periodStart: Date | null;
 }
 
+/** 보드 슬롯 스킨 — 화면 배경(background)은 보는 사람 자신의 것이라 싣지 않는다 (tetris-skins D-003) */
+export class BoardSkinsDto {
+  @ApiProperty({ description: '블록 스킨 id', example: 'default' }) block: string;
+  @ApiProperty({ description: '이펙트 스킨 id', example: 'default' }) effect: string;
+  @ApiProperty({ description: '판 배경 스킨 id', example: 'default' }) board: string;
+}
+
 export class GameReplayDetailDto extends RankingItemDto {
   @ApiProperty({ description: '엔진 버전 — 재생에는 같은 버전 엔진 필요', example: 1 }) engineVersion: number;
   @ApiProperty({ description: '시드', example: 123456789 }) seed: number;
@@ -317,6 +324,11 @@ export class GameReplayDetailDto extends RankingItemDto {
   params: Record<string, number>;
   @ApiProperty({ description: '게임 종료 틱 수 (게임별 틱레이트)', example: 7200 }) frames: number;
   @ApiProperty({ description: '입력 로그 [deltaFrame, actionCode, ...]', type: [Number] }) inputs: number[];
+  @ApiProperty({
+    type: BoardSkinsDto,
+    description: '보드를 그릴 스킨(보드 슬롯) — 기록 주인의 현재 장착. 익명 기록·DEFENSE는 모두 default (docs/tasks/tetris-skins D-003)',
+  })
+  skins: BoardSkinsDto;
 }
 
 export class GameReplayViewDto {

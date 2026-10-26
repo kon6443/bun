@@ -70,7 +70,7 @@ describe('TetrisBattleRoomService', () => {
         locked: false,
         hostId: 'p1',
         status: 'WAITING',
-        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false }],
+        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false, skins: { block: 'default', effect: 'default', board: 'default' } }],
       });
       expect(mock.zset.has(result.room.code)).toBe(true);
     });
