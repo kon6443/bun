@@ -53,8 +53,7 @@ export const ApiBadGatewayErrorResponseDto = defineDomainError({
 });
 
 /**
- * 429 Too Many Requests — ThrottlerGuard 발생 (Swagger 명세용, 직접 throw 없음)
- * 실제 응답은 ThrottlerException을 HttpExceptionFilter가 이 포맷으로 변환
+ * 429 Too Many Requests — 전역 `CustomThrottlerGuard`가 한도 초과 때 직접 던진다(throwThrottlingException 재정의)
  */
 export const ApiTooManyRequestsErrorResponseDto = defineDomainError({
   code: 'TOO_MANY_REQUESTS',
