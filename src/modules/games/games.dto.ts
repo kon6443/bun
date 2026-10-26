@@ -347,7 +347,7 @@ export class GameReplayDetailDto extends RankingItemDto {
   @ApiProperty({ description: '입력 로그 [deltaFrame, actionCode, ...]', type: [Number] }) inputs: number[];
   @ApiProperty({
     type: BoardSkinsDto,
-    description: '보드를 그릴 스킨(보드 슬롯) — 기록 주인의 현재 장착. 익명 기록·DEFENSE는 모두 default (docs/tasks/tetris-skins D-003)',
+    description: '보드를 그릴 스킨(보드 슬롯) — 그 판을 시작할 때의 장착(이후 바꿔도 그대로). 기능 전 기록·게스트·DEFENSE는 default (docs/tasks/tetris-skins D-007)',
   })
   skins: BoardSkinsDto;
 }

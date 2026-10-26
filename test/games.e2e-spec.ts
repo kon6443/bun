@@ -439,29 +439,32 @@ describe('E2E 게임', () => {
       expect(res.body.code).toBe('GAME_SCORE_NOT_FOUND');
     });
 
-    it('보드 스킨은 기록 주인의 현재 장착(보드 슬롯만) — 화면 배경은 싣지 않는다, 익명 기록은 default (tetris-skins D-003)', async () => {
+    it('보드 스킨은 그 판을 시작할 때 저장한 값 — 지금 장착과 무관, 값이 없으면 default (tetris-skins D-007)', async () => {
       const owned = { scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{}', durationMs: 1, crtdAt: new Date('2026-10-21T00:00:00.000Z'), userId: 7 } as GameScore;
-      gameReplayRepository.findOneBy.mockResolvedValue({
-        scoreId: 41,
-        gameType: 'TETRIS',
-        engineVersion: 1,
-        seed: 5,
-        replay: gzipSync(JSON.stringify({ das: 10, arr: 2, frames: 30, inputs: [] })),
-        crtdAt: new Date(),
-      } as GameReplay);
-      skinEquipRepository.find.mockResolvedValue([
-        { userId: 7, slot: 'TETRIS_BLOCK', skinId: 'gameboy' },
-        { userId: 7, slot: 'TETRIS_BACKGROUND', skinId: 'neon' },
-      ] as UserSkinEquip[]);
-
+      const replayRow = (boardSkins: string | null) =>
+        ({
+          scoreId: 41,
+          gameType: 'TETRIS',
+          engineVersion: 1,
+          seed: 5,
+          replay: gzipSync(JSON.stringify({ das: 10, arr: 2, frames: 30, inputs: [] })),
+          crtdAt: new Date(),
+          boardSkins,
+        }) as GameReplay;
+      // 지금 장착은 다르다 — 읽지 않아야 한다
+      skinEquipRepository.find.mockResolvedValue([{ userId: 7, slot: 'TETRIS_BLOCK', skinId: 'high-contrast' }] as UserSkinEquip[]);
       gameScoreRepository.findOne.mockResolvedValue(owned);
+
+      gameReplayRepository.findOneBy.mockResolvedValue(replayRow(JSON.stringify({ block: 'gameboy', effect: 'default', board: 'default' })));
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
       expect(res.body.data.skins).toEqual({ block: 'gameboy', effect: 'default', board: 'default' });
       expect(res.body.data).not.toHaveProperty('userId');
+      expect(res.body.data).not.toHaveProperty('boardSkins');
 
-      gameScoreRepository.findOne.mockResolvedValue({ ...owned, userId: null });
-      const anonymous = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
-      expect(anonymous.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default' });
+      gameReplayRepository.findOneBy.mockResolvedValue(replayRow(null));
+      const before = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
+      expect(before.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default' });
+      expect(skinEquipRepository.find).not.toHaveBeenCalled();
     });
   });
 
