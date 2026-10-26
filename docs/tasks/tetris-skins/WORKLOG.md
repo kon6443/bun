@@ -30,3 +30,11 @@
 ## 2026-10-26 — 마이그레이션 실행(사용자) · 스키마 확인
 - 사용자 실행 `pnpm db:migrate:up` → CreateUserSkinEquips1792974597822 성공(18 → 19)
 - `pnpm db:select` 확인: 컬럼 4개(USER_ID NUMBER · SLOT VARCHAR2(40) · SKIN_ID VARCHAR2(64) · UPDATED_AT TIMESTAMP(6) WITH TIME ZONE, 모두 NOT NULL) · 제약 PK_USER_SKIN_EQUIPS · FK_USER_SKIN_EQUIPS_USER(CASCADE) · SLOT_CK · SKIN_CK
+
+## 2026-10-26 — 별건 조사: 모바일 대전 보드 크기 · D-pad 롱프레스 (프론트 세션, origin/main 기준 실측)
+- 셀 규칙 `renderer.ts:50-59 cell = max(8, floor(min(W/17, H/22.5)))` — 가로 17칸(판 10 + 옆 패널 6 + 1). P9 게임보이 패드로 패드 높이 약 191 → 227px, 375×667 싱글 셀 18 → 16
+- 대전은 상대 미니보드가 헤더 줄(BattleView.tsx:126-149)이라 세로 높이를 더 먹고, `useMiniCell`(:44-48)이 `min-width:640px`만 봐 가로 휴대폰에 데스크톱용 큰 미니보드 → **844×390 가로 대전은 셀 8(최소)로 판이 잘림(버그)**
+- 실측 셀(px): 375×667 싱글 16 · 대전 1명 **12** · 3명 14 / 390×844 싱글 22 · 대전 1명 20 / 844×390 대전 1명 **8(잘림)**. 실기기 safe-area·실제 매치 화면(/battle/[code])은 미실측(preview 페이지로 측정)
+- 개선안: A0 `useMiniCell`에 min-height 조건(가로 잘림 해소, 한 줄) · A 상대 미니보드를 판 옆 세로 줄로(높이 한계일 때만, 대전 1명 375 12→16, 가로 8→14) · B 패드 낮추기(HOLD 위치 변경 — 사용자 결정 필요, 375 싱글 16→18) · C 반투명 오버레이(판 가림, 비권장) · D 패드 크기 설정
+- D-pad 롱프레스: CSS user-select·callout·onContextMenu는 적용돼 있으나 **touchstart 취소가 없음**(preventDefault는 pointerdown에서만 — 터치 기본 동작은 못 막음, iOS는 롱프레스에 contextmenu를 안 보냄). D-pad에서만 보이는 건 길게 누르는 조작이 ←→↓뿐이라서. 수정: 패드 루트에 touchstart `passive:false` 취소. iOS 실기기 판정은 미확정
+- 진행: D-pad 수정은 사용자 요청("disable 처리")에 따라 프론트 진행 지시. 보드 크기는 사용자 결정 대기
