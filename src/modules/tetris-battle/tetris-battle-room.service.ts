@@ -639,6 +639,8 @@ export class TetrisBattleRoomService {
       const self = room.players.find((p) => p.socketId === who.socketId);
       if (self) {
         rotateToken(room, self);
+        // 같은 연결의 재입장도 장착 변경을 반영한다 — 토큰으로 남의 자리를 받은 소켓이면 주인이 달라 그대로 둔다
+        if (who.skins && who.userId === self.userId) self.skins = who.skins;
         return { result: this.enterResult(room, before, self.playerId, fresh.token, null) };
       }
 

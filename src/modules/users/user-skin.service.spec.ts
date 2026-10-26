@@ -14,13 +14,16 @@ describe('UserSkinService (tetris-skins D-003)', () => {
   let repository: MockRepository<UserSkinEquip>;
   let service: UserSkinService;
   let transaction: jest.Mock;
+  let txRepository: MockRepository<UserSkinEquip>;
 
   beforeEach(() => {
     repository = createMockRepository<UserSkinEquip>();
     repository.find.mockResolvedValue([]);
     repository.update.mockResolvedValue(updated(1));
-    // 장착 저장은 트랜잭션 매니저의 저장소로 — 같은 대역을 돌려준다
-    transaction = jest.fn(async (run: (manager: unknown) => unknown) => run({ getRepository: () => repository }));
+    // 장착 저장은 트랜잭션 매니저의 저장소로만 — 바깥 저장소와 다른 대역이라 트랜잭션 밖 쓰기를 잡아낸다
+    txRepository = createMockRepository<UserSkinEquip>();
+    txRepository.update.mockResolvedValue(updated(1));
+    transaction = jest.fn(async (run: (manager: unknown) => unknown) => run({ getRepository: () => txRepository }));
     service = new UserSkinService(repository as never, { transaction } as never);
   });
 
@@ -86,34 +89,37 @@ describe('UserSkinService (tetris-skins D-003)', () => {
   describe('장착', () => {
     it('보낸 슬롯만 DB 슬롯 키로 저장한다', async () => {
       await service.equip(1, { block: 'gameboy', background: 'neon' });
-      expect(repository.update).toHaveBeenCalledTimes(2);
-      expect(repository.update).toHaveBeenCalledWith({ userId: 1, slot: 'TETRIS_BLOCK' }, expect.objectContaining({ skinId: 'gameboy' }));
-      expect(repository.update).toHaveBeenCalledWith({ userId: 1, slot: 'TETRIS_BACKGROUND' }, expect.objectContaining({ skinId: 'neon' }));
-      expect(repository.insert).not.toHaveBeenCalled();
+      expect(txRepository.update).toHaveBeenCalledTimes(2);
+      expect(txRepository.update).toHaveBeenCalledWith({ userId: 1, slot: 'TETRIS_BLOCK' }, expect.objectContaining({ skinId: 'gameboy' }));
+      expect(txRepository.update).toHaveBeenCalledWith({ userId: 1, slot: 'TETRIS_BACKGROUND' }, expect.objectContaining({ skinId: 'neon' }));
+      expect(txRepository.insert).not.toHaveBeenCalled();
     });
 
     it('여러 슬롯은 한 트랜잭션으로 저장한다', async () => {
       await service.equip(1, { block: 'gameboy', effect: 'neon' });
       expect(transaction).toHaveBeenCalledTimes(1);
-      expect(repository.update).toHaveBeenCalledTimes(2);
+      expect(txRepository.update).toHaveBeenCalledTimes(2);
+      // 트랜잭션 밖(기본 저장소)으로는 쓰지 않는다
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.insert).not.toHaveBeenCalled();
     });
 
     it('처음 장착하는 슬롯은 INSERT', async () => {
-      repository.update.mockResolvedValue(updated(0));
+      txRepository.update.mockResolvedValue(updated(0));
       await service.equip(1, { effect: 'neon' });
-      expect(repository.insert).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, slot: 'TETRIS_EFFECT', skinId: 'neon' }));
+      expect(txRepository.insert).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, slot: 'TETRIS_EFFECT', skinId: 'neon' }));
     });
 
     it('같은 슬롯 첫 장착이 동시에 와 INSERT가 PK 충돌(ORA-00001)하면 UPDATE로 다시 한다', async () => {
-      repository.update.mockResolvedValueOnce(updated(0)).mockResolvedValueOnce(updated(1));
-      repository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-00001: unique constraint violated')));
+      txRepository.update.mockResolvedValueOnce(updated(0)).mockResolvedValueOnce(updated(1));
+      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-00001: unique constraint violated')));
       await expect(service.equip(1, { board: 'gameboy' })).resolves.toBeDefined();
-      expect(repository.update).toHaveBeenCalledTimes(2);
+      expect(txRepository.update).toHaveBeenCalledTimes(2);
     });
 
     it('PK 충돌이 아닌 INSERT 오류는 그대로 던진다', async () => {
-      repository.update.mockResolvedValue(updated(0));
-      repository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-02291: integrity constraint violated')));
+      txRepository.update.mockResolvedValue(updated(0));
+      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-02291: integrity constraint violated')));
       await expect(service.equip(1, { board: 'gameboy' })).rejects.toThrow('ORA-02291');
     });
 
@@ -123,8 +129,8 @@ describe('UserSkinService (tetris-skins D-003)', () => {
         code: 'USER_SKIN_UNKNOWN',
         details: { slot: 'effect', id: 'rainbow' },
       });
-      expect(repository.update).not.toHaveBeenCalled();
-      expect(repository.insert).not.toHaveBeenCalled();
+      expect(txRepository.update).not.toHaveBeenCalled();
+      expect(txRepository.insert).not.toHaveBeenCalled();
       expect(transaction).not.toHaveBeenCalled();
     });
 

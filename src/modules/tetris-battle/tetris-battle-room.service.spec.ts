@@ -631,6 +631,13 @@ describe('TetrisBattleRoomService', () => {
       expect(skinsOf(byGuest.room.players, 'p1')).toEqual(GAMEBOY);
     });
 
+    it('같은 연결로 다시 입장해도 장착 변경을 반영한다', async () => {
+      const room = await create({ ...A, skins: GAMEBOY });
+      const again = await service.joinRoom({ code: room.room.code, playerName: '방장' }, { ...A, skins: NEON }, T0 + 1);
+      expect(again.playerId).toBe('p1');
+      expect(skinsOf(again.room.players, 'p1')).toEqual(NEON);
+    });
+
     it('이 필드가 없던 시절 저장된 방의 자리는 default로 보인다', async () => {
       const room = await create({ ...A, skins: GAMEBOY });
       mock.patchRoom(room.room.code, (stored) => {
