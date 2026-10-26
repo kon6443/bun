@@ -103,3 +103,7 @@
 ## 2026-10-26 — 마이그레이션 2개 실행(사용자) · 스키마 확인
 - 사용자 실행 `pnpm db:migrate:up` → AddTetrisBattlePlayersBoardSkins1792985407425 · AddGameReplaysBoardSkins1792985826082 성공(19 → 21)
 - `pnpm db:select` 확인: GAME_REPLAYS·TETRIS_BATTLE_PLAYERS `BOARD_SKINS VARCHAR2(400) NULL` · 제약 GAME_REPLAYS_SKINS_CK·TB_PLAYERS_SKINS_CK ENABLED
+
+## 2026-10-26 — D-006·D-007 리뷰 (메인 + Opus) · 배포 준비
+- 메인: 매치 생성 경로 1곳(startMatch) · 리플레이·경기 응답은 필드별 매핑(원본 컬럼 미노출) · JSON 길이 최대 약 230자 < 400 → 확정 0
+- Opus: 확정 0. 배포 전 시작한 매치·세션(skins 없음) → NULL → default, 롤링 배포 혼재 무해, select 목록 쿼리 영향 없음, 테스트 공허 아님. 참고: 대전 기록 스킨은 입장 시점 자리 값(대기 중 장착 변경은 다음 입장 때 반영 — D-003과 일관), 로그인 TETRIS 세션 발급에 DB 1회 추가
