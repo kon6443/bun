@@ -239,12 +239,12 @@ ThrottlerModule.forRoot([
 ```json
 {
   "code": "TOO_MANY_REQUESTS",
-  "message": "ThrottlerException: Too Many Requests",
+  "message": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   "timestamp": "2026-08-12T05:00:00.000Z"
 }
 ```
 
-> ⚠️ `ThrottlerException`은 NestJS 기본 `HttpException` 형태(`statusCode` + `message`)로 던져지지만, 이 프로젝트는 전역 `HttpExceptionFilter`가 모든 에러를 `{ code, message, timestamp }`로 통일합니다 — 응답 바디에 `statusCode` 필드는 **없습니다**. 429는 `code: 'TOO_MANY_REQUESTS'`로 매핑됩니다 (`src/common/filters/http-exception.filter.ts`의 상태코드 → 코드 맵). 따라서 프론트에서 바디의 `statusCode`를 보지 말고 **HTTP 상태(`response.status`) 또는 `code` 필드**로 분기해야 합니다.
+> ⚠️ 전역 `CustomThrottlerGuard`가 라이브러리 기본 `ThrottlerException` 대신 도메인 오류 `ApiTooManyRequestsErrorResponseDto`(code `TOO_MANY_REQUESTS`, 한국어 message)를 던지고, 전역 `HttpExceptionFilter`가 모든 에러를 `{ code, message, timestamp }`로 통일합니다 — 응답 바디에 `statusCode` 필드는 **없습니다**(2026-10-26 이전에는 message가 영어 원문 "ThrottlerException: Too Many Requests"였다). 따라서 프론트에서 바디의 `statusCode`를 보지 말고 **HTTP 상태(`response.status`) 또는 `code` 필드**로 분기해야 합니다.
 
 응답 헤더에 유용한 정보가 포함됩니다:
 
