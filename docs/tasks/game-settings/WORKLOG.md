@@ -23,3 +23,9 @@
 | 스킨 도감(게스트) | 보유 필터가 게스트에게도 보임 | 낮음 | 낮음 | SkinsCatalogView |
 - 기존 후보: 리플레이 KeyOverlay 겹침 · 가이드라인 차이 3건
 - 문제없음: 터치 영역 44px 미만 0, 가로 넘침 0, 패드·일시정지·게임 오버 포커스, 스킨 모달 포커스·Esc, 도감 탭 키, 장착 실패 롤백
+
+## 2026-10-26 — 백엔드 429 문구 (D-002)
+- `CustomThrottlerGuard.throwThrottlingException` 재정의 → `ApiTooManyRequestsErrorResponseDto`(code TOO_MANY_REQUESTS, "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
+- E2E `throttle-key`: 전역 필터 포함, 본문 code·message·statusCode 없음·Retry-After 헤더 단정 — 재정의 제거 변이 시 실패 확인
+- 검증: ci:core 1787 · lint 경고 6 · E2E 278 pass / 58 skip · Redis E2E 56 pass / 2 skip
+- 프론트: 1단계(SettingsSheet 추출, 소리·스킨 모달 이전, 동작 무변경) 3e39e06 · test:run 1703. 싱글 판 키우기(C) 실측 조사 중
