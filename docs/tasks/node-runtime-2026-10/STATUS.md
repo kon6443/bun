@@ -41,11 +41,11 @@
 
 - 머지 전 차단: 없음
 - 배포 직후 조치: 없음 (런타임은 이미 24.22.1 → 고정 태그와 동일)
-- 후속: `DockerfileBun`(미참조, `oven/bun:latest`) 삭제 여부 — 사용자 결정 · README 테스트 기준선 수치 재측정
+- 후속 완료: `DockerfileBun` 삭제 · README 테스트 기준선 재측정 (`chore-onam-ci-followups`)
 
 ## 다음 할 일
 
-- 완료. 남은 것은 후속(`DockerfileBun` 삭제 여부 — 사용자 결정 · README 테스트 기준선 재측정)
+- 완료
 
 ## 리뷰
 

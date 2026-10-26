@@ -1,0 +1,7 @@
+{
+  // jest(ts-jest) 전용 — 파일 단위 트랜스파일 모드로 돌린다. 타입 검사는 tsconfig.json으로 `pnpm typecheck`가 한다
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "isolatedModules": true
+  }
+}

@@ -59,9 +59,20 @@
 - 검증에 실패한 커밋의 이미지가 레지스트리에 남을 수 있음(배포는 안 됨)
 - 롤백: 이 브랜치 커밋을 revert하면 이전 workflow로 돌아간다
 
+## 후속 2차 (브랜치 `chore-onam-ci-followups`, 사용자 지시 2026-10-26)
+
+- [x] 백엔드 검증 단축: ts-jest를 파일 단위 트랜스파일(`tsconfig.spec.json`, `isolatedModules`)로 — 로컬 단위 테스트 60s → 32s, 1787/1787 동일. 빠진 타입 검사는 `pnpm typecheck`(tsc --noEmit, 테스트 포함 4s)를 `ci:core`·`ci:all`에 넣어 보완(spec에 타입 오류를 넣어 typecheck가 잡고 jest는 통과함을 확인) · E2E를 `ci.yml`의 별도 잡으로 병렬화
+- [x] 배포 겹침 방지: `deploy-to-oci.yml` workflow `concurrency: deploy-prod-nest`, `cancel-in-progress: false`
+- [x] monitor 90s → 65s: 소스 원문 확인 — moby `executor/container/controller.go` Start는 healthy까지 막힘, 이후 unhealthy면 Shutdown이 서비스 바인딩 해제 → gossip 수렴 2s → stop(grace 기본 10s). swarmkit `updater.go` `failureTriggersAction`은 RUNNING 전 실패는 언제든, RUNNING 뒤에는 그 시각부터 monitor 안의 종료(Completed 포함)를 센다 → 최악 45 + 2 + 10 = 57s. 처음 50s로 잡았다가 프론트 Opus 리뷰 지적(Shutdown 지연)으로 65s. 실패 이미지로 운영 실측은 하지 않음
+- [x] **restart_policy `on-failure` → `any`(결함 수정)**: unhealthy로 내려진 컨테이너는 graceful shutdown으로 exit 0 → Completed. swarmkit `restart.go` `shouldRestart`는 on-failure일 때 Completed를 재시작하지 않아 레플리카가 다음 배포까지 빠진다. healthcheck 10s 단축으로 DB 순단(약 30s) 한 번에 3레플리카가 모두 빠질 수 있었다
+- [x] `DockerfileBun` 삭제(미참조, `oven/bun:latest`, 사용자 결정) · README 테스트 기준선 재측정
+
 ## 다음 할 일
 
-- 후속: 백엔드 검증 시간(106s) 단축 검토 · `deploy-to-oci.yml` workflow concurrency · monitor 축소 실측(운영 작업, 사용자 결정)
+- 이 브랜치 배포 후 단계별 시간 기록 · 프론트 monitor 65s + restart 확인(next-bun-0c)
+- 후속(미착수): 테트리스 b1~b3 · cache-dance
+- 알려진 한계: Swarm은 실패 이벤트를 **읽는 시각** 기준으로 monitor를 판정한다. 마지막 태스크 기동을 기다리는 동안(`wg.Wait`) 이벤트를 읽지 않으므로, 태스크 하나의 기동이 30s를 넘게 느려지면 앞 태스크의 늦은 실패가 monitor 밖으로 밀릴 수 있다(실측 기동 약 11s라 현재는 해당 없음)
+- 필수 체크 지정(backend-audit-2026-10 Q3) 시 `verify`와 `e2e`를 **둘 다** 넣는다
 
 ## 리뷰 (백엔드, node-runtime 브랜치와 함께)
 
@@ -71,5 +82,7 @@
 | 1 | Opus 서브에이전트 | 0 (PLAUSIBLE 2 · 문서 1) | build-push-action v6의 빌드 기록 artifact에 레지스트리 주소가 남을 수 있음(공개 레포) → `DOCKER_BUILD_SUMMARY`·`DOCKER_BUILD_RECORD_UPLOAD` false · healthcheck 주석의 판정 시간 수식 정정 · DB 순단 재시작은 사용자가 택한 트레이드오프라 유지 |
 | 2 | review-flow | 0 | — |
 | 2 | Opus 서브에이전트 | 0 | 두 env가 v6에서 유효함을 액션 소스(`src/main.ts:267-283`)로 확인 |
+| 후속 2차 | review-flow(메인, 원문 대조) | 0 | monitor 50s → 65s·restart any는 프론트 Opus 지적을 메인이 moby·swarmkit 원문으로 확인해 반영 |
+| 후속 2차 | Opus 서브에이전트 | 0 (PLAUSIBLE 2, 낮음) | 이벤트 읽는 시각 기준 판정 한계 · 필수 체크에 e2e 포함 — 위 다음 할 일에 기록 |
 
 - 후속(기존 문제, 이번 회귀 아님): `deploy-to-oci.yml`에 workflow 단위 concurrency가 없어 main에 연속 push하면 배포가 겹칠 수 있음
