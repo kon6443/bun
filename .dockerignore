@@ -1,6 +1,17 @@
 
 node_modules/
 
-# local env filesß
+# local env files
 .env
 .env.*
+
+# 이미지에 들어가지 않는 것 — 빌드 컨텍스트 전송량만 늘린다 (Dockerfile은 package.json·lock·tsconfig*·src만 COPY)
+.git/
+.github/
+.claude/
+.pnpm-store/
+docs/
+test/
+coverage/
+dist/
+infra/
