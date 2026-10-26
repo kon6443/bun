@@ -18,8 +18,11 @@ services:
       - /home/ubuntu/desktop/deploy/sys/shared:/app/shared
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3500/api/v1/health-check"]
-      interval: 30s
-      timeout: 10s
+      # 롤백 판정이 작동하려면 unhealthy 판정 시간이 update_config.monitor(90s)보다 짧아야 한다. 값을 바꾸면 monitor도 같이 맞춘다.
+      # healthy 전 실패는 업데이트 실패로 바로 잡히고, monitor는 healthy 뒤 다시 죽는 경우(최대 retries × (interval + timeout) = 45s)를 본다.
+      # monitor를 태스크 시작부터 세는 경우의 최악(start_period 포함 85s)까지 덮도록 90s로 둔다 (docs/tasks/ci-deploy-speed-2026-10)
+      interval: 10s
+      timeout: 5s
       retries: 3
       start_period: 40s
     deploy:
@@ -31,7 +34,7 @@ services:
         parallelism: 1
         order: start-first
         failure_action: rollback
-        monitor: 60s   # 헬스체크 간격(30s)보다 길게 — 뜬 직후 곧 죽는 태스크도 롤백 판정에 잡는다
+        monitor: 90s   # healthcheck 판정 시간보다 길게(위 healthcheck 주석) — 헬스체크 실패도 롤백으로 잡는다
         max_failure_ratio: 0
       rollback_config:
         parallelism: 1

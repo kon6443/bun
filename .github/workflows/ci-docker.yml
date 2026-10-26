@@ -2,7 +2,7 @@ name: CI Docker build
 
 # 컨테이너 빌드 검증 — 로컬 빌드는 레포 전체를 입력으로 써서 Dockerfile COPY 누락을 못 잡는다
 # (docs/tasks/tasks-nestjs-improvements.md D36의 실사고). 이미지 입력이 바뀐 PR에서만,
-# 단일 아키텍처로 빌드만 하고 push하지 않는다.
+# 단일 아키텍처(arm64)로 빌드만 하고 push하지 않는다.
 on:
   pull_request:
     paths:
@@ -22,7 +22,8 @@ concurrency:
 
 jobs:
   docker-build:
-    runs-on: ubuntu-latest
+    # 운영(fs-01, ARM64)과 같은 아키텍처로 검증하고, 배포 빌드(deploy-to-oci.yml)와 캐시 scope를 공유한다
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -35,8 +36,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: false
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max
