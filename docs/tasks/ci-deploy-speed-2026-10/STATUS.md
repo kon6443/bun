@@ -7,7 +7,7 @@
 | 역할 | 세션 | 레포 | 브랜치 · worktree |
 |---|---|---|---|
 | 메인(백엔드) | bun 메인 세션 | bun | `ci-onam-deploy-speed` · `.claude/worktrees/deploy-speed` (origin/main 5b88320 기준) |
-| 프론트 | next-bun-0c | next-bun | 리뷰 결과 수신 후 결정 |
+| 프론트 | next-bun-0c | next-bun | `ci-onam-deploy-speed` (PR next-bun#386) |
 
 ## 기준선 (gh, 2026-10-26 main 배포)
 
@@ -18,7 +18,19 @@
 | converge 대기 | 93s | 87s |
 | 총 | 약 6.5분 | 약 5분 |
 
-원인: `prod_nest`는 fs-01(ARM64)에만 배치되는데 amd64까지 빌드했고, arm64는 QEMU로 에뮬레이션했으며, 캐시가 없었다.
+### 적용 후 (2026-10-26 첫 main 배포)
+
+| 단계 | 백엔드 run 40276022978 (bun#302) | 프론트 run 40276837488 (next-bun#388) |
+|---|---|---|
+| 검증 | 106s (build와 병렬) | verify 82s (Test 48s) · verify-sim 44s (병렬) |
+| 이미지 build·push | **50s** (ARM 네이티브, 캐시 없는 첫 빌드) | 92s (병렬, 크리티컬 패스) |
+| converge 대기 | 122s (monitor +30s) | 108s (monitor +20s) |
+| 총 | **244s (−153s, −38%)** | **233s (−72s, −24%)** |
+
+- 두 배포 모두 success(배포 스크립트가 서비스별 업데이트 상태를 확인), Actions artifact 0건
+- 백엔드 크리티컬 패스는 이제 검증(106s). 기준선 65s보다 길어진 원인은 미확정(러너 편차·테스트 증가 1673→1787 추정)
+
+원인(적용 전): `prod_nest`는 fs-01(ARM64)에만 배치되는데 amd64까지 빌드했고, arm64는 QEMU로 에뮬레이션했으며, 캐시가 없었다.
 
 ## 범위
 
@@ -30,10 +42,11 @@
 - [x] `docs/deploy.md` 낡은 정보 정정: prod_next 레플리카 10 → 4(스택 YAML 기준), Next 이미지 `oven/bun:1` → `node:24`, NestJS 멀티아치 → arm64
 - [x] healthcheck `interval` 30s→10s · `timeout` 10s→5s(헬스 엔드포인트의 terminus `pingCheck`가 기본 1s 타임아웃이고 `@SkipThrottle`) · `start_period` 40s·`retries` 3 유지 · `update_config.monitor` 60s→90s(unhealthy 판정 최악 시간 85s보다 길게). 사용자 결정(2026-10-26): 롤백이 작동하는 쪽을 택함, DB 순단 위험은 감수
 - 배경(이전 상태): 프론트 리뷰 지적: 지금 값이면 unhealthy 판정까지 걸리는 시간(start_period + interval×retries, 백엔드 40+30×3 = 130s)이 `monitor: 60s`보다 길어, `failure_action: rollback`이 healthcheck 실패를 잡지 못하고 기동 직후 크래시만 잡는다. interval을 줄이면 롤백도 작동하고 converge도 빨라지지만, 백엔드 healthcheck는 DB ping이라 DB가 잠깐 끊겨도 태스크 재시작이 빨라진다(지금은 약 90s, 10s 간격이면 약 30s)
-- [ ] 커밋·PR — 사용자 지시(2026-10-26 "리뷰 완료됐으면 배포 가능한 것 진행")로 진행 중
+- [x] 커밋·PR·배포 — bun#301 → release bun#302 (사용자 지시 2026-10-26)
 
-### 프론트 (next-bun-0c 리뷰 대기)
-- [ ] 리뷰 결과 → 추천안 적용 → 사용자 보고
+### 프론트 (next-bun-0c)
+- [x] build·장기 테스트(verify-sim)를 verify와 병렬 · PR verify concurrency · healthcheck 10s/5s, start_period 30s, monitor 80s · `.dockerignore`에 infra — next-bun#386 → release #388
+- 보류: cache-dance(서드파티 액션) · monitor 50s 축소(운영에서 실패 이미지로 롤백 시점 실측 뒤)
 
 ## 검증
 
@@ -48,8 +61,7 @@
 
 ## 다음 할 일
 
-- PR → develop → main 배포 → 첫 배포 단계별 시간·artifact 미생성·롤백 설정 확인 → 기준선 표에 추가
-- 프론트 `ci-onam-deploy-speed`는 next-bun-0c가 구현·리뷰 중
+- 후속: 백엔드 검증 시간(106s) 단축 검토 · `deploy-to-oci.yml` workflow concurrency · monitor 축소 실측(운영 작업, 사용자 결정)
 
 ## 리뷰 (백엔드, node-runtime 브랜치와 함께)
 
