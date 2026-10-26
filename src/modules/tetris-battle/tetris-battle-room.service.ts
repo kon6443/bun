@@ -218,7 +218,7 @@ export type MatchEventListener = (code: string, events: MatchEvents) => void;
 export interface SocketIdentity {
   socketId: string;
   userId: number | null;
-  /** 입장(create·join)에서만 — 게이트웨이가 계정 장착을 읽어 붙인다(클라이언트 페이로드에서 받지 않는다). 없으면 자리의 기존 값 유지 */
+  /** 입장(create·join)에서만 — 게이트웨이가 계정 장착을 읽어 붙인다(클라이언트 페이로드에서 받지 않는다). 조회 실패면 없음 → 새 자리는 default, 기존 자리는 유지 */
   skins?: TetrisBoardSkins;
   /** 빈도 제한·비밀번호 잠금용 IP (X-Forwarded-For 마지막 값 — 게이트웨이 clientIp) */
   ip: string;
@@ -697,8 +697,9 @@ export class TetrisBattleRoomService {
     const previous = player.socketId !== who.socketId ? player.socketId : null;
     player.socketId = who.socketId;
     player.tabId = client.tabId ?? null;
-    // 경기 중 설정을 바꿨으면 다음 입장·재연결 때 반영된다(D-002)
-    if (who.skins) player.skins = who.skins;
+    // 경기 중 장착을 바꿨으면 다음 입장·재연결 때 반영된다(D-003). 스킨은 자리 주인의 것이라 같은 계정일 때만 바꾼다 —
+    // 토큰 갈래는 자리 주인과 다른 계정(로그인한 게스트 자리·다른 계정 소켓)이 들어올 수 있다. 조회 실패면 who.skins가 없어 기존 값 유지
+    if (who.skins && who.userId === player.userId) player.skins = who.skins;
     player.heartbeat = client.heartbeat === true;
     player.connected = true;
     player.connectedAt = now;

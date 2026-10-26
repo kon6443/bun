@@ -207,7 +207,7 @@ describe('TetrisBattleGateway', () => {
       expect(service.joinRoom.mock.calls[0][1]).toEqual({ socketId: 'sock-a', userId: null, ip: '203.0.113.9', skins: DEFAULT_SKINS });
     });
 
-    it('입장 때 계정 장착 스킨을 붙인다 — 조회가 실패해도 기본 스킨으로 입장한다 (tetris-skins D-003)', async () => {
+    it('입장 때 계정 장착 스킨을 붙인다 — 조회가 실패하면 스킨 없이 입장한다(새 자리 default·기존 자리 유지는 서비스) (tetris-skins D-003)', async () => {
       service.joinRoom.mockImplementation(committing(entered));
       boardSkinsOf.mockResolvedValueOnce(NEON_SKINS);
       await gateway.handleJoinRoom(createClient({ authResolved: true, userId: 7 }), { code: CODE, playerName: '나' });
@@ -216,7 +216,8 @@ describe('TetrisBattleGateway', () => {
       boardSkinsOf.mockRejectedValueOnce(new Error('ORA-03113'));
       const ack = await gateway.handleJoinRoom(createClient({ authResolved: true, userId: 7 }), { code: CODE, playerName: '나' });
       expect(ack.ok).toBe(true);
-      expect(service.joinRoom.mock.calls[1][1]).toMatchObject({ userId: 7, skins: DEFAULT_SKINS });
+      expect(service.joinRoom.mock.calls[1][1]).toMatchObject({ userId: 7 });
+      expect(service.joinRoom.mock.calls[1][1]).not.toHaveProperty('skins');
     });
 
     it('IP는 X-Forwarded-For의 마지막 값(바로 앞 프록시)을 쓴다', async () => {

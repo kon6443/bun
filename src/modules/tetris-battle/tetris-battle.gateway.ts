@@ -57,7 +57,6 @@ import {
 import { TetrisBattleSocket, TetrisBattleWsGuard } from './tetris-battle-ws.guard';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
 import { UserSkinService } from '../users/user-skin.service';
-import { defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 
 const ok = <T>(data: T): TetrisBattleAck<T> => ({ ok: true, data });
 
@@ -473,15 +472,17 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
 
   /**
    * 입장(create·join)용 신원 — 보드 주인 스킨(계정 장착, 보드 슬롯)을 붙인다(tetris-skins D-003). 클라이언트가 보낸 값은 받지 않는다.
-   * 설정 조회가 실패해도 입장은 막지 않는다 — 기본 스킨으로 들어가고 다음 입장 때 다시 읽는다
+   * 조회가 실패해도 입장은 막지 않는다 — 새 자리는 기본 스킨, 기존 자리는 이전 스킨으로 들어가고 다음 입장 때 다시 읽는다
    */
   private async enterIdentity(client: TetrisBattleSocket): Promise<SocketIdentity> {
     const who = this.identity(client);
-    const skins = await this.userSkinService.boardSkinsOf(who.userId).catch((error: unknown) => {
-      this.logger.warn(`enterIdentity(): 스킨 조회 실패 — 기본 스킨으로 입장 (${error instanceof Error ? error.message : String(error)})`);
-      return toBoardSkins(defaultSkinSet());
-    });
-    return { ...who, skins };
+    try {
+      return { ...who, skins: await this.userSkinService.boardSkinsOf(who.userId) };
+    } catch (error) {
+      // skins 없이 넘긴다 — 새 자리는 default, 재입장은 이전 값을 유지한다(기본값으로 덮지 않게)
+      this.logger.warn(`enterIdentity(): 스킨 조회 실패 — 스킨 없이 입장 (${error instanceof Error ? error.message : String(error)})`);
+      return who;
+    }
   }
 
   /**
