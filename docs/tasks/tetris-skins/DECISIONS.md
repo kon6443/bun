@@ -20,3 +20,15 @@
   - 대전 중 설정 변경은 다음 입장·재연결 때 반영(실시간 갱신은 하지 않는다)
   - userId: 싱글 제출이 익명(토큰 없음·거절 후 재시도)이면 세션 발급 때 보관한 userId로 저장(대전 결과의 입장 userId 폴백과 같은 규칙). 프론트는 로그인 사용자의 401을 침묵 익명화하지 않고 보관 + 재로그인 안내
 - **근거**: WORKLOG 2026-10-26 조사 — 세션 userId 보관(`game-session.service.ts:62`), 대전 폴백(`tetris-battle-result.service.ts:409-410`), 프론트 401 익명 재시도(`gameService.ts:111-118`)
+
+## D-003 — 스킨을 슬롯 4개로 나누고 획득형 아이템으로 확장 가능하게 (2026-10-26, 사용자) — supersedes D-001의 "스킨 4종 단일 선택"·D-002의 저장 구조·계약
+- **맥락**: 사용자 — "블럭 스킨, 이펙트 스킨, 배경 스킨, 판배경 스킨 등 구분해서 다양하게, 업적이나 출첵으로 추후 얻을 수 있게 할 거라 나눠서 적용 가능하도록"
+- **결정**:
+  - **슬롯 4개**(API 키 / DB SLOT): 블록 `block`/`TETRIS_BLOCK`(블록 7종·가비지·고스트·HOLD/NEXT 미리보기) · 이펙트 `effect`/`TETRIS_EFFECT`(줄 삭제·파티클·트레일·하드드롭 연출) · 판 배경 `board`/`TETRIS_BOARD`(보드 배경·격자·레벨 틴트·테두리 네온) · 화면 배경 `background`/`TETRIS_BACKGROUND`(게임 화면 바탕 — GameSurface). 슬롯마다 따로 고른다(섞어 쓰기 가능)
+  - 처음 아이템: 슬롯마다 `default`(현재 UI)·`gameboy`·`neon`·`high-contrast` — 모두 무료(획득 조건 없음)
+  - **카탈로그는 서버가 SSOT**(아이템 id·슬롯·획득 방식 `default|free`, 이후 `achievement|attendance` 추가). 프론트는 id별 시각 자료만 가진다. 서버가 장착 가능 여부를 판정한다(획득 안 한 아이템 장착 거부)
+  - 저장: `USER_SKIN_EQUIPS`(USER_ID, SLOT, SKIN_ID, UPDATED_AT, PK (USER_ID, SLOT)) — 슬롯·아이템이 늘어도 마이그레이션 없이 행만 는다. 획득 기록 테이블(`USER_SKIN_ITEMS`)은 업적·출석 기능 때 추가(지금은 무료 아이템뿐이라 만들지 않는다)
+  - API: `GET /users/me/skins` → `{ equipped: { block, effect, board, background }, catalog: { block: [{ id, owned, unlock }], … } }` · `PUT /users/me/skins` 부분 수정 `{ block?, effect?, board?, background? }`(카탈로그 밖 422, 미보유 403 `SKIN_NOT_OWNED`)
+  - 보드 주인 규칙(D-001 유지): 대전 `RoomPlayer.skins` · 싱글 리플레이 `skins` · 대전 경기 조회 `players[].skins` = `{ block, effect, board }`(보드에 그려지는 슬롯만). **화면 배경은 항상 보는 사람 자신의 것**(남의 화면 바탕을 바꾸지 않는다)
+  - 게스트: 모두 `default`, 장착 UI는 로그인 유도(D-001 유지)
+- **영향**: D-002의 `USER_PREFERENCES`·`/users/me/preferences`·`skin` 단일 필드는 쓰지 않는다(파일만 쓰고 실행 전이라 교체). userId 폴백(D-002)은 그대로
