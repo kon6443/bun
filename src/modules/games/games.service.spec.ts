@@ -13,6 +13,7 @@ import { VerifyQueueFullError, VerifyTimeoutError, VerifyUnavailableError } from
 import { GameScore } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
+import { User } from '../../entities/User';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { SubmitGameScoreDto } from './games.dto';
 import { UserSkinService } from '../users/user-skin.service';
@@ -32,6 +33,7 @@ describe('GamesService', () => {
   let gameScoreRepository: MockRepository<GameScore>;
   let gameReplayRepository: MockRepository<GameReplay>;
   let viewStatRepository: MockRepository<GameReplayViewStat>;
+  let userRepository: MockRepository<User>;
   let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
   let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
   let userSkinService: { boardSkinsOf: jest.Mock; collection: jest.Mock };
@@ -79,6 +81,8 @@ describe('GamesService', () => {
     gameScoreRepository = createMockRepository<GameScore>();
     gameReplayRepository = createMockRepository<GameReplay>();
     viewStatRepository = createMockRepository<GameReplayViewStat>();
+    userRepository = createMockRepository<User>();
+    userRepository.find.mockResolvedValue([]);
     // 집계 없음 — 누적 조회수·시청시간 0
     viewStatRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getRawMany: [] }) as never);
     // 입상자 없음 — 배지 null
@@ -128,6 +132,7 @@ describe('GamesService', () => {
         { provide: getRepositoryToken(GameScore), useValue: gameScoreRepository },
         { provide: getRepositoryToken(GameReplay), useValue: gameReplayRepository },
         { provide: getRepositoryToken(GameReplayViewStat), useValue: viewStatRepository },
+        { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: GameViewService, useValue: gameViewService },
         { provide: GameHallOfFameService, useValue: hallOfFameService },
         { provide: UserSkinService, useValue: userSkinService },
@@ -686,7 +691,7 @@ describe('GamesService', () => {
     const row = (overrides: Partial<GameScore>) =>
       ({ scoreId: 1, boardKey: 'default', playerName: 'a', score: 100, detail: '{"lines":1}', durationMs: 1000, crtdAt: new Date(NOW), ...overrides }) as GameScore;
 
-    it('숨김 제외·점수 내림차순·동점은 SCORE_ID 오름차순, 순위는 1부터 — IP 해시·USER_ID는 조회하지 않아야 함', async () => {
+    it('숨김 제외·점수 내림차순·동점은 SCORE_ID 오름차순, 순위는 1부터 — IP 해시는 조회하지 않고 USER_ID는 응답에 싣지 않아야 함', async () => {
       gameScoreRepository.find.mockResolvedValue([row({ scoreId: 5, score: 900 }), row({ scoreId: 2, score: 500 })]);
 
       const result = await service.getRankings('tetris', {});
@@ -695,7 +700,9 @@ describe('GamesService', () => {
       expect(options.where).toEqual({ gameType: 'TETRIS', boardKey: 'default', isHidden: 0 });
       expect(options.order).toEqual({ score: 'DESC', scoreId: 'ASC' });
       expect(options.select).not.toHaveProperty('ipHash');
-      expect(options.select).not.toHaveProperty('userId');
+      // USER_ID는 표시 이름(계정 이름)을 정하는 데만 읽는다
+      expect(options.select).toHaveProperty('userId', true);
+      expect(result.items[0]).not.toHaveProperty('userId');
       expect(result.items.map((i) => [i.rank, i.scoreId])).toEqual([[1, 5], [2, 2]]);
       expect(result.items[0].detail).toEqual({ lines: 1 });
       expect(result.periodStart).toBeNull();
@@ -731,6 +738,146 @@ describe('GamesService', () => {
     });
   });
 
+  describe('표시 이름 — 로그인 기록은 현재 계정 이름', () => {
+    const row = (overrides: Partial<GameScore>) =>
+      ({ scoreId: 1, boardKey: 'default', playerName: 'a', userId: null, score: 100, detail: '{}', durationMs: 1000, crtdAt: new Date(NOW), ...overrides }) as GameScore;
+
+    it('USER_ID가 있는 기록은 USERS.USER_NAME으로, 없는 기록은 저장된 이름으로 — 사용자는 한 번에 모아 조회한다', async () => {
+      gameScoreRepository.find.mockResolvedValue([
+        row({ scoreId: 1, score: 900, playerName: '옛이름', userId: 7 }),
+        row({ scoreId: 2, score: 800, playerName: '손님', userId: null }),
+        row({ scoreId: 3, score: 700, playerName: '옛이름2', userId: 7 }),
+      ]);
+      userRepository.find.mockResolvedValue([{ userId: 7, userName: '새이름' } as User]);
+
+      const result = await service.getRankings('tetris', {});
+
+      expect(result.items.map((i) => i.playerName)).toEqual(['새이름', '손님', '새이름']);
+      expect(userRepository.find).toHaveBeenCalledTimes(1);
+      const [options] = userRepository.find.mock.calls[0] as [Record<string, unknown>];
+      expect(options.select).toEqual({ userId: true, userName: true });
+      expect((options.where as { userId: FindOperator<number[]> }).userId.value).toEqual([7]);
+    });
+
+    it('계정 이름이 비어 있으면 저장된 이름을 그대로 쓴다', async () => {
+      gameScoreRepository.find.mockResolvedValue([row({ playerName: '저장이름', userId: 7 })]);
+      userRepository.find.mockResolvedValue([{ userId: 7, userName: null } as User]);
+
+      const result = await service.getRankings('tetris', {});
+
+      expect(result.items[0].playerName).toBe('저장이름');
+    });
+
+    it.each([
+      ['금칙어(사칭)', '운영자'],
+      ['길이 초과(13자)', '가나다라마바사아자차카타파'],
+      ['허용하지 않는 문자', '이름!'],
+    ])('계정 이름이 랭킹 이름 정책을 통과하지 못하면(%s) 저장된 이름을 쓴다', async (_case, userName) => {
+      gameScoreRepository.find.mockResolvedValue([row({ playerName: '저장이름', userId: 7 })]);
+      userRepository.find.mockResolvedValue([{ userId: 7, userName } as User]);
+
+      const result = await service.getRankings('tetris', {});
+
+      expect(result.items[0].playerName).toBe('저장이름');
+    });
+
+    it('계정 이름은 제출 때와 같이 정규화한다 — 앞뒤 공백 제거·연속 공백 1개', async () => {
+      gameScoreRepository.find.mockResolvedValue([row({ playerName: '저장이름', userId: 7 })]);
+      userRepository.find.mockResolvedValue([{ userId: 7, userName: '  새   이름 ' } as User]);
+
+      const result = await service.getRankings('tetris', {});
+
+      expect(result.items[0].playerName).toBe('새 이름');
+    });
+
+    it('로그인 기록이 없으면 사용자를 조회하지 않는다', async () => {
+      gameScoreRepository.find.mockResolvedValue([row({ userId: null })]);
+
+      await service.getRankings('tetris', {});
+
+      expect(userRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('명예의 전당도 캐시된 입상 기록 위에 현재 계정 이름을 입힌다', async () => {
+      hallOfFameService.getPodiums.mockResolvedValue([
+        { period: 'weekly', startsAt: new Date(NOW), endsAt: new Date(NOW), boardKey: 'default', rows: [row({ scoreId: 9, playerName: '옛이름', userId: 7 })] },
+      ]);
+      userRepository.find.mockResolvedValue([{ userId: 7, userName: '새이름' } as User]);
+
+      const result = await service.getHallOfFame('tetris');
+
+      expect(result.periods[0].podium[0].playerName).toBe('새이름');
+      expect(result.periods[0].podium[0]).not.toHaveProperty('userId');
+    });
+  });
+
+  describe('내 기록 — isMine·getMyBest', () => {
+    const row = (overrides: Partial<GameScore>) =>
+      ({ scoreId: 1, boardKey: 'default', playerName: 'a', userId: null, score: 100, detail: '{}', durationMs: 1000, crtdAt: new Date(NOW), ...overrides }) as GameScore;
+
+    it('요청자의 로그인 기록만 isMine true — 다른 사용자·비로그인 기록은 false', async () => {
+      gameScoreRepository.find.mockResolvedValue([row({ scoreId: 1, userId: 7 }), row({ scoreId: 2, userId: 8 }), row({ scoreId: 3, userId: null })]);
+
+      const result = await service.getRankings('tetris', {}, 7);
+
+      expect(result.items.map((i) => [i.scoreId, i.isMine])).toEqual([[1, true], [2, false], [3, false]]);
+    });
+
+    it('비로그인 조회는 모두 false', async () => {
+      gameScoreRepository.find.mockResolvedValue([row({ scoreId: 1, userId: 7 })]);
+
+      const result = await service.getRankings('tetris', {});
+
+      expect(result.items[0].isMine).toBe(false);
+    });
+
+    it('명예의 전당·기록 단건도 요청자 기준으로 isMine을 채운다', async () => {
+      hallOfFameService.getPodiums.mockResolvedValue([
+        { period: 'weekly', startsAt: new Date(NOW), endsAt: new Date(NOW), boardKey: 'default', rows: [row({ scoreId: 9, userId: 7 })] },
+      ]);
+      gameScoreRepository.findOne.mockResolvedValue(row({ scoreId: 41, userId: 7 }));
+      gameScoreRepository.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getCount: 0 }) as never);
+
+      const hall = await service.getHallOfFame('tetris', 7);
+      const score = await service.getScore('tetris', 41, 7);
+
+      expect(hall.periods[0].podium[0].isMine).toBe(true);
+      expect(score.isMine).toBe(true);
+    });
+
+    it('getMyBest — 요청자의 숨기지 않은 기록 중 최고점, 동점은 먼저 저장된 기록', async () => {
+      gameScoreRepository.findOne.mockResolvedValue({ scoreId: 128, score: 281542, boardKey: 'default' } as GameScore);
+
+      const result = await service.getMyBest('tetris', 7);
+
+      expect(result).toEqual({ score: 281542, scoreId: 128, boardKey: 'default' });
+      const [options] = gameScoreRepository.findOne.mock.calls[0] as [Record<string, unknown>];
+      expect(options.where).toEqual({ gameType: 'TETRIS', userId: 7, isHidden: 0 });
+      expect(options.order).toEqual({ score: 'DESC', scoreId: 'ASC' });
+    });
+
+    it('getMyBest — board를 주면 그 보드만', async () => {
+      gameScoreRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getMyBest('tetris', 7, 'daily-2026-10-25');
+
+      expect(result).toEqual({ score: null, scoreId: null, boardKey: null });
+      const [options] = gameScoreRepository.findOne.mock.calls[0] as [Record<string, unknown>];
+      expect(options.where).toEqual({ gameType: 'TETRIS', userId: 7, isHidden: 0, boardKey: 'daily-2026-10-25' });
+    });
+
+    it('getMyBest — 비로그인은 조회하지 않고 null', async () => {
+      const result = await service.getMyBest('tetris', null);
+
+      expect(result).toEqual({ score: null, scoreId: null, boardKey: null });
+      expect(gameScoreRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('getMyBest — 모르는 게임은 404 GAME_NOT_FOUND', async () => {
+      await expect(service.getMyBest('chess', 7)).rejects.toMatchObject({ code: 'GAME_NOT_FOUND', status: 404 });
+    });
+  });
+
   describe('getScore (기록 요약 — 공유 미리보기용)', () => {
     it('숨기지 않은 기록을 전체 순위와 함께 돌려주고, 민감 필드·리플레이는 조회하지 않아야 함', async () => {
       gameScoreRepository.findOne.mockResolvedValue({ scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: '{"lines":3}', durationMs: 1000, crtdAt: new Date(NOW) } as GameScore);
@@ -742,11 +889,11 @@ describe('GamesService', () => {
       const [options] = gameScoreRepository.findOne.mock.calls[0] as [{ where: unknown; select: Record<string, boolean> }];
       expect(options.where).toEqual({ scoreId: 41, gameType: 'TETRIS', isHidden: 0 });
       expect(options.select).not.toHaveProperty('ipHash');
-      expect(options.select).not.toHaveProperty('userId');
+      expect(options.select).toHaveProperty('userId', true);
       expect(gameReplayRepository.findOneBy).not.toHaveBeenCalled();
       expect(qb.andWhere).not.toHaveBeenCalledWith('s.crtdAt >= :periodStart', expect.anything());
       expect(qb.andWhere).toHaveBeenCalledWith('s.boardKey = :boardKey', { boardKey: 'default' });
-      expect(result).toEqual({ rank: 5, scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, createdAt: new Date(NOW) });
+      expect(result).toEqual({ rank: 5, scoreId: 41, boardKey: 'default', playerName: 'a', score: 900, detail: { lines: 3 }, durationMs: 1000, viewCount: 0, watchMs: 0, trophies: null, isMine: false, createdAt: new Date(NOW) });
     });
 
     it('없거나 숨긴 기록은 404 GAME_SCORE_NOT_FOUND', async () => {
