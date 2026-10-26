@@ -19,6 +19,13 @@ on:
 permissions:
   contents: read
 
+# 운영 배포는 한 번에 하나만 — main에 연달아 머지되면 앞 배포가 끝난 뒤 다음이 돈다.
+# 진행 중인 배포는 취소하지 않는다(스택 반영 중 끊기면 서비스가 반쯤 바뀐 채 남는다).
+# 대기 중이던 배포는 더 새 배포가 오면 GitHub가 대체한다 — 최신 커밋만 반영되면 충분하다.
+concurrency:
+  group: deploy-prod-nest
+  cancel-in-progress: false
+
 jobs:
   # 배포 전 검증 게이트 — 같은 SHA를 검증한 뒤에만 배포한다 (docs/tasks/backend-audit-2026-10 D-010)
   ci:
