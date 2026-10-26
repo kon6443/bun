@@ -45,8 +45,8 @@
 ## Docker
 
 ### 이미지
-- NestJS: `node:24-bookworm-slim`(Node 24 Active LTS) 기반 멀티 스테이지. arm64 native (ARM runner 빌드 — `prod_nest`는 ARM64 fs-01에만 배치)
-- Next.js: `node:24-bookworm-slim` 기반 standalone(`node server.js`, 2026-10-16 Bun → Node 전환). arm64 native (ARM runner 빌드)
+- NestJS: `node:24.22.1-bookworm-slim`(Node 24 Active LTS, 패치까지 고정 — 갱신은 dependabot docker PR) 기반 멀티 스테이지. arm64 native (ARM runner 빌드 — `prod_nest`는 ARM64 fs-01에만 배치)
+- Next.js: `node:24` 계열 기반 standalone(`node server.js`, 2026-10-16 Bun → Node 전환, 태그는 next-bun `Dockerfile`이 SSOT). arm64 native (ARM runner 빌드)
 - `ENV TZ=UTC` 명시 — 모든 날짜는 UTC로 저장/처리, 표시 단계에서만 KST 변환
 - Next.js 컨테이너는 `HOSTNAME=0.0.0.0` 환경변수로 모든 인터페이스 bind
 
