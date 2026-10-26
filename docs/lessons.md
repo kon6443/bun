@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-10-26 — 환경변수가 없으면 건너뛰는 E2E가 DI 회귀를 숨겼다
+
+- **실패 양상**: 게이트웨이 생성자에 의존성(UserSkinService)을 추가하고 `pnpm test:e2e`를 여러 번 통과시켰다. 그런데 실제 Redis 대전 방 E2E(`test/tetris-battle-room.redis.e2e-spec.ts`)는 `TETRIS_BATTLE_REDIS_TEST_PORT`가 없으면 건너뛰는 스펙이라 매번 skip이었고, 포트를 주고 돌리자 DI 해석 실패 3건이 나왔다(tetris-skins a79a74e).
+- **탐지 신호**: E2E 결과의 skip 수가 0이 아니다(이번엔 58) · 바꾼 클래스의 생성자를 직접 조립하는 스펙이 skip 대상 파일에 있다(`grep -l '<클래스명>' test/*redis*`).
+- **근본 원인**: "E2E 통과"를 skip을 뺀 통과로 읽었다. 조건부 스펙은 기본 실행에서 빠지므로, 의존성·생성자 변경은 그 스펙을 따로 돌려야 잡힌다.
+- **예방 규칙**: 생성자·모듈 의존성을 바꾸면 그 클래스를 쓰는 조건부 스펙까지 grep하고, 로컬 테스트 Redis(`bun-redis-test`, 6390)로 `TETRIS_BATTLE_REDIS_TEST_PORT=6390 pnpm test:e2e -- --testPathPatterns redis`를 함께 돌린다. 보고에는 skip 수와 그 이유를 쓴다.
+
 ## 2026-10-24 — 시각 컬럼을 PK에 넣은 DDL이 운영 실행에서 실패했다
 
 - **실패 양상**: 리플레이 조회 일별 집계 테이블의 PK를 `(SCORE_ID, BUCKET_START TIMESTAMP WITH TIME ZONE)`로 썼다. 담당자 실행에서 `ORA-02329`(TIMESTAMP WITH TIME ZONE은 PK·유니크 불가)로 실패했다. CREATE TABLE 한 문장이 통째로 거부돼 부분 적용은 없었다(`db:select`로 테이블 0·이력 0 확인). 키를 KST 날짜 문자열 `STAT_DATE VARCHAR2(10)`로 바꿨다(replay-views D-006).

@@ -87,3 +87,9 @@
 - 4종 비교 스크린샷에서 배경이 한눈에 구분됨. 실제 로그인 화면(375×667): 플레이 바탕 네온, 대전 preview 내 판이 장착(블록·고대비 판)으로 그려짐, 셀 301×389 유지
 - 블록이 gameboy로 바뀐 원인 확인: 백엔드 요청 로그상 12:23:33·12:23:36·12:24:14(KST) PUT 3건은 UA Chrome/155(검증 창은 Chrome for Testing 149, 스크립트는 그 시각 PUT 없음) → 사용자 브라우저의 수동 장착, 재전송 버그 아님
 - 후속 후보(범위 밖): 리플레이 KeyOverlay가 판 바닥 줄 위에 겹침(기존 동작, ReplayPlayer.tsx:407·509-523)
+
+## 2026-10-26 — 대전 리플레이 당시 스킨 (D-006)
+- fbeaf54: 매치 시작 때 자리 스킨 → Redis `p:{pid}:skins` → 저장 시 `TETRIS_BATTLE_PLAYERS.BOARD_SKINS`(JSON) → 경기 조회는 저장값(없음·깨짐 = default). 결과 서비스의 UserSkinService 의존 제거. 마이그레이션 `1792985407425-AddTetrisBattlePlayersBoardSkins`(컬럼 VARCHAR2(400) NULL + CHECK IS JSON — `pnpm db:select`로 IS JSON 조건 지원 확인)
+- a79a74e: 실제 Redis 방 E2E에 스킨 조회 대역 — Redis 포트 없으면 skip이라 5940670 이후 DI 실패가 숨어 있었다(lessons 2026-10-26)
+- 검증: ci:core 1783 · lint 경고 6 · E2E 277 pass / 58 skip · Redis E2E(6390) 56 pass / 2 skip
+- 싱글 리플레이는 아직 "주인의 현재 장착"(D-003) — 같은 규칙 적용 여부 사용자 확인 대기
