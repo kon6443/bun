@@ -27,6 +27,17 @@
 | converge 대기 | 122s (monitor +30s) | 108s (monitor +20s) |
 | 총 | **244s (−153s, −38%)** | **233s (−72s, −24%)** |
 
+### 후속 2차 적용 후 (2026-10-26, bun#305 run 40281411525 · next-bun#390 run 40281748904)
+
+| 단계 | 백엔드 | 프론트 |
+|---|---|---|
+| 검증 | verify 89s(lint·typecheck·test·build 71s) · e2e 30s 병렬 | verify 84s · verify-sim 38s |
+| 이미지 build·push | 84s(빌드 50s) | 110s(빌드 91s) |
+| converge 대기 | **97s** (122s → monitor 65s) | **93s** (108s → monitor 65s) |
+| 총 | **199s** (최초 397s 대비 −50%) | **220s** (최초 305s 대비 −28%) |
+
+- 결정 기록: restart_policy `on-failure` → `any`(사용자 지시 "가능하면 진행" 범위의 결함 수정, 근거 swarmkit `restart.go` shouldRestart · moby controller Wait exit 0 → Completed). 백·프 동일 적용(bun#304, next-bun#389)
+
 - 두 배포 모두 success(배포 스크립트가 서비스별 업데이트 상태를 확인), Actions artifact 0건
 - 백엔드 크리티컬 패스는 이제 검증(106s). 기준선 65s보다 길어진 원인은 미확정(러너 편차·테스트 증가 1673→1787 추정)
 
@@ -69,7 +80,7 @@
 
 ## 다음 할 일
 
-- 이 브랜치 배포 후 단계별 시간 기록 · 프론트 monitor 65s + restart 확인(next-bun-0c)
+- 완료(위 표). 남은 후속은 아래
 - 후속(미착수): 테트리스 b1~b3 · cache-dance
 - 알려진 한계: Swarm은 실패 이벤트를 **읽는 시각** 기준으로 monitor를 판정한다. 마지막 태스크 기동을 기다리는 동안(`wg.Wait`) 이벤트를 읽지 않으므로, 태스크 하나의 기동이 30s를 넘게 느려지면 앞 태스크의 늦은 실패가 monitor 밖으로 밀릴 수 있다(실측 기동 약 11s라 현재는 해당 없음)
 - 필수 체크 지정(backend-audit-2026-10 Q3) 시 `verify`와 `e2e`를 **둘 다** 넣는다
