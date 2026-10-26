@@ -629,6 +629,15 @@ describe('TetrisBattleRoomService', () => {
         T0 + 3,
       );
       expect(skinsOf(byGuest.room.players, 'p1')).toEqual(GAMEBOY);
+
+      // 그 게스트 소켓이 같은 연결로 토큰 없이 다시 들어와도(같은 소켓 갈래) A의 스킨을 덮지 않는다
+      const sameSocket = await service.joinRoom(
+        { code: room.room.code, playerName: '방장' },
+        { socketId: 'sock-g9', userId: null, ip: '10.0.0.9', skins: DEFAULT_SKINS },
+        T0 + 4,
+      );
+      expect(sameSocket.playerId).toBe('p1');
+      expect(skinsOf(sameSocket.room.players, 'p1')).toEqual(GAMEBOY);
     });
 
     it('같은 연결로 다시 입장해도 장착 변경을 반영한다', async () => {
