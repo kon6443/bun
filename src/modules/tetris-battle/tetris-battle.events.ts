@@ -153,6 +153,16 @@ export interface RoomSummary {
   status: RoomStatus;
 }
 
+/**
+ * 보드 슬롯 스킨 id(블록·이펙트·판 배경) — 아이템 목록은 서버 카탈로그(modules/users/skin-catalog.ts)가 SSOT라 여기서는 문자열이다.
+ * 프론트는 모르는 id를 default로 그린다. 화면 배경은 보는 사람 자신의 것이라 싣지 않는다 (tetris-skins D-003)
+ */
+export interface TetrisBattleBoardSkins {
+  block: string;
+  effect: string;
+  board: string;
+}
+
 /** 방 안에서 보이는 플레이어 — 토큰·소켓·userId는 내보내지 않는다 */
 export interface RoomPlayer {
   /** 방 내 고유 id (`p1`, `p2`, …) — 방 수명 동안 재사용하지 않는다 */
@@ -162,6 +172,8 @@ export interface RoomPlayer {
   /** false = 소켓이 끊겨 재연결 유예 중 */
   connected: boolean;
   isGuest: boolean;
+  /** 이 플레이어의 보드를 그릴 스킨 — 보는 사람과 무관하게 보드 주인의 장착(게스트 모두 default, tetris-skins D-001·D-003) */
+  skins: TetrisBattleBoardSkins;
 }
 
 /** 방 상태 — `roomState` 브로드캐스트와 create/join ack에 쓴다. players는 입장 순서 */

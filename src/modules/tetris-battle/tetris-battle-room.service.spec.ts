@@ -70,7 +70,7 @@ describe('TetrisBattleRoomService', () => {
         locked: false,
         hostId: 'p1',
         status: 'WAITING',
-        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false }],
+        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false, skins: { block: 'default', effect: 'default', board: 'default' } }],
       });
       expect(mock.zset.has(result.room.code)).toBe(true);
     });
@@ -583,6 +583,77 @@ describe('TetrisBattleRoomService', () => {
 
       await service.joinRoom({ code: room.room.code, playerName: '방장' }, A2, T0 + 2);
       expect(mock.readRoom(room.room.code)?.players[0].tabId).toBeNull();
+    });
+  });
+
+  describe('보드 주인 스킨 (tetris-skins D-003)', () => {
+    const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default' };
+    const GAMEBOY = { block: 'gameboy', effect: 'gameboy', board: 'gameboy' };
+    const NEON = { block: 'neon', effect: 'neon', board: 'neon' };
+    const skinsOf = (players: { playerId: string; skins: unknown }[], id: string) => players.find((p) => p.playerId === id)?.skins;
+
+    it('입장 신원의 스킨으로 자리를 만들고, 스킨이 없으면(조회 실패) default', async () => {
+      const room = await create({ ...A, skins: GAMEBOY });
+      const joined = await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      expect(skinsOf(joined.room.players, 'p1')).toEqual(GAMEBOY);
+      expect(skinsOf(joined.room.players, 'p2')).toEqual(DEFAULT_SKINS);
+    });
+
+    it('같은 계정의 재입장은 새 장착으로 바꾸고, 조회 실패(스킨 없음)면 이전 값을 유지한다', async () => {
+      const room = await create({ ...A, skins: GAMEBOY });
+      const again = await service.joinRoom({ code: room.room.code, playerName: '방장' }, { ...A, socketId: 'sock-a2', skins: NEON }, T0 + 1);
+      expect(skinsOf(again.room.players, 'p1')).toEqual(NEON);
+
+      const failed = await service.joinRoom({ code: room.room.code, playerName: '방장' }, { ...A, socketId: 'sock-a3' }, T0 + 2);
+      expect(skinsOf(failed.room.players, 'p1')).toEqual(NEON);
+    });
+
+    it('토큰 재입장이라도 자리 주인과 다른 계정이면 스킨을 바꾸지 않는다 — 게스트 자리에 로그인 소켓·남의 자리에 다른 계정', async () => {
+      const room = await create(A, {});
+      const guest = await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      // 게스트 자리(p2)를 로그인한 소켓(userId 99)이 토큰으로 넘겨받는다
+      const loggedIn = await service.joinRoom(
+        { code: room.room.code, playerName: '둘째', playerToken: guest.playerToken },
+        { socketId: 'sock-b9', userId: 99, ip: '10.0.0.2', skins: NEON },
+        T0 + 1,
+      );
+      expect(skinsOf(loggedIn.room.players, 'p2')).toEqual(DEFAULT_SKINS);
+      expect(loggedIn.room.players.find((p) => p.playerId === 'p2')?.isGuest).toBe(true);
+
+      // A의 자리(p1)를 게스트 소켓이 토큰으로 넘겨받는다 — A의 스킨(입장 때 default)을 게스트 값으로 덮지 않는다
+      // (같은 계정 재입장은 자리 토큰을 새로 준다 — 그 토큰으로 넘겨받는다)
+      const rejoined = await service.joinRoom({ code: room.room.code, playerName: '방장' }, { ...A, socketId: 'sock-a4', skins: GAMEBOY }, T0 + 2);
+      const byGuest = await service.joinRoom(
+        { code: room.room.code, playerName: '방장', playerToken: rejoined.playerToken },
+        { socketId: 'sock-g9', userId: null, ip: '10.0.0.9', skins: DEFAULT_SKINS },
+        T0 + 3,
+      );
+      expect(skinsOf(byGuest.room.players, 'p1')).toEqual(GAMEBOY);
+
+      // 그 게스트 소켓이 같은 연결로 토큰 없이 다시 들어와도(같은 소켓 갈래) A의 스킨을 덮지 않는다
+      const sameSocket = await service.joinRoom(
+        { code: room.room.code, playerName: '방장' },
+        { socketId: 'sock-g9', userId: null, ip: '10.0.0.9', skins: DEFAULT_SKINS },
+        T0 + 4,
+      );
+      expect(sameSocket.playerId).toBe('p1');
+      expect(skinsOf(sameSocket.room.players, 'p1')).toEqual(GAMEBOY);
+    });
+
+    it('같은 연결로 다시 입장해도 장착 변경을 반영한다', async () => {
+      const room = await create({ ...A, skins: GAMEBOY });
+      const again = await service.joinRoom({ code: room.room.code, playerName: '방장' }, { ...A, skins: NEON }, T0 + 1);
+      expect(again.playerId).toBe('p1');
+      expect(skinsOf(again.room.players, 'p1')).toEqual(NEON);
+    });
+
+    it('이 필드가 없던 시절 저장된 방의 자리는 default로 보인다', async () => {
+      const room = await create({ ...A, skins: GAMEBOY });
+      mock.patchRoom(room.room.code, (stored) => {
+        delete stored.players[0].skins;
+      });
+      const joined = await service.joinRoom({ code: room.room.code, playerName: '둘째' }, B, T0);
+      expect(skinsOf(joined.room.players, 'p1')).toEqual(DEFAULT_SKINS);
     });
   });
 

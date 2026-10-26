@@ -17,6 +17,7 @@ import {
   TetrisBattleServerEvents as S,
 } from '../src/modules/tetris-battle/tetris-battle.events';
 import { User } from '../src/entities/User';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
 import { createMockRepository } from '../src/common/__spec__/mock-repository';
 import { createWsApp, WsE2eApp, waitFor, expectNoEvent, emitWithAck } from './helpers/ws-e2e-app';
 
@@ -175,6 +176,8 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
           { provide: TetrisBattleRoomService, useValue: replicaA },
           { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
           { provide: ConfigService, useValue: { get: jest.fn(() => 'secret') } },
+          // 입장 때 보드 주인 스킨 조회(tetris-skins D-003) — 게스트 흐름이라 장착 없음(default)
+          { provide: UserSkinService, useValue: { boardSkinsOf: async () => ({ block: 'default', effect: 'default', board: 'default' }) } },
         ],
       });
     });

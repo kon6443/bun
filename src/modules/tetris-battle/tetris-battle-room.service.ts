@@ -55,6 +55,7 @@ import {
   RoomSummary,
   TetrisBattleEmoteId,
 } from './tetris-battle.events';
+import { type TetrisBoardSkins, defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
 
 
 /**
@@ -135,6 +136,8 @@ export interface StoredPlayer {
   userId: number | null;
   /** sha256(playerToken) hex */
   tokenHash: string;
+  /** 이 플레이어의 보드를 그릴 스킨(보드 슬롯) — 입장·자리 넘겨받기 때 계정 장착(게스트 default, tetris-skins D-003). 이 필드가 없던 시절에 저장된 방은 undefined */
+  skins?: TetrisBoardSkins;
   /** 지금 이 플레이어를 대표하는 소켓. 끊기면 null */
   socketId: string | null;
   /**
@@ -215,6 +218,8 @@ export type MatchEventListener = (code: string, events: MatchEvents) => void;
 export interface SocketIdentity {
   socketId: string;
   userId: number | null;
+  /** 입장(create·join)에서만 — 게이트웨이가 계정 장착을 읽어 붙인다(클라이언트 페이로드에서 받지 않는다). 조회 실패면 없음 → 새 자리는 default, 기존 자리는 유지 */
+  skins?: TetrisBoardSkins;
   /** 빈도 제한·비밀번호 잠금용 IP (X-Forwarded-For 마지막 값 — 게이트웨이 clientIp) */
   ip: string;
 }
@@ -634,6 +639,8 @@ export class TetrisBattleRoomService {
       const self = room.players.find((p) => p.socketId === who.socketId);
       if (self) {
         rotateToken(room, self);
+        // 같은 연결의 재입장도 장착 변경을 반영한다 — 토큰으로 남의 자리를 받은 소켓이면 주인이 달라 그대로 둔다
+        if (who.skins && who.userId === self.userId) self.skins = who.skins;
         return { result: this.enterResult(room, before, self.playerId, fresh.token, null) };
       }
 
@@ -692,6 +699,9 @@ export class TetrisBattleRoomService {
     const previous = player.socketId !== who.socketId ? player.socketId : null;
     player.socketId = who.socketId;
     player.tabId = client.tabId ?? null;
+    // 경기 중 장착을 바꿨으면 다음 입장·재연결 때 반영된다(D-003). 스킨은 자리 주인의 것이라 같은 계정일 때만 바꾼다 —
+    // 토큰 갈래는 자리 주인과 다른 계정(로그인한 게스트 자리·다른 계정 소켓)이 들어올 수 있다. 조회 실패면 who.skins가 없어 기존 값 유지
+    if (who.skins && who.userId === player.userId) player.skins = who.skins;
     player.heartbeat = client.heartbeat === true;
     player.connected = true;
     player.connectedAt = now;
@@ -825,7 +835,14 @@ export class TetrisBattleRoomService {
       startedAt: now,
       roomName: view.name,
       // 토큰 해시를 매치에 복사 — 경기 후 리플레이 제출 인증(P5)이 rematch·이탈 뒤에도 그 경기 기준으로 된다
-      players: view.players.map((p) => ({ playerId: p.playerId, name: p.name, userId: p.userId, tokenHash: p.tokenHash })),
+      // 보드 스킨은 시작 시점으로 고정 — 경기 중 장착을 바꿔도 이 경기 기록은 그대로(D-006)
+      players: view.players.map((p) => ({
+        playerId: p.playerId,
+        name: p.name,
+        userId: p.userId,
+        tokenHash: p.tokenHash,
+        skins: p.skins ?? toBoardSkins(defaultSkinSet()),
+      })),
     });
 
     try {
@@ -1617,6 +1634,7 @@ export class TetrisBattleRoomService {
       connected: true,
       userId: who.userId,
       tokenHash,
+      skins: who.skins ?? toBoardSkins(defaultSkinSet()),
       socketId: who.socketId,
       tabId: client.tabId ?? null,
       heartbeat: client.heartbeat === true,
@@ -1656,6 +1674,7 @@ export class TetrisBattleRoomService {
           ready: p.ready,
           connected: p.connected,
           isGuest: p.userId === null,
+          skins: p.skins ?? toBoardSkins(defaultSkinSet()),
         }),
       ),
     };

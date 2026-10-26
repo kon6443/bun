@@ -14,10 +14,12 @@ import { GameScore } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import { User } from '../../entities/User';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   // User: 라우트의 OptionalJwtAuthGuard(JwtAuthGuard 상속)가 사용자 조회에 쓴다
-  imports: [TypeOrmModule.forFeature([GameScore, GameReplay, GameReplayViewStat, User])],
+  // UsersModule: 리플레이 보드 주인 스킨(UserSkinService)
+  imports: [TypeOrmModule.forFeature([GameScore, GameReplay, GameReplayViewStat, User]), UsersModule],
   controllers: [GamesController],
   providers: [
     GamesService,

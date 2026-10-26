@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { verify, JwtPayload } from 'jsonwebtoken';
 import { AuthController } from '../src/modules/auth/auth.controller';
@@ -11,6 +11,8 @@ import { User } from '../src/entities/User';
 import { createUser } from '../src/entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
+import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 
 const JWT_SECRET = 'e2e-test-secret';
 const KAKAO_ID = '987654321';
@@ -51,7 +53,11 @@ describe('E2E 인증 (카카오 로그인)', () => {
       providers: [
         AuthService,
         UsersService,
+        UserSkinService,
         { provide: getRepositoryToken(User), useValue: userRepository },
+        { provide: getRepositoryToken(UserSkinEquip), useValue: createMockRepository<UserSkinEquip>() },
+        // UserSkinService 의존(이 스펙은 스킨 API를 부르지 않는다)
+        { provide: getDataSourceToken(), useValue: {} },
         {
           provide: ConfigService,
           useValue: { get: jest.fn((k: string) => (k === 'JWT_SECRET' ? JWT_SECRET : undefined)) },

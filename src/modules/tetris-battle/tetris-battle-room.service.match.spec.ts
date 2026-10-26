@@ -78,6 +78,7 @@ const snapshotOf = (matchId: string, players: Partial<MatchSnapshot['players'][n
     disconnectedAt: null,
     tokenHash: null,
     koClock: null,
+    skins: null,
     ...p,
   })),
 });
@@ -162,6 +163,20 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
         expect.objectContaining({ matchId: result.starting.matchId, code, players: expect.arrayContaining([expect.objectContaining({ playerId: 'p1', userId: 42 })]) }),
       );
       expect(mock.readRoom(code)?.match).toMatchObject({ matchId: result.starting.matchId, playerIds: ['p1', 'p2', 'p3'] });
+    });
+
+    it('참가자 보드 스킨을 시작 시점 값으로 매치에 고정한다 — 스킨 없는 옛 자리는 default (tetris-skins D-006)', async () => {
+      const { code } = await readyRoom([A, B]);
+      mock.patchRoom(code, (room) => {
+        room.players[0].skins = { block: 'neon', effect: 'neon', board: 'gameboy' };
+        delete room.players[1].skins;
+      });
+      await service.startMatch(code, A.socketId, T0);
+
+      expect(store.create.mock.calls[0][1].players.map((p: { playerId: string; skins: unknown }) => [p.playerId, p.skins])).toEqual([
+        ['p1', { block: 'neon', effect: 'neon', board: 'gameboy' }],
+        ['p2', { block: 'default', effect: 'default', board: 'default' }],
+      ]);
     });
 
     it.each([

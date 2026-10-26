@@ -40,10 +40,10 @@ const snapshot = (over: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
   players: [
     { playerId: 'p1', name: '우승자', userId: null, alive: true, seq: SIM.pieces, frame: 1, pieces: SIM.pieces, sent: 0, received: 0,
       maxCombo: 0, kos: 1, board: null, pending: 0, combo: -1, b2b: false, place: 1, frames: 1, koReason: null, disconnectedAt: null,
-      koClock: null, tokenHash: hash(TOKEN_P1) },
+      koClock: null, tokenHash: hash(TOKEN_P1), skins: null },
     { playerId: 'p2', name: '도전자', userId: null, alive: false, seq: 3, frame: 1, pieces: 3, sent: 0, received: 0,
       maxCombo: 0, kos: 0, board: null, pending: 0, combo: -1, b2b: false, place: 2, frames: 1, koReason: 'leave', disconnectedAt: null,
-      koClock: 1_000, tokenHash: hash(TOKEN_P2) },
+      koClock: 1_000, tokenHash: hash(TOKEN_P2), skins: null },
   ],
   ...over,
 });
@@ -268,8 +268,12 @@ describe('E2E 테트리스 대전 결과', () => {
         matchId: MATCH, roomName: '한판', playerCount: 2, startedAt: new Date('2026-10-22T00:00:00Z'), endedAt: new Date('2026-10-22T00:01:00Z'),
       } as TetrisBattleMatch);
       playerRepository.find.mockResolvedValueOnce([
-        { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED' },
+        { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED', userId: 7,
+          boardSkins: JSON.stringify({ block: 'gameboy', effect: 'default', board: 'default' }) },
+        // 스킨 기능 전 경기(NULL) → default
+        { playerId: 'p2', name: '게스트', place: 2, kos: 0, sent: 0, received: 4, pieces: 9, maxCombo: 0, frames: 900, koReason: 'topout', verdict: 'VERIFIED', userId: null, boardSkins: null },
       ] as TetrisBattlePlayer[]);
+      // 보드 스킨은 그 경기 당시 저장값 그대로(tetris-skins D-006) — 지금 장착을 읽지 않는다
 
       const res = await request(app.getHttpServer()).get(e2e.url(`/tetris-battle/matches/${MATCH}`)).expect(200);
 
@@ -284,7 +288,14 @@ describe('E2E 테트리스 대전 결과', () => {
           endedAt: '2026-10-22T00:01:00.000Z',
           disputed: false,
           players: [
-            { playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED' },
+            {
+              playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED',
+              skins: { block: 'gameboy', effect: 'default', board: 'default' },
+            },
+            {
+              playerId: 'p2', name: '게스트', place: 2, kos: 0, sent: 0, received: 4, pieces: 9, maxCombo: 0, frames: 900, koReason: 'topout', verdict: 'VERIFIED',
+              skins: { block: 'default', effect: 'default', board: 'default' },
+            },
           ],
         },
       });
