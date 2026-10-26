@@ -93,3 +93,9 @@
 - a79a74e: 실제 Redis 방 E2E에 스킨 조회 대역 — Redis 포트 없으면 skip이라 5940670 이후 DI 실패가 숨어 있었다(lessons 2026-10-26)
 - 검증: ci:core 1783 · lint 경고 6 · E2E 277 pass / 58 skip · Redis E2E(6390) 56 pass / 2 skip
 - 싱글 리플레이는 아직 "주인의 현재 장착"(D-003) — 같은 규칙 적용 여부 사용자 확인 대기
+
+## 2026-10-26 — 싱글 리플레이 당시 스킨 (D-007)
+- 커밋: 세션 발급 때 `sessionSkinsOf`(TETRIS·로그인만, 조회 실패 시 null) → 세션 `skins` → 등록 때 `GAME_REPLAYS.BOARD_SKINS` → 리플레이 조회는 `parseBoardSkins` 저장값(없음·깨짐 default). 소유자·장착 추가 조회 제거
+- 마이그레이션 `1792985826082-AddGameReplaysBoardSkins`(VARCHAR2(400) NULL + CHECK IS JSON) — D-006 파일과 별도(1파일 1목적), 둘 다 미실행
+- 테스트: 세션 스킨 보관·게스트 미보관·조회 실패 시 발급 유지 · 등록 시 저장 · 조회 저장값/NULL/깨짐 · E2E(지금 장착과 무관함 확인). 변이(조회를 default 고정·저장을 null 고정) 각각 실패 확인
+- 검증: ci:core 1787 · lint 경고 6 · E2E 277 pass / 58 skip · Redis E2E 56 pass / 2 skip
