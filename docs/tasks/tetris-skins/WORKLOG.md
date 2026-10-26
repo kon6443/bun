@@ -73,3 +73,11 @@
 - 받아들인 잔여 위험: 같은 계정 재로그인 직후 이전 세대 PUT이 늦게 저장되면 화면과 어긋날 수 있음(재로그인 때만, 주석)
 - 최종 게이트(fe30060): lint 0 · typecheck · test:run 1698. 프론트 로컬 커밋 18개(push 없음)
 - 통합 검증 준비: 백엔드 3500(tetris-skins) · 프론트 dev 3000(NEXT_PUBLIC_API=localhost:3500, 쿠키 도메인 비움) · Chrome for Testing 헤드풀(CDP 9333) — 사용자 카카오 로그인 대기. 운영 기록 curl 조회는 권한 검사에서 거부(로컬 서버도 운영 DB) → 브라우저로 대체
+
+## 2026-10-26 — 로그인 통합 검증 (사용자 카카오 로그인, 백 3500 + 프 dev 3000, Chrome for Testing CDP)
+- 장착 모달: 슬롯 4개 장착(block gameboy·effect neon·board high-contrast·background neon) → PUT 4회 200 · `GET /users/me/skins` 반영 · `pnpm db:select` USER_SKIN_EQUIPS 4행(USER_ID 1) · 새로고침 후 홈 요약 유지
+- 도감: 슬롯별 4/4, 배지(기본 제공·누구나 무료·✓ 보유·● 장착 중), 카드에서 네온 장착 → API block=neon, 이전 장착(게임보이) 배지 해제, 미보유 필터 "해당하는 스킨이 없어요"
+- 리플레이: 128(USER_ID 1) data.skins = {neon, neon, high-contrast}·userId 미노출, 화면에 네온 블록·고대비 판 / 86(익명) default
+- 싱글 플레이(375×667 모바일 에뮬): 네온 블록·고대비 판 반영
+- 보드 크기(헤드리스 모바일, 로그인 쿠키 복사): 375×667 싱글 375×381 · 대전 1명 301×389 · 3명 321×389 / 390×844 싱글 390×552 · 대전 390×463·390×503 — 프론트 실측과 일치, 가로 넘침 없음. (헤드풀 창에 CDP 모바일 에뮬을 덧씌운 측정은 레이아웃 폭이 맞지 않아 폐기)
+- 발견: ① 대전 preview(dev 전용)는 내 장착을 안 넘김 — 실매치(MatchScreen.tsx:91-92·135)는 useMySkins 사용(코드 기준, 실매치는 2계정 필요해 미실측) → preview도 연결 지시 ② 배경 neon·high-contrast가 default와 거의 구분 안 됨(값이 모두 L*≈1~6 근흑색) → 값 강화 지시 ③ 리플레이 KeyOverlay가 판 바닥 줄 위에 겹침 — 3e41409부터 있던 기존 동작, 범위 밖(후속 후보)
