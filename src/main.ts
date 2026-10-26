@@ -71,6 +71,9 @@ async function bootstrap() {
       credentials: true,
       // 503 GAME_VERIFY_BUSY의 재시도 대기(초) — 기본 노출 헤더가 아니라 교차 출처 브라우저가 읽으려면 명시해야 한다(docs/tasks/defense D-018)
       exposedHeaders: ['Retry-After'],
+      // preflight 결과를 브라우저가 10분 재사용한다 — 로그인 상태의 게임 조회는 Authorization 헤더 때문에 URL마다 OPTIONS가 붙는데,
+      // 값이 없으면 Chrome 기본 5초라 랭킹 탭을 오갈 때마다 왕복이 1번 더 든다(docs/tasks/score-ownership)
+      maxAge: 600,
     });
 
     // WebSocket Adapter 설정 - Redis Pub/Sub으로 멀티 레플리카 지원
