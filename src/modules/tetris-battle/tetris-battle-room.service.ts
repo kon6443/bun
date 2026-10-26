@@ -835,7 +835,14 @@ export class TetrisBattleRoomService {
       startedAt: now,
       roomName: view.name,
       // 토큰 해시를 매치에 복사 — 경기 후 리플레이 제출 인증(P5)이 rematch·이탈 뒤에도 그 경기 기준으로 된다
-      players: view.players.map((p) => ({ playerId: p.playerId, name: p.name, userId: p.userId, tokenHash: p.tokenHash })),
+      // 보드 스킨은 시작 시점으로 고정 — 경기 중 장착을 바꿔도 이 경기 기록은 그대로(D-006)
+      players: view.players.map((p) => ({
+        playerId: p.playerId,
+        name: p.name,
+        userId: p.userId,
+        tokenHash: p.tokenHash,
+        skins: p.skins ?? toBoardSkins(defaultSkinSet()),
+      })),
     });
 
     try {

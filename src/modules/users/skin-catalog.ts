@@ -63,3 +63,18 @@ export function defaultSkinSet(): TetrisSkinSet {
 export function toBoardSkins(set: TetrisSkinSet): TetrisBoardSkins {
   return { block: set.block, effect: set.effect, board: set.board };
 }
+
+/**
+ * 저장해 둔 보드 스킨(JSON 문자열) → 객체. 비었거나 형식이 다르면 null — 호출 쪽이 default로 본다.
+ * 아이템 id는 카탈로그와 대조하지 않는다: 당시 장착을 그대로 보여 주고, 모르는 id는 프론트가 default로 그린다
+ */
+export function parseBoardSkins(json: string | null | undefined): TetrisBoardSkins | null {
+  if (!json) return null;
+  try {
+    const value = JSON.parse(json) as Partial<Record<TetrisBoardSkinSlot, unknown>>;
+    const { block, effect, board } = value;
+    return typeof block === 'string' && typeof effect === 'string' && typeof board === 'string' ? { block, effect, board } : null;
+  } catch {
+    return null;
+  }
+}
