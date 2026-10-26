@@ -10,6 +10,7 @@ import {
 } from '@nestjs/throttler';
 import { JwtPayload, verify } from 'jsonwebtoken';
 import { extractHttpAccessToken } from '../utils/access-token.utils';
+import { ApiTooManyRequestsErrorResponseDto } from '../dto/api-error.dto';
 
 /**
  * 커스텀 ThrottlerGuard (APP_GUARD로 전역 등록)
@@ -46,6 +47,15 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
 
     return (req['ip'] as string) || 'unknown';
+  }
+
+  /**
+   * 한도 초과 — 라이브러리 기본(ThrottlerException, message "ThrottlerException: Too Many Requests")이 그대로 응답에 실려
+   * 화면에 영어 원문이 보였다(game-settings D-002). Swagger 명세와 같은 도메인 오류(한국어 message)를 던진다.
+   * Retry-After 등 헤더는 부모가 이 호출 전에 이미 붙였다
+   */
+  protected async throwThrottlingException(): Promise<void> {
+    throw new ApiTooManyRequestsErrorResponseDto();
   }
 
   /** 유효한 액세스 토큰의 sub(userId). 토큰이 없거나 서명·만료 검증에 실패하면 null */

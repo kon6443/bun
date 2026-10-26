@@ -45,7 +45,7 @@ export const ApiCommonValidationResponse = () =>
 /**
  * 429 Too Many Requests — 전역 ThrottlerGuard 발생 (D11)
  *
- * 응답 code는 HttpExceptionFilter의 statusCodeMap(429 → TOO_MANY_REQUESTS)이 결정.
+ * 전역 CustomThrottlerGuard가 ApiTooManyRequestsErrorResponseDto(code TOO_MANY_REQUESTS, 한국어 message)를 던진다.
  */
 export const ApiThrottledResponse = (description = '요청 횟수 초과') =>
   applyDecorators(

@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { Controller, Get, INestApplication } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -9,6 +9,7 @@ import cookieParser from 'cookie-parser';
 import { sign } from 'jsonwebtoken';
 import { CustomThrottlerGuard } from '../src/common/guards/custom-throttler.guard';
 import { RedisThrottlerStorage } from '../src/common/throttler/redis-throttler.storage';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 
 const SECRET = 'e2e-throttle-secret';
 const LIMIT = 2;
@@ -43,7 +44,8 @@ describe('E2E 스로틀 키 (사용자·IP 단위)', () => {
         }),
       ],
       controllers: [ProbeController],
-      providers: [{ provide: APP_GUARD, useClass: CustomThrottlerGuard }],
+      // 응답 본문 형식은 main과 같은 전역 필터로(429 본문 단정)
+      providers: [{ provide: APP_GUARD, useClass: CustomThrottlerGuard }, { provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
 
     const nestApp = moduleRef.createNestApplication<NestExpressApplication>();
@@ -64,6 +66,16 @@ describe('E2E 스로틀 키 (사용자·IP 단위)', () => {
     Object.entries(headers).forEach(([k, v]) => req.set(k, v));
     return req;
   };
+
+  it('한도 초과 응답은 명세대로 code TOO_MANY_REQUESTS + 한국어 message, Retry-After 헤더 유지 (game-settings D-002)', async () => {
+    const ip = { 'X-Forwarded-For': '203.0.113.30' };
+    for (let i = 0; i < LIMIT; i++) await hit(ip);
+    const res = await hit(ip);
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'TOO_MANY_REQUESTS', message: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' }));
+    expect(res.body).not.toHaveProperty('statusCode');
+    expect(res.headers['retry-after-short']).toBeDefined();
+  });
 
   it('같은 IP의 서로 다른 로그인 사용자는 한도를 나누지 않는다', async () => {
     const ip = { 'X-Forwarded-For': '203.0.113.10' };
