@@ -70,7 +70,7 @@ describe('TetrisBattleRoomService', () => {
         locked: false,
         hostId: 'p1',
         status: 'WAITING',
-        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false, skins: { block: 'default', effect: 'default', board: 'default' } }],
+        players: [{ playerId: 'p1', name: '방장', ready: false, connected: true, isGuest: false, skins: { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } } }],
       });
       expect(mock.zset.has(result.room.code)).toBe(true);
     });
@@ -587,9 +587,9 @@ describe('TetrisBattleRoomService', () => {
   });
 
   describe('보드 주인 스킨 (tetris-skins D-003)', () => {
-    const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default' };
-    const GAMEBOY = { block: 'gameboy', effect: 'gameboy', board: 'gameboy' };
-    const NEON = { block: 'neon', effect: 'neon', board: 'neon' };
+    const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } };
+    const GAMEBOY = { block: 'gameboy', effect: 'gameboy', board: 'gameboy', levels: { block: 3, effect: 1, board: 2 } };
+    const NEON = { block: 'neon', effect: 'neon', board: 'neon', levels: { block: 1, effect: 1, board: 1 } };
     const skinsOf = (players: { playerId: string; skins: unknown }[], id: string) => players.find((p) => p.playerId === id)?.skins;
 
     it('입장 신원의 스킨으로 자리를 만들고, 스킨이 없으면(조회 실패) default', async () => {

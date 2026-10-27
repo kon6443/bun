@@ -161,6 +161,8 @@ export interface TetrisBattleBoardSkins {
   block: string;
   effect: string;
   board: string;
+  /** 슬롯별 아이템 레벨 1~5 — 입장·자리 넘겨받기 때의 계정 레벨 (skin-levels D-002) */
+  levels: { block: number; effect: number; board: number };
 }
 
 /** 방 안에서 보이는 플레이어 — 토큰·소켓·userId는 내보내지 않는다 */

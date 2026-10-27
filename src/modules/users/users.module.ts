@@ -5,12 +5,15 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { User } from '../../entities/User';
 import { UserSkinEquip } from '../../entities/UserSkinEquip';
+import { UserSkinLevel } from '../../entities/UserSkinLevel';
+import { UserPointLedger } from '../../entities/UserPointLedger';
 import { UserSkinService } from './user-skin.service';
+import { UserPointService } from './user-point.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserSkinEquip]), ConfigModule],
+  imports: [TypeOrmModule.forFeature([User, UserSkinEquip, UserSkinLevel, UserPointLedger]), ConfigModule],
   controllers: [UsersController],
-  providers: [UsersService, UserSkinService],
-  exports: [UsersService, UserSkinService],
+  providers: [UsersService, UserSkinService, UserPointService],
+  exports: [UsersService, UserSkinService, UserPointService],
 })
 export class UsersModule {}
