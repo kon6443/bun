@@ -14,6 +14,7 @@ import {
   HEARTBEAT_MIN_INTERVAL_MS,
   LIVENESS_PROBE_TIMEOUT_MS,
   LOBBY_BROADCAST_DEBOUNCE_MS,
+  LOBBY_CHAT_ROOM,
   LOBBY_ROOM,
   PRESENCE_PING_INTERVAL_MS,
   playerChannel,
@@ -23,7 +24,9 @@ import { TetrisBattleError } from './tetris-battle.errors';
 import {
   EmptyAckData,
   EnterRoomAckData,
+  JoinLobbyChatAckData,
   KickedPayload,
+  LobbyChatAckData,
   ListRoomsAckData,
   LockAckData,
   RoomState,
@@ -40,6 +43,7 @@ import {
   JoinRoomDto,
   KickPlayerDto,
   ListRoomsDto,
+  LobbyChatDto,
   LockDto,
   RematchDto,
   RoomCodeDto,
@@ -56,6 +60,7 @@ import {
 } from './tetris-battle-room.service';
 import { TetrisBattleSocket, TetrisBattleWsGuard } from './tetris-battle-ws.guard';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
+import { TetrisLobbyChatService } from './tetris-lobby-chat.service';
 import { UserSkinService } from '../users/user-skin.service';
 
 const ok = <T>(data: T): TetrisBattleAck<T> => ({ ok: true, data });
@@ -105,6 +110,7 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
   constructor(
     private readonly roomService: TetrisBattleRoomService,
     private readonly userSkinService: UserSkinService,
+    private readonly lobbyChatService: TetrisLobbyChatService,
   ) {}
 
   /** 서비스에 생존 확인 함수·변경 알림을 주입한다(서비스가 socket.io 서버에 직접 의존하지 않게) */
@@ -407,6 +413,87 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
     const payload = await this.roomService.prepareEmote(dto.code, client.id, dto.emoteId);
     this.server.to(roomChannel(dto.code)).emit(TetrisBattleServerEvents.EMOTE_RECEIVED, payload);
     return ok(EMPTY);
+  }
+
+  // ==================== 로비 전체 채팅 (tetris-chat D-001) ====================
+
+  /**
+   * 구독 — 보낸 사람 표시를 정해 소켓에 두고(메시지마다 DB를 읽지 않게) 채널에 넣은 뒤 최근 대화·참여 수를 돌려준다.
+   * 누구나 들어올 수 있다(게스트 포함). 재연결하면 클라이언트가 다시 보낸다
+   */
+  @UseGuards(TetrisBattleWsGuard)
+  @SubscribeMessage(TetrisBattleClientEvents.JOIN_LOBBY_CHAT)
+  handleJoinLobbyChat(@ConnectedSocket() client: TetrisBattleSocket): Promise<TetrisBattleAck<JoinLobbyChatAckData>> {
+    // 같은 소켓의 join·leave·보내기는 도착 순서대로 — 겹치면 클라이언트는 나갔는데 서버는 구독 상태로 남는다(방 입장과 같은 큐)
+    return this.serialize(client, () => this.joinLobbyChat(client));
+  }
+
+  private async joinLobbyChat(client: TetrisBattleSocket): Promise<TetrisBattleAck<JoinLobbyChatAckData>> {
+    const allowed =
+      (await this.roomService.consumeRateLimit('lobbyChatJoin', client.id)) &&
+      (await this.roomService.consumeRateLimit('lobbyChatJoinIp', this.identity(client).ip));
+    if (!allowed) throw new TetrisBattleError('RATE_LIMITED');
+    const me = await this.lobbyChatService.senderOf(client.data.userId ?? null);
+    // 기다리는 동안 끊겼으면 넣지 않는다 — join()은 연결 상태를 보지 않아, 끊김 정리(leaveAll)가 끝난 뒤 넣으면 어댑터에 영구히 남는다
+    if (client.disconnected) throw new TetrisBattleError('LOBBY_CHAT_NOT_JOINED');
+    client.data.lobbyChat = me;
+    // 채널에 먼저 들어간 뒤 최근 대화를 읽는다 — 반대 순서면 그 사이 다른 레플리카가 보낸 메시지를 둘 다에서 놓친다(겹치면 id로 거른다)
+    await client.join(LOBBY_CHAT_ROOM);
+    let messages: JoinLobbyChatAckData['messages'];
+    try {
+      messages = await this.lobbyChatService.recent();
+    } catch (error) {
+      // 구독 실패로 돌려주므로 채널에 남기지 않는다
+      delete client.data.lobbyChat;
+      await client.leave(LOBBY_CHAT_ROOM);
+      throw error;
+    }
+    const { userId, ip } = this.identity(client);
+    return ok({ messages, onlineCount: await this.countLobbyChat(), me: { ...me, senderKey: this.lobbyChatService.senderKeyOf(userId, ip) } });
+  }
+
+  @UseGuards(TetrisBattleWsGuard)
+  @SubscribeMessage(TetrisBattleClientEvents.LEAVE_LOBBY_CHAT)
+  handleLeaveLobbyChat(@ConnectedSocket() client: TetrisBattleSocket): Promise<TetrisBattleAck<EmptyAckData>> {
+    return this.serialize(client, async () => {
+      delete client.data.lobbyChat;
+      await client.leave(LOBBY_CHAT_ROOM);
+      return ok(EMPTY);
+    });
+  }
+
+  /** 보내기 — 구독한 소켓만. 서버가 확정한 메시지를 보낸 사람 포함 구독자 전원에게 방송하고 ack로도 돌려준다 */
+  @UseGuards(TetrisBattleWsGuard)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage(TetrisBattleClientEvents.LOBBY_CHAT)
+  handleLobbyChat(
+    @ConnectedSocket() client: TetrisBattleSocket,
+    @MessageBody() dto: LobbyChatDto,
+  ): Promise<TetrisBattleAck<LobbyChatAckData>> {
+    // join 직후 바로 보내도 join이 끝난 뒤 판정하도록 같은 큐로
+    return this.serialize(client, async () => {
+      const sender = client.data.lobbyChat;
+      if (!sender || !client.rooms.has(LOBBY_CHAT_ROOM)) throw new TetrisBattleError('LOBBY_CHAT_NOT_JOINED');
+      const { userId, ip } = this.identity(client);
+      const message = await this.lobbyChatService.publish({ sender, userId, ip, name: dto.name, text: dto.text });
+      this.server.to(LOBBY_CHAT_ROOM).emit(TetrisBattleServerEvents.LOBBY_CHAT_MESSAGE, message);
+      return ok({ message });
+    });
+  }
+
+  /** 로비 채팅 참여 소켓 수(전 레플리카) — 어댑터 조회가 늦거나 실패하면 null(구독은 성공시킨다) */
+  private async countLobbyChat(): Promise<number | null> {
+    try {
+      const sockets = await withTimeout(
+        this.server.in(LOBBY_CHAT_ROOM).fetchSockets(),
+        LIVENESS_PROBE_TIMEOUT_MS,
+        `로비 채팅 참여 수 ${LIVENESS_PROBE_TIMEOUT_MS}ms 초과`,
+      );
+      return sockets.length;
+    } catch (error) {
+      this.logger.warn(`countLobbyChat(): ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   // ==================== 내부 ====================
