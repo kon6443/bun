@@ -65,3 +65,9 @@
 | review-flow(메인) | 0 | 실서버 두 페이지 연속 확인 |
 | Opus 서브에이전트 | 0 (테스트 공백 2) | 쿼리 문자열→숫자 변환이 서비스까지 닿는지 E2E 추가(beforeId=61&limit=5&type=earn → findOne 내 줄·take 6·amount>0). 컨트롤러 spec 위임 테스트는 E2E가 대신해 생략 |
 - 검증: ci:core 단위 1841 · lint 경고 6 / E2E(Redis 포함) 356 pass·2 skip · 프론트 bfc15f1 `next build` 통과(61/61)
+
+## 2026-10-27 — 배포 (사용자 지시 "스킨레벨 먼저 배포")
+- 백엔드: bun#314 → develop c776a64 → release #315(main 6f20fed) → Deploy NestJS run 40440212122 success
+- 프론트: next-bun#395(bfc15f1) → develop d3b53cd → release #396(main 0cd9785) → Deploy Next run 40441827938 success
+- 운영 확인(비로그인 Playwright, 읽기 전용): `GET /games/tetris/skins` 200 · maxLevel 5 · levelCosts · 아이템 6종 · points null / upgrade·points/history 토큰 없음 401 / 리플레이 #164 skins.levels {block:2} / 도감 화면 pageerror 0
+- 배포 직후 원장 누락 확인(`db:select`): 1건 — SCORE_ID 165(USER_ID 1, 238,746점, 2026-10-27T02:29:46Z) — 배포 창 사이 옛 코드가 저장. 소급 INSERT 1회 실행 필요(사용자)
