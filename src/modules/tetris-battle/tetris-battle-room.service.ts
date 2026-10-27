@@ -55,7 +55,7 @@ import {
   RoomSummary,
   TetrisBattleEmoteId,
 } from './tetris-battle.events';
-import { type TetrisBoardSkins, defaultSkinSet, toBoardSkins } from '../users/skin-catalog';
+import { type TetrisBoardSkins, defaultSkinSet, storedBoardSkins, toBoardSkins } from '../users/skin-catalog';
 
 
 /**
@@ -841,7 +841,7 @@ export class TetrisBattleRoomService {
         name: p.name,
         userId: p.userId,
         tokenHash: p.tokenHash,
-        skins: p.skins ?? toBoardSkins(defaultSkinSet()),
+        skins: storedBoardSkins(p.skins),
       })),
     });
 
@@ -1674,7 +1674,7 @@ export class TetrisBattleRoomService {
           ready: p.ready,
           connected: p.connected,
           isGuest: p.userId === null,
-          skins: p.skins ?? toBoardSkins(defaultSkinSet()),
+          skins: storedBoardSkins(p.skins),
         }),
       ),
     };

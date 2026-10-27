@@ -15,6 +15,8 @@ import { GameHallOfFameService } from './game-hall-of-fame.service';
 import { User } from '../../entities/User';
 import { createMockRepository } from '../../common/__spec__/mock-repository';
 import { UserSkinEquip } from '../../entities/UserSkinEquip';
+import { UserSkinLevel } from '../../entities/UserSkinLevel';
+import { UserPointLedger } from '../../entities/UserPointLedger';
 
 /** AppModule이 주는 DataSource(TypeOrmModule.forRoot)를 대신한다 — 연결 없음 */
 @Global()
@@ -45,6 +47,10 @@ describe('GamesModule', () => {
       .useValue(createMockRepository<User>())
       .overrideProvider(getRepositoryToken(UserSkinEquip))
       .useValue(createMockRepository<UserSkinEquip>())
+      .overrideProvider(getRepositoryToken(UserSkinLevel))
+      .useValue(createMockRepository<UserSkinLevel>())
+      .overrideProvider(getRepositoryToken(UserPointLedger))
+      .useValue(createMockRepository<UserPointLedger>())
       .compile();
 
     expect(moduleRef.get(GamesController)).toBeInstanceOf(GamesController);
@@ -83,6 +89,10 @@ describe('GamesModule', () => {
           .useValue(createMockRepository<User>())
           .overrideProvider(getRepositoryToken(UserSkinEquip))
           .useValue(createMockRepository<UserSkinEquip>())
+          .overrideProvider(getRepositoryToken(UserSkinLevel))
+          .useValue(createMockRepository<UserSkinLevel>())
+          .overrideProvider(getRepositoryToken(UserPointLedger))
+          .useValue(createMockRepository<UserPointLedger>())
           .compile();
       const now = new Date('2026-10-22T03:00:00.000Z');
 

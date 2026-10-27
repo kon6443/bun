@@ -19,6 +19,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
+import { UserPointsDto } from '../users/users.dto';
 import {
   GAME_PLAYER_NAME_MAX_LENGTH,
   GAME_POPULAR_DEFAULT_LIMIT,
@@ -250,6 +251,11 @@ export class GameRanksDto {
   all: number;
 }
 
+export class GamePointsEarnedDto {
+  @ApiProperty({ description: '이번 판 적립 (= 점수)', example: 12340 }) earned: number;
+  @ApiProperty({ description: '적립 뒤 쓸 수 있는 포인트', example: 4234477 }) balance: number;
+}
+
 export class GameScoreSubmittedDto {
   @ApiProperty({ description: '기록 ID (리플레이 재생에 사용)', example: 41 })
   scoreId: number;
@@ -269,6 +275,13 @@ export class GameScoreSubmittedDto {
 
   @ApiProperty({ description: '등록 직후 기간별 순위 — 순위 계산만 실패하면 null(등록은 성공)', type: GameRanksDto, nullable: true })
   ranks: GameRanksDto | null;
+
+  @ApiProperty({
+    description: '이번 판 적립 포인트와 적립 뒤 잔액 — 기록 주인이 있는 테트리스만, 그 외·조회 실패는 null (docs/tasks/skin-levels D-002)',
+    type: GamePointsEarnedDto,
+    nullable: true,
+  })
+  points: GamePointsEarnedDto | null;
 }
 
 export class TrophiesDto {
@@ -314,6 +327,7 @@ export class SkinCollectionItemDto {
   @ApiProperty({ description: '획득 방식 — default(기본 제공)·free(누구나). 업적·출석은 이후 조건 필드와 함께 추가', example: 'free' }) unlock: string;
   @ApiProperty({ description: '내가 보유했는지 — 게스트는 false(보유는 계정 기준)', example: true }) owned: boolean;
   @ApiProperty({ description: '지금 장착 중인지 — 게스트는 false', example: false }) equipped: boolean;
+  @ApiProperty({ description: '내 레벨 (1~5) — 게스트는 1 (docs/tasks/skin-levels D-002)', example: 1 }) level: number;
 }
 
 export class SkinCollectionSlotDto {
@@ -323,6 +337,9 @@ export class SkinCollectionSlotDto {
 
 export class SkinCollectionDto {
   @ApiProperty({ description: '로그인 여부 — false면 보유·장착 표시가 모두 false', example: true }) signedIn: boolean;
+  @ApiProperty({ description: '최고 레벨', example: 5 }) maxLevel: number;
+  @ApiProperty({ description: '강화 비용 — [i] = Lv(i+1) → Lv(i+2)', type: [Number], example: [100000, 200000, 700000, 2000000] }) levelCosts: number[];
+  @ApiProperty({ type: UserPointsDto, nullable: true, description: '내 포인트 — 게스트는 null' }) points: UserPointsDto | null;
   @ApiProperty({ type: [SkinCollectionSlotDto], description: '슬롯별 전체 아이템. 스킨이 없는 게임은 빈 배열' }) slots: SkinCollectionSlotDto[];
 }
 
@@ -331,10 +348,17 @@ export class SkinCollectionResponseDto extends ApiSuccessResponseDto {
 }
 
 /** 보드 슬롯 스킨 — 화면 배경(background)은 보는 사람 자신의 것이라 싣지 않는다 (tetris-skins D-003) */
+export class BoardSkinLevelsDto {
+  @ApiProperty({ example: 1 }) block: number;
+  @ApiProperty({ example: 1 }) effect: number;
+  @ApiProperty({ example: 1 }) board: number;
+}
+
 export class BoardSkinsDto {
   @ApiProperty({ description: '블록 스킨 id', example: 'default' }) block: string;
   @ApiProperty({ description: '이펙트 스킨 id', example: 'default' }) effect: string;
   @ApiProperty({ description: '판 배경 스킨 id', example: 'default' }) board: string;
+  @ApiProperty({ type: BoardSkinLevelsDto, description: '슬롯별 레벨 — 레벨 기능 전 기록은 모두 1 (docs/tasks/skin-levels D-002)' }) levels: BoardSkinLevelsDto;
 }
 
 export class GameReplayDetailDto extends RankingItemDto {

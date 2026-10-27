@@ -39,8 +39,8 @@ const committingLater =
     return result;
   };
 
-const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default' };
-const NEON_SKINS = { block: 'neon', effect: 'neon', board: 'gameboy' };
+const DEFAULT_SKINS = { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } };
+const NEON_SKINS = { block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 2, effect: 1, board: 1 } };
 let boardSkinsOf: jest.Mock;
 
 const ROOM: RoomState = {
