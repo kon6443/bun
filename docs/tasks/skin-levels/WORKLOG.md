@@ -71,3 +71,4 @@
 - 프론트: next-bun#395(bfc15f1) → develop d3b53cd → release #396(main 0cd9785) → Deploy Next run 40441827938 success
 - 운영 확인(비로그인 Playwright, 읽기 전용): `GET /games/tetris/skins` 200 · maxLevel 5 · levelCosts · 아이템 6종 · points null / upgrade·points/history 토큰 없음 401 / 리플레이 #164 skins.levels {block:2} / 도감 화면 pageerror 0
 - 배포 직후 원장 누락 확인(`db:select`): 1건 — SCORE_ID 165(USER_ID 1, 238,746점, 2026-10-27T02:29:46Z) — 배포 창 사이 옛 코드가 저장. 소급 INSERT 1회 실행 필요(사용자)
+- 누락 소급: 마이그레이션 `1793060509072-BackfillTetrisScorePointsDeployGap`(같은 NOT EXISTS 소급) — 사용자 실행 완료. 확인(`db:select`): 누락 0 · #165 적립 줄 "테트리스 기록 #165 · default 보드 · 238,746점" · USER_ID 1 잔액 1,677,807 P
