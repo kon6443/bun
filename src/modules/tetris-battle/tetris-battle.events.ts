@@ -44,6 +44,15 @@ export const TetrisBattleClientEvents = {
   KICK_PLAYER: 'kickPlayer',
   /** `presencePing`에 대한 응답 `{ code }` — ack 없음 (tetris-audit D-010·D-012) */
   HEARTBEAT: 'heartbeat',
+  /**
+   * 로비 전체 채팅 구독 — ack `JoinLobbyChatAckData`(최근 대화·참여 수). 이후 `lobbyChatMessage`를 받는다.
+   * 재연결하면 다시 보낸다(서버가 자동으로 다시 넣지 않는다) — tetris-chat D-001
+   */
+  JOIN_LOBBY_CHAT: 'joinLobbyChat',
+  /** 로비 채팅 구독 해제 */
+  LEAVE_LOBBY_CHAT: 'leaveLobbyChat',
+  /** 로비 채팅 보내기 `LobbyChatPayload` — ack `{ message }`. 구독 전이면 `LOBBY_CHAT_NOT_JOINED` */
+  LOBBY_CHAT: 'lobbyChat',
 } as const;
 
 /** 서버 → 클라이언트 */
@@ -56,6 +65,8 @@ export const TetrisBattleServerEvents = {
   CHAT_MESSAGE: 'chatMessage',
   /** 방 멤버에게 이모트 (보낸 사람 포함) */
   EMOTE_RECEIVED: 'emoteReceived',
+  /** 로비 채팅 구독자에게 (보낸 사람 포함) — `LobbyChatMessage` */
+  LOBBY_CHAT_MESSAGE: 'lobbyChatMessage',
   /** ack 없이 보낸 요청이 실패했을 때만 (ack가 있으면 ack로 받는다) */
   ERROR: 'error',
   /** 방 — `MatchStartingPayload` */
@@ -133,6 +144,9 @@ export const TetrisBattleErrorCodes = {
   SEAT_IN_USE: 'SEAT_IN_USE',
   /** 강퇴 대상이 이 방에 없거나 방장 자신 (D-011) */
   PLAYER_NOT_FOUND: 'PLAYER_NOT_FOUND',
+  // ----- tetris-chat 추가 -----
+  /** 로비 채팅을 구독(joinLobbyChat)하지 않은 소켓이 보냄 */
+  LOBBY_CHAT_NOT_JOINED: 'LOBBY_CHAT_NOT_JOINED',
 } as const;
 
 export type TetrisBattleErrorCode = (typeof TetrisBattleErrorCodes)[keyof typeof TetrisBattleErrorCodes];
@@ -248,6 +262,41 @@ export interface ChatMessagePayload {
   text: string;
   /** ISO 8601 (UTC) */
   at: string;
+}
+
+/** 로비 채팅 보내기 — name은 게스트만(로그인 사용자는 서버가 계정 이름으로 정하고 보낸 값은 무시) */
+export interface LobbyChatPayload {
+  text: string;
+  name?: string;
+}
+
+/** 로비 채팅 메시지 — 서버가 확정한 것만 방송한다 (tetris-chat D-001) */
+export interface LobbyChatMessage {
+  /** 메시지 id — 방송·ack·최근 대화를 합칠 때 중복 제거 키 */
+  id: string;
+  /** 차단용 불투명 키 — 로그인은 계정, 게스트는 접속 IP 기준 HMAC(신원은 알 수 없다). 같은 사람이면 같은 값 */
+  senderKey: string;
+  name: string;
+  isGuest: boolean;
+  text: string;
+  /** ISO 8601 (UTC) */
+  at: string;
+}
+
+export interface JoinLobbyChatAckData {
+  /** 최근 대화 — 오래된 것부터, 최대 50개·30분 이내 */
+  messages: LobbyChatMessage[];
+  /** 지금 로비 채팅에 들어와 있는 소켓 수(전 레플리카, 나 포함). 셀 수 없으면 null */
+  onlineCount: number | null;
+  /**
+   * 내 표시 — 로그인 사용자는 서버가 정한 이름, 게스트는 null(보낼 때 name을 넣는다).
+   * senderKey는 내 글의 senderKey와 같은 값 — 새로고침 뒤에도 지난 내 글을 알아본다(같은 IP 게스트끼리는 같은 키)
+   */
+  me: { isGuest: boolean; name: string | null; senderKey: string };
+}
+
+export interface LobbyChatAckData {
+  message: LobbyChatMessage;
 }
 
 export type KoReason = 'topout' | 'disconnect' | 'leave';

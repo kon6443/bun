@@ -81,6 +81,14 @@ export const TETRIS_BATTLE_RATE_LIMITS = {
   listRoomsSocket: { limit: 5, windowSec: 5 },
   /** 방 목록 — IP 단위 (소켓을 새로 열어 우회하는 것을 막는다, NAT 공유를 고려해 넉넉히) */
   listRoomsIp: { limit: 30, windowSec: 5 },
+  /** 로비 채팅 구독 — 소켓 단위 (최근 대화·참여 수 조회 연타 방지) */
+  lobbyChatJoin: { limit: 5, windowSec: 10 },
+  /** 로비 채팅 구독 — IP 단위 (소켓을 새로 열어 우회하는 것을 막는다, NAT 공유를 고려해 넉넉히) */
+  lobbyChatJoinIp: { limit: 30, windowSec: 10 },
+  /** 로비 채팅 — 보낸 사람 단위(로그인 userId, 게스트 IP) (tetris-chat D-001) */
+  lobbyChat: { limit: 5, windowSec: 10 },
+  /** 로비 채팅 — IP 단위 (여러 계정·소켓으로 도배하는 것을 막는다, NAT 공유를 고려해 넉넉히) */
+  lobbyChatIp: { limit: 15, windowSec: 10 },
 } as const;
 
 export type TetrisBattleRateLimitAction = keyof typeof TETRIS_BATTLE_RATE_LIMITS;
@@ -159,6 +167,12 @@ export const PLAYER_TOKEN_BYTES = 24;
 
 /** socket.io room 이름 */
 export const LOBBY_ROOM = 'tetris-battle:lobby';
+/** 로비 전체 채팅 구독 채널 (tetris-chat D-001) — 방 목록 구독(LOBBY_ROOM)과 따로 들어가고 나간다 */
+export const LOBBY_CHAT_ROOM = 'tetris-battle:lobby-chat';
+
+/** 로비 채팅 최근 대화 — DB에 남기지 않고 Redis에 최근 N개를 잠깐만 (tetris-chat D-001) */
+export const LOBBY_CHAT_HISTORY_LIMIT = 50;
+export const LOBBY_CHAT_HISTORY_TTL_SEC = 30 * 60;
 export const roomChannel = (code: string): string => `tetris-battle:room:${code}`;
 /**
  * 플레이어 채널 — garbage는 소켓 id가 아니라 이 채널로 보낸다(리뷰 H2).
