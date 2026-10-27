@@ -11,6 +11,7 @@ import { TetrisBattleBrowseService } from './tetris-battle-browse.service';
 import { TetrisBattleGateway } from './tetris-battle.gateway';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleWsGuard } from './tetris-battle-ws.guard';
+import { TetrisLobbyChatService } from './tetris-lobby-chat.service';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
 import { UsersModule } from '../users/users.module';
 
@@ -34,6 +35,7 @@ import { UsersModule } from '../users/users.module';
     TetrisBattleBrowseService,
     TetrisBattleWsGuard,
     TetrisBattleWsExceptionFilter,
+    TetrisLobbyChatService,
   ],
   exports: [TetrisBattleRoomService],
 })

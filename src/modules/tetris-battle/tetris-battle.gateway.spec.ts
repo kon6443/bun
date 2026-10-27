@@ -8,6 +8,7 @@ import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { TetrisBattleSocket } from './tetris-battle-ws.guard';
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
 import { UserSkinService } from '../users/user-skin.service';
+import { TetrisLobbyChatService } from './tetris-lobby-chat.service';
 
 const CODE = 'ABCDEF';
 const CHANNEL = `tetris-battle:room:${CODE}`;
@@ -81,6 +82,8 @@ describe('TetrisBattleGateway', () => {
   let roomEmit: jest.Mock;
   let serverTo: jest.Mock;
   let socketsLeave: jest.Mock;
+  let lobbyChat: { senderOf: jest.Mock; recent: jest.Mock; publish: jest.Mock; senderKeyOf: jest.Mock };
+  let fetchSockets: jest.Mock;
 
   const createClient = (data: TetrisBattleSocket['data'] = { authResolved: true, userId: null }) =>
     ({
@@ -89,7 +92,8 @@ describe('TetrisBattleGateway', () => {
       handshake: { headers: {}, address: '10.0.0.1' },
       join: jest.fn(),
       leave: jest.fn(),
-    }) as unknown as TetrisBattleSocket & { join: jest.Mock; leave: jest.Mock };
+      rooms: new Set<string>(),
+    }) as unknown as TetrisBattleSocket & { join: jest.Mock; leave: jest.Mock; rooms: Set<string> };
 
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
@@ -112,11 +116,14 @@ describe('TetrisBattleGateway', () => {
       topOut: jest.fn(),
     };
     boardSkinsOf = jest.fn().mockResolvedValue(DEFAULT_SKINS);
+    lobbyChat = { senderOf: jest.fn(), recent: jest.fn().mockResolvedValue([]), publish: jest.fn(), senderKeyOf: jest.fn().mockReturnValue('my-key') };
+    fetchSockets = jest.fn().mockResolvedValue([{}, {}]);
     gateway = new TetrisBattleGateway(
       service as unknown as TetrisBattleRoomService,
       { boardSkinsOf } as unknown as UserSkinService,
+      lobbyChat as unknown as TetrisLobbyChatService,
     );
-    gateway.server = { to: serverTo, in: jest.fn(() => ({ socketsLeave })) } as unknown as Server;
+    gateway.server = { to: serverTo, in: jest.fn(() => ({ socketsLeave, fetchSockets })) } as unknown as Server;
   });
 
   afterEach(() => {
@@ -389,6 +396,117 @@ describe('TetrisBattleGateway', () => {
 
     expect(serverTo).toHaveBeenCalledWith(CHANNEL);
     expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.CHAT_MESSAGE, payload);
+  });
+
+  describe('로비 전체 채팅 (tetris-chat D-001)', () => {
+    const LOBBY_CHAT = 'tetris-battle:lobby-chat';
+    const MSG = { id: 'm1', senderKey: 'k', name: '손님', isGuest: true, text: '안녕', at: 'now' };
+
+    it('구독 — 보낸 사람 표시를 소켓에 두고 채널에 넣은 뒤 최근 대화·참여 수·내 표시를 돌려준다', async () => {
+      const client = createClient({ authResolved: true, userId: 7 });
+      lobbyChat.senderOf.mockResolvedValue({ isGuest: false, name: '개발자' });
+      lobbyChat.recent.mockResolvedValue([MSG]);
+
+      const ack = await gateway.handleJoinLobbyChat(client);
+
+      expect(lobbyChat.senderOf).toHaveBeenCalledWith(7);
+      expect(client.join).toHaveBeenCalledWith(LOBBY_CHAT);
+      expect(client.data.lobbyChat).toEqual({ isGuest: false, name: '개발자' });
+      expect(ack).toEqual({ ok: true, data: { messages: [MSG], onlineCount: 2, me: { isGuest: false, name: '개발자', senderKey: 'my-key' } } });
+      expect(lobbyChat.senderKeyOf).toHaveBeenCalledWith(7, '10.0.0.1');
+      expect(service.consumeRateLimit).toHaveBeenCalledWith('lobbyChatJoin', 'sock-a');
+      expect(service.consumeRateLimit).toHaveBeenCalledWith('lobbyChatJoinIp', '10.0.0.1');
+      // 채널에 먼저 들어간 뒤 최근 대화를 읽는다 — 그 사이 메시지를 놓치지 않게
+      expect(client.join.mock.invocationCallOrder[0]).toBeLessThan(lobbyChat.recent.mock.invocationCallOrder[0]);
+    });
+
+    it('구독 — 기다리는 동안 끊긴 소켓은 채널에 넣지 않는다(어댑터에 남지 않게)', async () => {
+      const client = Object.assign(createClient(), { disconnected: true });
+      lobbyChat.senderOf.mockResolvedValue({ isGuest: true, name: null });
+      await expect(gateway.handleJoinLobbyChat(client)).rejects.toMatchObject({ code: 'LOBBY_CHAT_NOT_JOINED' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('구독 — 최근 대화를 못 읽으면 실패로 돌려주고 채널에서 뺀다', async () => {
+      const client = createClient();
+      lobbyChat.senderOf.mockResolvedValue({ isGuest: true, name: null });
+      lobbyChat.recent.mockRejectedValue(new TetrisBattleError('SERVICE_UNAVAILABLE'));
+      await expect(gateway.handleJoinLobbyChat(client)).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+      expect(client.leave).toHaveBeenCalledWith(LOBBY_CHAT);
+      expect(client.data.lobbyChat).toBeUndefined();
+    });
+
+    it('구독 — 참여 수 조회가 실패해도 구독은 성공, onlineCount null', async () => {
+      lobbyChat.senderOf.mockResolvedValue({ isGuest: true, name: null });
+      fetchSockets.mockRejectedValue(new Error('adapter timeout'));
+      const ack = await gateway.handleJoinLobbyChat(createClient());
+      expect(ack).toMatchObject({ ok: true, data: { onlineCount: null } });
+    });
+
+    it('구독 연타 → RATE_LIMITED, 채널에 넣지 않는다', async () => {
+      service.consumeRateLimit.mockResolvedValue(false);
+      const client = createClient();
+      await expect(gateway.handleJoinLobbyChat(client)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('보내기 — 구독한 소켓만, 확정 메시지를 채널(보낸 사람 포함)에 방송하고 ack로도 돌려준다', async () => {
+      const client = createClient({ authResolved: true, userId: null, lobbyChat: { isGuest: true, name: null } });
+      client.rooms.add(LOBBY_CHAT);
+      lobbyChat.publish.mockResolvedValue(MSG);
+
+      const ack = await gateway.handleLobbyChat(client, { text: '안녕', name: '손님' });
+
+      expect(lobbyChat.publish).toHaveBeenCalledWith({ sender: { isGuest: true, name: null }, userId: null, ip: '10.0.0.1', name: '손님', text: '안녕' });
+      expect(serverTo).toHaveBeenCalledWith(LOBBY_CHAT);
+      expect(roomEmit).toHaveBeenCalledWith(TetrisBattleServerEvents.LOBBY_CHAT_MESSAGE, MSG);
+      expect(ack).toEqual({ ok: true, data: { message: MSG } });
+    });
+
+    it.each([
+      ['구독하지 않음(채널에만 있음)', {}, true],
+      ['나간 뒤(채널 밖)', { lobbyChat: { isGuest: true, name: null } }, false],
+    ])('보내기 — %s → LOBBY_CHAT_NOT_JOINED, 방송 없음', async (_label, extra, inRoom) => {
+      const client = createClient({ authResolved: true, userId: null, ...extra });
+      if (inRoom) client.rooms.add(LOBBY_CHAT);
+      await expect(gateway.handleLobbyChat(client, { text: '안녕' })).rejects.toMatchObject({ code: 'LOBBY_CHAT_NOT_JOINED' });
+      expect(lobbyChat.publish).not.toHaveBeenCalled();
+      expect(serverTo).not.toHaveBeenCalled();
+    });
+
+    it('검증 실패(서비스 거부) → 방송 없음', async () => {
+      const client = createClient({ authResolved: true, userId: null, lobbyChat: { isGuest: true, name: null } });
+      client.rooms.add(LOBBY_CHAT);
+      lobbyChat.publish.mockRejectedValue(new TetrisBattleError('CHAT_FORBIDDEN'));
+      await expect(gateway.handleLobbyChat(client, { text: '나쁜말' })).rejects.toMatchObject({ code: 'CHAT_FORBIDDEN' });
+      expect(serverTo).not.toHaveBeenCalled();
+    });
+
+    it('join 처리 중에 온 leave·보내기는 join이 끝난 뒤 차례대로 — 나간 뒤 구독 상태로 남지 않는다', async () => {
+      const client = createClient();
+      let release!: (v: { isGuest: boolean; name: string | null }) => void;
+      lobbyChat.senderOf.mockReturnValue(new Promise((r) => (release = r)));
+      client.join.mockImplementation(async () => client.rooms.add(LOBBY_CHAT));
+      client.leave.mockImplementation(async () => client.rooms.delete(LOBBY_CHAT));
+
+      const join = gateway.handleJoinLobbyChat(client);
+      const leave = gateway.handleLeaveLobbyChat(client);
+      const send = gateway.handleLobbyChat(client, { text: '안녕', name: '손님' });
+      release({ isGuest: true, name: null });
+
+      await expect(join).resolves.toMatchObject({ ok: true });
+      await expect(leave).resolves.toEqual({ ok: true, data: {} });
+      await expect(send).rejects.toMatchObject({ code: 'LOBBY_CHAT_NOT_JOINED' });
+      expect(client.rooms.has(LOBBY_CHAT)).toBe(false);
+      expect(client.data.lobbyChat).toBeUndefined();
+    });
+
+    it('나가기 — 채널에서 빠지고 소켓 표시를 지운다', async () => {
+      const client = createClient({ authResolved: true, userId: null, lobbyChat: { isGuest: true, name: null } });
+      await gateway.handleLeaveLobbyChat(client);
+      expect(client.leave).toHaveBeenCalledWith(LOBBY_CHAT);
+      expect(client.data.lobbyChat).toBeUndefined();
+    });
   });
 
   describe('소켓별 직렬화 (리뷰 F2)', () => {

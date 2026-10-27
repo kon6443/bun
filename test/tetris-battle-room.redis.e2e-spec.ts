@@ -2,6 +2,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { TetrisBattleGateway } from '../src/modules/tetris-battle/tetris-battle.gateway';
+import { TetrisLobbyChatService } from '../src/modules/tetris-battle/tetris-lobby-chat.service';
 import { ROOM_CAS_SCRIPT, TetrisBattleRoomService } from '../src/modules/tetris-battle/tetris-battle-room.service';
 import { TetrisBattleWsGuard } from '../src/modules/tetris-battle/tetris-battle-ws.guard';
 import { TetrisBattleError } from '../src/modules/tetris-battle/tetris-battle.errors';
@@ -178,6 +179,8 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
           { provide: ConfigService, useValue: { get: jest.fn(() => 'secret') } },
           // 입장 때 보드 주인 스킨 조회(tetris-skins D-003) — 게스트 흐름이라 장착 없음(default)
           { provide: UserSkinService, useValue: { boardSkinsOf: async () => ({ block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } }) } },
+          // 로비 채팅(tetris-chat D-001) — 이 스펙은 방 상태만 본다
+          { provide: TetrisLobbyChatService, useValue: {} },
         ],
       });
     });

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 import { Socket } from 'socket.io-client';
 import { TetrisBattleGateway } from '../src/modules/tetris-battle/tetris-battle.gateway';
+import { TetrisLobbyChatService } from '../src/modules/tetris-battle/tetris-lobby-chat.service';
 import { TetrisBattleRoomService } from '../src/modules/tetris-battle/tetris-battle-room.service';
 import { TetrisBattleWsGuard } from '../src/modules/tetris-battle/tetris-battle-ws.guard';
 import { TetrisBattleError } from '../src/modules/tetris-battle/tetris-battle.errors';
@@ -101,6 +102,8 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
       providers: [
         TetrisBattleWsGuard,
         { provide: TetrisBattleRoomService, useValue: service },
+        // 로비 전체 채팅(tetris-chat D-001) — 최근 대화는 아래 listRedis 대역
+        TetrisLobbyChatService,
         // 보드 주인 스킨 — 장착 없음(모두 default)
         UserSkinService,
         { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
@@ -121,6 +124,88 @@ describe('E2E WS 테트리스 대전 게이트웨이', () => {
 
   afterEach(async () => {
     await ws.close();
+  });
+
+  describe('로비 전체 채팅 (tetris-chat D-001)', () => {
+    /** 최근 대화 List 대역 — 실제 Redis 대신 lpush·ltrim·expire·lrange만 */
+    const listRedis = () => {
+      const list: string[] = [];
+      return {
+        status: 'ready',
+        lrange: async (_k: string, a: number, b: number) => list.slice(a, b + 1),
+        multi: () => {
+          const ops: (() => void)[] = [];
+          const chain = {
+            lpush: (_k: string, v: string) => (ops.push(() => list.unshift(v)), chain),
+            ltrim: (_k: string, a: number, b: number) => (ops.push(() => list.splice(b + 1)), chain),
+            expire: () => chain,
+            exec: async () => ops.map((op) => (op(), [null, 1])),
+          };
+          return chain;
+        },
+      };
+    };
+
+    beforeEach(() => {
+      ws.moduleRef.get(TetrisLobbyChatService).setRedisClient(listRedis() as never);
+    });
+
+    it('게스트·로그인 모두 구독해 서로의 메시지를 받고(보낸 사람 포함), 구독 안 한 소켓은 못 받는다 · 나중에 들어온 사람은 최근 대화를 받는다', async () => {
+      const guest = await connect();
+      const member = await connect(sign({ sub: USER.userId }, JWT_SECRET));
+      const outsider = await connect();
+
+      const guestJoin = await emitWithAck<Ack<{ messages: unknown[]; onlineCount: number; me: unknown }>>(guest, C.JOIN_LOBBY_CHAT, {});
+      expect(guestJoin).toEqual({ ok: true, data: { messages: [], onlineCount: 1, me: { isGuest: true, name: null, senderKey: expect.stringMatching(/^[0-9a-f]{16}$/) } } });
+      const memberJoin = await emitWithAck<Ack<{ me: unknown; onlineCount: number }>>(member, C.JOIN_LOBBY_CHAT, {});
+      expect(memberJoin).toMatchObject({ ok: true, data: { onlineCount: 2, me: { isGuest: false, name: '테트리스왕' } } });
+
+      const memberGot = waitFor<{ name: string; text: string }>(member, S.LOBBY_CHAT_MESSAGE);
+      const guestGotOwn = waitFor(guest, S.LOBBY_CHAT_MESSAGE);
+      const sent = await emitWithAck<Ack<{ message: { id: string; name: string; isGuest: boolean; text: string } }>>(guest, C.LOBBY_CHAT, { text: '  안녕  ', name: ' 손님  하나 ' });
+      expect(sent).toMatchObject({ ok: true, data: { message: { name: '손님 하나', isGuest: true, text: '안녕' } } });
+      // 구독 응답의 내 키 = 내가 보낸 글의 키(새로고침 뒤 지난 내 글 알아보기)
+      expect(sent.ok && guestJoin.ok && sent.data.message).toMatchObject({ senderKey: guestJoin.ok ? (guestJoin.data.me as { senderKey: string }).senderKey : '' });
+      await expect(memberGot).resolves.toMatchObject({ id: sent.ok ? sent.data.message.id : '', name: '손님 하나', text: '안녕' });
+      await expect(guestGotOwn).resolves.toBeDefined();
+      await expectNoEvent(outsider, S.LOBBY_CHAT_MESSAGE);
+
+      // 로그인 사용자가 보낸 name은 무시하고 계정 이름으로
+      const fromMember = await emitWithAck<Ack<{ message: { name: string; isGuest: boolean } }>>(member, C.LOBBY_CHAT, { text: 'hi', name: '사칭' });
+      expect(fromMember).toMatchObject({ ok: true, data: { message: { name: '테트리스왕', isGuest: false } } });
+
+      const late = await connect();
+      const lateJoin = await emitWithAck<Ack<{ messages: { text: string }[] }>>(late, C.JOIN_LOBBY_CHAT, {});
+      expect(lateJoin.ok && lateJoin.data.messages.map((m) => m.text)).toEqual(['안녕', 'hi']);
+    });
+
+    it('구독 전에 보내면 LOBBY_CHAT_NOT_JOINED · 나간 뒤에는 받지 않는다', async () => {
+      const a = await connect();
+      await expect(emitWithAck(a, C.LOBBY_CHAT, { text: '안녕', name: '손님' })).resolves.toMatchObject({ ok: false, code: 'LOBBY_CHAT_NOT_JOINED' });
+
+      const b = await connect();
+      await emitWithAck(a, C.JOIN_LOBBY_CHAT, {});
+      await emitWithAck(b, C.JOIN_LOBBY_CHAT, {});
+      await expect(emitWithAck(b, C.LEAVE_LOBBY_CHAT, {})).resolves.toEqual({ ok: true, data: {} });
+      await emitWithAck(a, C.LOBBY_CHAT, { text: '아무도', name: '손님' });
+      await expectNoEvent(b, S.LOBBY_CHAT_MESSAGE);
+      await expect(emitWithAck(b, C.LOBBY_CHAT, { text: '다시', name: '손님' })).resolves.toMatchObject({ ok: false, code: 'LOBBY_CHAT_NOT_JOINED' });
+    });
+
+    it.each([
+      ['빈 글', { text: '   ', name: '손님' }, 'INVALID_PAYLOAD'],
+      ['100자 초과', { text: '가'.repeat(101), name: '손님' }, 'INVALID_PAYLOAD'],
+      ['줄바꿈', { text: '안\n녕', name: '손님' }, 'CHAT_FORBIDDEN'],
+      ['게스트 이름 없음', { text: '안녕' }, 'NAME_INVALID'],
+      ['게스트 사칭 이름', { text: '안녕', name: '운영자' }, 'NAME_FORBIDDEN'],
+    ])('%s → %s ack, 방송 없음', async (_label, body, code) => {
+      const a = await connect();
+      const b = await connect();
+      await emitWithAck(a, C.JOIN_LOBBY_CHAT, {});
+      await emitWithAck(b, C.JOIN_LOBBY_CHAT, {});
+      await expect(emitWithAck(a, C.LOBBY_CHAT, body)).resolves.toMatchObject({ ok: false, code });
+      await expectNoEvent(b, S.LOBBY_CHAT_MESSAGE);
+    });
   });
 
   it('토큰이 있으면 userId, 없으면 게스트(null)로 서비스에 넘긴다', async () => {

@@ -24,6 +24,8 @@ export interface TetrisBattleSocket extends Socket {
     room?: TetrisBattleSocketRoom;
     /** 마지막으로 처리한 heartbeat 시각(ms) — 소켓 로컬 빈도 제한용 */
     lastHeartbeatAt?: number;
+    /** 로비 채팅을 구독했으면 보낸 사람 표시(구독 때 정함) — tetris-chat D-001 */
+    lobbyChat?: { isGuest: boolean; name: string | null };
   };
 }
 
