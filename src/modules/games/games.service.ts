@@ -9,7 +9,8 @@ import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
 import { User } from '../../entities/User';
 import { type SkinCollection, UserSkinService } from '../users/user-skin.service';
-import { type TetrisBoardSkins, defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
+import { SKIN_LEVEL_COSTS, SKIN_MAX_LEVEL, type TetrisBoardSkins, defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
+import { UserPointService, tetrisScorePointEntry } from '../users/user-point.service';
 import {
   GAME_POPULAR_DEFAULT_LIMIT,
   GAME_RANKING_DEFAULT_LIMIT,
@@ -151,6 +152,7 @@ export class GamesService {
     private readonly hallOfFameService: GameHallOfFameService,
     private readonly configService: ConfigService,
     private readonly userSkinService: UserSkinService,
+    private readonly userPointService: UserPointService,
   ) {}
 
   /** 경로의 게임 이름(소문자) → 코드값. 모르는 게임은 404 */
@@ -232,7 +234,7 @@ export class GamesService {
   /** 스킨 도감 — 스킨이 있는 게임은 TETRIS뿐, 그 외는 빈 목록 (tetris-skins D-005) */
   async listSkins(gameTypeParam: string, userId: number | null): Promise<SkinCollection> {
     const gameType = this.toGameType(gameTypeParam);
-    if (gameType !== 'TETRIS') return { signedIn: userId !== null, slots: [] };
+    if (gameType !== 'TETRIS') return { signedIn: userId !== null, maxLevel: SKIN_MAX_LEVEL, levelCosts: SKIN_LEVEL_COSTS, points: null, slots: [] };
     return this.userSkinService.collection(userId);
   }
 
@@ -322,10 +324,11 @@ export class GamesService {
     let saved: GameScore;
     let verified: VerifiedReplay & { ok: true };
     let crtdAt: Date;
+    let ownerId: number | null;
     try {
       // 제출이 익명(토큰 없음·만료 토큰을 거절당한 뒤 토큰 없이 재시도)이어도 세션을 받은 로그인 사용자의 기록으로 남긴다 —
       // 세션 id는 발급받은 사람만 아는 값이다. 대전 결과의 입장 userId 폴백과 같은 규칙(docs/tasks/tetris-skins D-002)
-      const ownerId = userId ?? session.userId ?? null;
+      ownerId = userId ?? session.userId ?? null;
       ({ saved, verified, crtdAt } = await this.verifyAndSave({ gameType, dto, userId: ownerId, ip, session, boardKey, params, storedReplay, replayHash, playedMs }));
     } finally {
       await this.gameSessionService.releaseVerification(dto.sessionId, guard);
@@ -338,7 +341,28 @@ export class GamesService {
       this.logger.error(`submitScore(): 순위 계산 실패 — scoreId=${saved.scoreId}`, toErrorDetail(error));
     }
     // 이름은 DTO가 정리한 값으로 저장됐다 — 클라이언트가 보낸 원문과 다를 수 있어 저장값을 돌려준다(games-polish Q-S2)
-    return { scoreId: saved.scoreId, score: verified.score, playerName: dto.playerName, detail: verified.detail, ranks };
+    return {
+      scoreId: saved.scoreId,
+      score: verified.score,
+      playerName: dto.playerName,
+      detail: verified.detail,
+      ranks,
+      points: await this.earnedPointsOf(gameType, ownerId, verified.score, saved.scoreId),
+    };
+  }
+
+  /**
+   * 이번 판 적립 포인트와 적립 뒤 잔액 — 적립 줄은 저장 트랜잭션에서 이미 남겼다(skin-levels D-004).
+   * 기록 주인이 있는 테트리스만. 잔액 조회가 실패해도 등록 성공(201)은 지킨다(순위 계산과 같은 이유)
+   */
+  private async earnedPointsOf(gameType: GameType, ownerId: number | null, score: number, scoreId: number): Promise<GameScoreSubmittedDto['points']> {
+    if (gameType !== 'TETRIS' || ownerId === null) return null;
+    try {
+      return { earned: score, balance: (await this.userPointService.pointsOf(ownerId)).balance };
+    } catch (error) {
+      this.logger.error(`submitScore(): 포인트 조회 실패 — scoreId=${scoreId}`, toErrorDetail(error));
+      return null;
+    }
   }
 
   /**
@@ -417,6 +441,10 @@ export class GamesService {
             boardSkins: session.skins ? JSON.stringify(session.skins) : null,
           }),
         );
+        // 로그인 테트리스 기록은 포인트 적립 1줄 — 기록과 함께 커밋되거나 함께 취소된다(skin-levels D-004). 0점은 적립 없음
+        if (gameType === 'TETRIS' && userId !== null && verified.score > 0) {
+          await this.userPointService.record(manager, tetrisScorePointEntry(userId, score.scoreId, boardKey, verified.score, crtdAt));
+        }
         return score;
       });
       return { saved, verified, crtdAt };

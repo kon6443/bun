@@ -17,6 +17,8 @@ import { User } from '../../entities/User';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { SubmitGameScoreDto } from './games.dto';
 import { UserSkinService } from '../users/user-skin.service';
+import { UserPointService } from '../users/user-point.service';
+import { SKIN_LEVEL_COSTS } from '../users/skin-catalog';
 
 /**
  * GamesService — 리플레이 검증 후 랭킹 등록 (docs/tasks/games D-003·D-005·D-010·D-011).
@@ -37,6 +39,9 @@ describe('GamesService', () => {
   let gameViewService: { claimView: jest.Mock; claimWatchMs: jest.Mock };
   let hallOfFameService: { getPodiums: jest.Mock; trophiesByUser: jest.Mock };
   let userSkinService: { boardSkinsOf: jest.Mock; collection: jest.Mock };
+  let userPointService: { pointsOf: jest.Mock; record: jest.Mock };
+  /** 엔진 레지스트리 — 다른 게임 경로가 필요한 테스트만 항목을 더한다 */
+  let engines: Record<string, unknown>;
   let manager: { create: jest.Mock; save: jest.Mock };
   let gameSessionService: {
     createSession: jest.Mock;
@@ -88,9 +93,10 @@ describe('GamesService', () => {
     // 입상자 없음 — 배지 null
     hallOfFameService = { getPodiums: jest.fn().mockResolvedValue([]), trophiesByUser: jest.fn().mockResolvedValue(new Map()) };
     userSkinService = {
-      boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default' }),
+      boardSkinsOf: jest.fn().mockResolvedValue({ block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } }),
       collection: jest.fn().mockResolvedValue({ signedIn: true, slots: [{ slot: 'block', items: [] }] }),
     };
+    userPointService = { pointsOf: jest.fn().mockResolvedValue({ earned: 112_340, spent: 0, balance: 112_340 }), record: jest.fn().mockResolvedValue(undefined) };
     gameViewService = { claimView: jest.fn().mockResolvedValue(true), claimWatchMs: jest.fn((_id, _key, ms: number) => Promise.resolve(ms)) };
     manager = {
       create: jest.fn((_entity: unknown, data: unknown) => data),
@@ -125,6 +131,7 @@ describe('GamesService', () => {
       verify: jest.fn().mockResolvedValue({ ok: true, score: 12340, detail: VERIFIED_DETAIL }),
     };
     env = { GAME_IP_HASH_SECRET: 'test-secret' };
+    engines = { TETRIS: engine };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -136,11 +143,12 @@ describe('GamesService', () => {
         { provide: GameViewService, useValue: gameViewService },
         { provide: GameHallOfFameService, useValue: hallOfFameService },
         { provide: UserSkinService, useValue: userSkinService },
+        { provide: UserPointService, useValue: userPointService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn((run: (m: typeof manager) => unknown) => run(manager)) } as unknown as DataSource,
         },
-        { provide: GAME_ENGINE_REGISTRY, useValue: { TETRIS: engine } },
+        { provide: GAME_ENGINE_REGISTRY, useValue: engines },
         { provide: GameSessionService, useValue: gameSessionService },
         { provide: ConfigService, useValue: { get: jest.fn((key: string) => env[key]) } },
       ],
@@ -181,7 +189,7 @@ describe('GamesService', () => {
         ttlSeconds: 7200,
         challengeOf: null,
         // 판 시작 때의 보드 스킨(tetris-skins D-007)
-        skins: { block: 'default', effect: 'default', board: 'default' },
+        skins: { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } },
       });
       expect(userSkinService.boardSkinsOf).toHaveBeenCalledWith(7);
       expect(result).toEqual({ sessionId: SESSION_ID, seed: 123456789, engineVersion: 1, expiresAt, ttlSeconds: 7200, boardKey: 'default', mode: null });
@@ -341,7 +349,7 @@ describe('GamesService', () => {
     });
 
     it('스킨이 없는 게임은 빈 목록 — 스킨 조회를 하지 않는다', async () => {
-      await expect(service.listSkins('defense', null)).resolves.toEqual({ signedIn: false, slots: [] });
+      await expect(service.listSkins('defense', null)).resolves.toEqual({ signedIn: false, maxLevel: 5, levelCosts: SKIN_LEVEL_COSTS, points: null, slots: [] });
       expect(userSkinService.collection).not.toHaveBeenCalled();
     });
 
@@ -378,7 +386,67 @@ describe('GamesService', () => {
           isHidden: 0,
         }),
       );
-      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 } });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: { daily: 1, weekly: 1, all: 1 }, points: { earned: 12340, balance: 112_340 } });
+    });
+
+    describe('포인트 (skin-levels D-002)', () => {
+      it('기록 주인이 있으면 이번 판 점수 = 적립, 적립 뒤 잔액을 돌려준다 — 세션 주인 폴백 포함', async () => {
+        gameSessionService.getSession.mockResolvedValue(session({ userId: 7 }));
+        const result = await submit(dto(), null);
+        expect(result.points).toEqual({ earned: 12340, balance: 112_340 });
+        expect(userPointService.pointsOf).toHaveBeenCalledWith(7);
+        // 적립 줄도 세션 주인에게
+        expect(userPointService.record).toHaveBeenCalledWith(manager, expect.objectContaining({ userId: 7, refKey: '41' }));
+      });
+
+      it('적립 줄은 기록 저장과 같은 트랜잭션에서 — 기록 번호·보드·점수로 (D-004)', async () => {
+        await submit(dto(), 7);
+        expect(userPointService.record).toHaveBeenCalledWith(manager, {
+          userId: 7,
+          amount: 12340,
+          reason: 'TETRIS_SCORE',
+          refKey: '41',
+          memo: '테트리스 기록 #41 · default 보드 · 12,340점',
+          crtdAt: new Date(NOW),
+        });
+        // 기록·리플레이를 저장한 뒤
+        expect(Math.max(...manager.save.mock.invocationCallOrder)).toBeLessThan(userPointService.record.mock.invocationCallOrder[0]);
+      });
+
+      it('적립 줄 저장이 실패하면 기록도 저장되지 않는다 — 같은 트랜잭션이라 503 + 세션 복구', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        userPointService.record.mockRejectedValue(new Error('ORA-03113'));
+        await expect(submit(dto(), 7)).rejects.toMatchObject({ status: 503 });
+        expect(gameSessionService.restoreSession).toHaveBeenCalled();
+      });
+
+      it('0점 판·비로그인 기록은 적립 줄이 없다', async () => {
+        engine.verify.mockResolvedValue({ ok: true, score: 0, detail: VERIFIED_DETAIL });
+        await submit(dto(), 7);
+        await submit(dto(), null);
+        expect(userPointService.record).not.toHaveBeenCalled();
+      });
+
+      it('비로그인 기록은 null — 포인트를 읽지 않는다', async () => {
+        expect((await submit()).points).toBeNull();
+        expect(userPointService.pointsOf).not.toHaveBeenCalled();
+      });
+
+      it('테트리스가 아니면 null', async () => {
+        engines.DEFENSE = engine;
+        gameSessionService.getSession.mockResolvedValue(session({ gameType: 'DEFENSE', userId: 7 }));
+        const result = await service.submitScore({ gameTypeParam: 'defense', dto: dto(), userId: 7, ip: undefined });
+        expect(result.points).toBeNull();
+        expect(userPointService.pointsOf).not.toHaveBeenCalled();
+        expect(userPointService.record).not.toHaveBeenCalled();
+      });
+
+      it('잔액 조회가 실패해도 등록 성공은 지킨다 — points null', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        userPointService.pointsOf.mockRejectedValue(new Error('ORA-03113'));
+        const result = await submit(dto(), 7);
+        expect(result).toEqual(expect.objectContaining({ scoreId: 41, points: null }));
+      });
     });
 
     it.each([
@@ -392,9 +460,9 @@ describe('GamesService', () => {
     });
 
     it('세션에 보관한 판 시작 때의 보드 스킨을 리플레이에 남긴다 (D-007)', async () => {
-      gameSessionService.getSession.mockResolvedValue(session({ userId: 7, skins: { block: 'neon', effect: 'neon', board: 'gameboy' } }));
+      gameSessionService.getSession.mockResolvedValue(session({ userId: 7, skins: { block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 3, effect: 1, board: 1 } } }));
       await submit(dto(), 7);
-      expect(savedReplay().boardSkins).toBe(JSON.stringify({ block: 'neon', effect: 'neon', board: 'gameboy' }));
+      expect(savedReplay().boardSkins).toBe(JSON.stringify({ block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 3, effect: 1, board: 1 } }));
     });
 
     it('리플레이는 세션 seed와 함께 gzip으로 저장해야 함 (같은 트랜잭션) — 테트리스는 이전과 같은 본문 형식', async () => {
@@ -682,7 +750,7 @@ describe('GamesService', () => {
 
       const result = await submit();
 
-      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: null });
+      expect(result).toEqual({ scoreId: 41, score: 12340, playerName: '테트리스왕', detail: VERIFIED_DETAIL, ranks: null, points: null });
       expect(savedScore()).toBeDefined();
     });
   });
@@ -914,10 +982,16 @@ describe('GamesService', () => {
         scoreId: 41, gameType: 'TETRIS' as const, engineVersion: 1, seed: 99,
         replay: gzipSync(JSON.stringify({ das: 8, arr: 1, frames: 600, inputs: [] })), crtdAt: new Date(NOW), boardSkins,
       });
-      const DEFAULT = { block: 'default', effect: 'default', board: 'default' };
+      const DEFAULT = { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } };
 
       gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow(JSON.stringify({ block: 'neon', effect: 'gameboy', board: 'high-contrast' })));
-      expect((await service.getReplay('tetris', 41)).skins).toEqual({ block: 'neon', effect: 'gameboy', board: 'high-contrast' });
+      // 레벨 기능 전 기록 — 레벨은 모두 1
+      expect((await service.getReplay('tetris', 41)).skins).toEqual({ block: 'neon', effect: 'gameboy', board: 'high-contrast', levels: { block: 1, effect: 1, board: 1 } });
+      // 레벨이 있는 기록은 그 레벨, 범위 밖·정수 아닌 레벨은 1 (skin-levels D-002)
+      gameReplayRepository.findOneBy.mockResolvedValueOnce(
+        replayRow(JSON.stringify({ block: 'chocolate', effect: 'clear', board: 'neon', levels: { block: 5, effect: 9, board: 2.5 } })),
+      );
+      expect((await service.getReplay('tetris', 41)).skins).toEqual({ block: 'chocolate', effect: 'clear', board: 'neon', levels: { block: 5, effect: 1, board: 1 } });
       gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow(null));
       expect((await service.getReplay('tetris', 41)).skins).toEqual(DEFAULT);
       gameReplayRepository.findOneBy.mockResolvedValueOnce(replayRow('{"block":"neon"}'));

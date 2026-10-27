@@ -177,7 +177,7 @@ describeIfRedis('테트리스 대전 방 — 실제 Redis', () => {
           { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
           { provide: ConfigService, useValue: { get: jest.fn(() => 'secret') } },
           // 입장 때 보드 주인 스킨 조회(tetris-skins D-003) — 게스트 흐름이라 장착 없음(default)
-          { provide: UserSkinService, useValue: { boardSkinsOf: async () => ({ block: 'default', effect: 'default', board: 'default' }) } },
+          { provide: UserSkinService, useValue: { boardSkinsOf: async () => ({ block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } }) } },
         ],
       });
     });

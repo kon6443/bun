@@ -23,6 +23,9 @@ import { User } from '../src/entities/User';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../src/common/__spec__/mock-repository';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
 import { UserSkinService } from '../src/modules/users/user-skin.service';
+import { UserPointService } from '../src/modules/users/user-point.service';
+import { UserSkinLevel } from '../src/entities/UserSkinLevel';
+import { UserPointLedger } from '../src/entities/UserPointLedger';
 import { UserSkinEquip } from '../src/entities/UserSkinEquip';
 import { sign } from 'jsonwebtoken';
 import { createUser } from '../src/entities/__spec__/entity.factory';
@@ -118,6 +121,10 @@ describe('E2E 게임', () => {
         // 보드 주인 스킨 — 장착 없음(모두 default)
         UserSkinService,
         { provide: getRepositoryToken(UserSkinEquip), useValue: skinEquipRepository },
+        // 스킨 레벨·포인트 (skin-levels D-002) — 강화 없음, 레벨 행 없음(모두 Lv1)
+        { provide: getRepositoryToken(UserSkinLevel), useValue: { ...createMockRepository<UserSkinLevel>(), find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(UserPointLedger), useValue: createMockRepository<UserPointLedger>() },
+        UserPointService,
         // OptionalJwtAuthGuard(JwtAuthGuard 상속)의 의존이자 로그인 기록의 표시 이름(계정 이름) 조회 — 기본은 사용자 없음
         { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: ConfigService, useValue: { get: (key: string) => env[key] } },
@@ -253,6 +260,8 @@ describe('E2E 게임', () => {
         playerName: '테트리스 왕',
         detail: expect.objectContaining({ lines: SUCCESS.expected.lines, level: SUCCESS.expected.level }),
         ranks: { daily: 3, weekly: 3, all: 3 },
+        // 비로그인 기록 — 포인트 없음 (skin-levels D-002)
+        points: null,
       });
       expect(saved[0]).toEqual(expect.objectContaining({ playerName: '테트리스 왕', score: SUCCESS.expected.score, userId: null, boardKey: 'default' }));
       expect(saved[1]).toEqual(expect.objectContaining({ scoreId: 41, gameType: 'TETRIS', seed: SUCCESS.input.seed }));
@@ -516,13 +525,13 @@ describe('E2E 게임', () => {
 
       gameReplayRepository.findOneBy.mockResolvedValue(replayRow(JSON.stringify({ block: 'gameboy', effect: 'default', board: 'default' })));
       const res = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
-      expect(res.body.data.skins).toEqual({ block: 'gameboy', effect: 'default', board: 'default' });
+      expect(res.body.data.skins).toEqual({ block: 'gameboy', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } });
       expect(res.body.data).not.toHaveProperty('userId');
       expect(res.body.data).not.toHaveProperty('boardSkins');
 
       gameReplayRepository.findOneBy.mockResolvedValue(replayRow(null));
       const before = await request(app.getHttpServer()).get(e2e.url('/games/tetris/scores/41/replay')).expect(200);
-      expect(before.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default' });
+      expect(before.body.data.skins).toEqual({ block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } });
       expect(skinEquipRepository.find).not.toHaveBeenCalled();
     });
   });
@@ -533,7 +542,8 @@ describe('E2E 게임', () => {
       expect(res.body.code).toBe('SUCCESS');
       expect(res.body.data.signedIn).toBe(false);
       expect(res.body.data.slots.map((s: { slot: string }) => s.slot)).toEqual(['block', 'effect', 'board', 'background']);
-      expect(res.body.data.slots[0].items[0]).toEqual({ id: 'default', unlock: 'default', owned: false, equipped: false });
+      expect(res.body.data.slots[0].items[0]).toEqual({ id: 'default', unlock: 'default', owned: false, equipped: false, level: 1 });
+      expect(res.body.data).toMatchObject({ maxLevel: 5, levelCosts: [100_000, 200_000, 700_000, 2_000_000], points: null });
       expect(skinEquipRepository.find).not.toHaveBeenCalled();
     });
 
@@ -555,7 +565,7 @@ describe('E2E 게임', () => {
 
     it('스킨이 없는 게임은 빈 목록, 모르는 게임은 404', async () => {
       const defense = await request(app.getHttpServer()).get(e2e.url('/games/defense/skins')).expect(200);
-      expect(defense.body.data).toEqual({ signedIn: false, slots: [] });
+      expect(defense.body.data).toEqual({ signedIn: false, maxLevel: 5, levelCosts: [100_000, 200_000, 700_000, 2_000_000], points: null, slots: [] });
       const unknown = await request(app.getHttpServer()).get(e2e.url('/games/pacman/skins')).expect(404);
       expect(unknown.body.code).toBe('GAME_NOT_FOUND');
     });

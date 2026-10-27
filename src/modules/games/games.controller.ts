@@ -182,7 +182,7 @@ export class GamesController {
   @ApiOperation({
     summary: '스킨 도감',
     description:
-      '누구나 조회. 슬롯(block·effect·board·background)별 전체 아이템과 획득 방식. 로그인 토큰이 있으면 보유·장착 표시(게스트는 모두 false). 스킨이 없는 게임은 빈 목록 (docs/tasks/tetris-skins D-005)',
+      '누구나 조회. 슬롯(block·effect·board·background)별 전체 아이템과 획득 방식. 로그인 토큰이 있으면 보유·장착·레벨·포인트 표시(게스트는 보유·장착 false, 레벨 1, 포인트 null). 최고 레벨·강화 비용 포함. 스킨이 없는 게임은 빈 목록 (docs/tasks/tetris-skins D-005 · skin-levels D-002)',
   })
   @ApiParam(GAME_TYPE_PARAM)
   @ApiResponse({ status: 200, description: 'SUCCESS', type: SkinCollectionResponseDto })

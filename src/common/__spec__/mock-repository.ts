@@ -34,6 +34,7 @@ const MOCKED_METHODS = [
   'count',
   'exists',
   'increment',
+  'sum',
   'createQueryBuilder',
 ] as const;
 

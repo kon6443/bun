@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { UserSkinService } from './user-skin.service';
+import { UserPointService } from './user-point.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { createUser, FIXED_DATE } from '../../entities/__spec__/entity.factory';
 
@@ -26,6 +27,7 @@ describe('UsersController', () => {
           useValue: mockUsersService,
         },
         { provide: UserSkinService, useValue: (userSkinService = { getSkins: jest.fn(), equip: jest.fn() }) },
+        { provide: UserPointService, useValue: { history: jest.fn() } },
       ],
     })
       .overrideGuard(JwtAuthGuard)

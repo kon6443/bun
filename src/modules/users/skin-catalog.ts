@@ -39,6 +39,9 @@ const STARTER_ITEMS: readonly SkinItem[] = [
   { id: 'gameboy', unlock: 'free' },
   { id: 'neon', unlock: 'free' },
   { id: 'high-contrast', unlock: 'free' },
+  // 투명·초콜릿 (docs/tasks/skin-levels D-001)
+  { id: 'clear', unlock: 'free' },
+  { id: 'chocolate', unlock: 'free' },
 ];
 
 export const TETRIS_SKIN_CATALOG: Record<TetrisSkinSlot, readonly SkinItem[]> = {
@@ -48,8 +51,25 @@ export const TETRIS_SKIN_CATALOG: Record<TetrisSkinSlot, readonly SkinItem[]> = 
   background: STARTER_ITEMS,
 };
 
+/**
+ * 레벨 (docs/tasks/skin-levels D-001·D-002) — 모든 아이템 Lv1~Lv5, Lv1 = 처음 모습. 포인트를 써서 한 단계씩 올린다.
+ * 비용을 바꾸면 이후 강화에만 적용된다(이미 쓴 포인트는 원장에 남은 그대로)
+ */
+export const SKIN_MIN_LEVEL = 1;
+export const SKIN_MAX_LEVEL = 5;
+/** [i] = Lv(i+1) → Lv(i+2) 비용. 누적 Lv2 10만 · Lv3 30만 · Lv4 100만 · Lv5 300만 */
+export const SKIN_LEVEL_COSTS: readonly number[] = [100_000, 200_000, 700_000, 2_000_000];
+
+/** 지금 레벨에서 한 단계 올리는 비용 — 만렙이면 null */
+export function nextLevelCost(level: number): number | null {
+  return SKIN_LEVEL_COSTS[level - SKIN_MIN_LEVEL] ?? null;
+}
+
 export type TetrisSkinSet = Record<TetrisSkinSlot, string>;
-export type TetrisBoardSkins = Record<TetrisBoardSkinSlot, string>;
+export type TetrisSkinLevels = Record<TetrisSkinSlot, number>;
+export type TetrisBoardSkinLevels = Record<TetrisBoardSkinSlot, number>;
+/** 보드를 그릴 스킨 — 슬롯별 아이템 id + 그 아이템의 레벨 */
+export type TetrisBoardSkins = Record<TetrisBoardSkinSlot, string> & { levels: TetrisBoardSkinLevels };
 
 export function findSkinItem(slot: TetrisSkinSlot, id: string): SkinItem | undefined {
   return TETRIS_SKIN_CATALOG[slot].find((item) => item.id === id);
@@ -60,20 +80,49 @@ export function defaultSkinSet(): TetrisSkinSet {
   return { block: DEFAULT_SKIN_ID, effect: DEFAULT_SKIN_ID, board: DEFAULT_SKIN_ID, background: DEFAULT_SKIN_ID };
 }
 
-export function toBoardSkins(set: TetrisSkinSet): TetrisBoardSkins {
-  return { block: set.block, effect: set.effect, board: set.board };
+/** 모든 슬롯 Lv1 */
+export function defaultSkinLevels(): TetrisSkinLevels {
+  return { block: SKIN_MIN_LEVEL, effect: SKIN_MIN_LEVEL, board: SKIN_MIN_LEVEL, background: SKIN_MIN_LEVEL };
+}
+
+export function toBoardSkins(set: TetrisSkinSet, levels: TetrisSkinLevels = defaultSkinLevels()): TetrisBoardSkins {
+  return {
+    block: set.block,
+    effect: set.effect,
+    board: set.board,
+    levels: { block: levels.block, effect: levels.effect, board: levels.board },
+  };
 }
 
 /**
- * 저장해 둔 보드 스킨(JSON 문자열) → 객체. 비었거나 형식이 다르면 null — 호출 쪽이 default로 본다.
+ * 방 상태(Redis)에 저장해 둔 보드 스킨 — 없으면(스킨 기능 전 자리) default, 레벨 기능 전에 저장된 값(levels 없음)은 Lv1로 채운다.
+ * 배포 순간 열려 있던 방도 계약대로 levels를 싣게
+ */
+export function storedBoardSkins(skins: TetrisBoardSkins | undefined): TetrisBoardSkins {
+  if (!skins) return toBoardSkins(defaultSkinSet());
+  // 타입은 levels를 갖지만 배포 전 저장값에는 없다
+  const { levels } = skins as Partial<TetrisBoardSkins>;
+  return levels ? skins : { ...skins, levels: toBoardSkins(defaultSkinSet()).levels };
+}
+
+/** 저장해 둔 레벨 하나 — 정수 1~5가 아니면(레벨 기능 전 기록 포함) Lv1 */
+function parseLevel(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= SKIN_MIN_LEVEL && value <= SKIN_MAX_LEVEL ? value : SKIN_MIN_LEVEL;
+}
+
+/**
+ * 저장해 둔 보드 스킨(JSON 문자열) → 객체. 비었거나 형식이 다르면 null — 호출 쪽이 default로 본다. 레벨이 없으면 Lv1.
  * 아이템 id는 카탈로그와 대조하지 않는다: 당시 장착을 그대로 보여 주고, 모르는 id는 프론트가 default로 그린다
  */
 export function parseBoardSkins(json: string | null | undefined): TetrisBoardSkins | null {
   if (!json) return null;
   try {
-    const value = JSON.parse(json) as Partial<Record<TetrisBoardSkinSlot, unknown>>;
+    const value = JSON.parse(json) as Partial<Record<TetrisBoardSkinSlot | 'levels', unknown>>;
     const { block, effect, board } = value;
-    return typeof block === 'string' && typeof effect === 'string' && typeof board === 'string' ? { block, effect, board } : null;
+    if (typeof block !== 'string' || typeof effect !== 'string' || typeof board !== 'string') return null;
+    // 레벨은 skin-levels 이후 기록부터 있다 — 없거나 깨졌으면 Lv1
+    const levels = (typeof value.levels === 'object' && value.levels !== null ? value.levels : {}) as Partial<Record<TetrisBoardSkinSlot, unknown>>;
+    return { block, effect, board, levels: { block: parseLevel(levels.block), effect: parseLevel(levels.effect), board: parseLevel(levels.board) } };
   } catch {
     return null;
   }

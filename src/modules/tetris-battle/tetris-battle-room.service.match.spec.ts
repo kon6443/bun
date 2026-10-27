@@ -168,15 +168,25 @@ describe('TetrisBattleRoomService — 매치(P2)', () => {
     it('참가자 보드 스킨을 시작 시점 값으로 매치에 고정한다 — 스킨 없는 옛 자리는 default (tetris-skins D-006)', async () => {
       const { code } = await readyRoom([A, B]);
       mock.patchRoom(code, (room) => {
-        room.players[0].skins = { block: 'neon', effect: 'neon', board: 'gameboy' };
+        room.players[0].skins = { block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 4, effect: 1, board: 2 } };
         delete room.players[1].skins;
       });
       await service.startMatch(code, A.socketId, T0);
 
       expect(store.create.mock.calls[0][1].players.map((p: { playerId: string; skins: unknown }) => [p.playerId, p.skins])).toEqual([
-        ['p1', { block: 'neon', effect: 'neon', board: 'gameboy' }],
-        ['p2', { block: 'default', effect: 'default', board: 'default' }],
+        ['p1', { block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 4, effect: 1, board: 2 } }],
+        ['p2', { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } }],
       ]);
+    });
+
+    it('레벨 기능 전에 저장된 자리 스킨(levels 없음)은 Lv1로 채워 매치에 고정한다 — 배포 순간 열려 있던 방 (skin-levels D-002)', async () => {
+      const { code } = await readyRoom([A, B]);
+      mock.patchRoom(code, (room) => {
+        room.players[0].skins = { block: 'neon', effect: 'neon', board: 'gameboy' } as never;
+      });
+      await service.startMatch(code, A.socketId, T0);
+
+      expect(store.create.mock.calls[0][1].players[0].skins).toEqual({ block: 'neon', effect: 'neon', board: 'gameboy', levels: { block: 1, effect: 1, board: 1 } });
     });
 
     it.each([

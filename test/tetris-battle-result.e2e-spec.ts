@@ -290,11 +290,11 @@ describe('E2E 테트리스 대전 결과', () => {
           players: [
             {
               playerId: 'p1', name: '우승자', place: 1, kos: 1, sent: 4, received: 0, pieces: 20, maxCombo: 2, frames: 900, koReason: null, verdict: 'VERIFIED',
-              skins: { block: 'gameboy', effect: 'default', board: 'default' },
+              skins: { block: 'gameboy', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } },
             },
             {
               playerId: 'p2', name: '게스트', place: 2, kos: 0, sent: 0, received: 4, pieces: 9, maxCombo: 0, frames: 900, koReason: 'topout', verdict: 'VERIFIED',
-              skins: { block: 'default', effect: 'default', board: 'default' },
+              skins: { block: 'default', effect: 'default', board: 'default', levels: { block: 1, effect: 1, board: 1 } },
             },
           ],
         },
