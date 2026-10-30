@@ -1,24 +1,24 @@
 {
   "dependencies": {
-    "@nestjs/common": "^11.1.9",
-    "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.1.9",
-    "@nestjs/platform-express": "^11.1.9",
-    "@nestjs/platform-socket.io": "^11.1.12",
+    "@nestjs/common": "~11.1.29",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "~11.1.29",
+    "@nestjs/platform-express": "~11.1.29",
+    "@nestjs/platform-socket.io": "~11.1.29",
     "@nestjs/schedule": "^6.1.0",
-    "@nestjs/swagger": "^11.2.3",
+    "@nestjs/swagger": "^11.4.7",
     "@nestjs/terminus": "^11.1.1",
     "@nestjs/throttler": "^6.4.0",
     "@nestjs/typeorm": "^11.0.0",
-    "@nestjs/websockets": "^11.1.12",
+    "@nestjs/websockets": "~11.1.29",
     "@socket.io/redis-adapter": "^8.3.0",
     "@willsoto/nestjs-prometheus": "^6.1.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
-    "compression": "^1.8.0",
+    "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "discord.js": "^14.21.0",
+    "discord.js": "^14.27.0",
     "dotenv": "^16.4.7",
     "helmet": "^8.0.0",
     "ioredis": "^5.9.3",
@@ -38,7 +38,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.14",
-    "@nestjs/testing": "^11.1.19",
+    "@nestjs/testing": "~11.1.29",
     "@types/compression": "^1.7.5",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
@@ -53,7 +53,7 @@
     "jest": "^30.3.0",
     "pino-pretty": "^13.1.0",
     "pino-roll": "^4.0.0",
-    "socket.io-client": "^4.8.3",
+    "socket.io-client": "^4.8.4",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.9",
     "tsx": "^4.20.3",
@@ -92,6 +92,11 @@
       "esbuild",
       "oracledb",
       "unrs-resolver"
-    ]
+    ],
+    "overrides": {
+      "multer@<2.5.0": "^2.5.0",
+      "ws@>=8.0.0 <8.21.0": "^8.21.0",
+      "js-yaml@>=5.0.0 <5.4.1": "^5.4.1"
+    }
   }
 }
