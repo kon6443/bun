@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
 import type { Redis } from 'ioredis';
-import { checkPlayerName, containsForbiddenWord } from '../games/player-name-policy';
+import { GameRoomRateLimiter } from '../game-room/game-room-rate-limit';
+import { acquireIntervalGate, touchHeartbeat } from '../game-room/game-room-presence';
+import { chatTextAllowed, checkPlayerName, checkRoomName } from '../game-room/game-room-text';
+import { GameRoomStore } from '../game-room/game-room.store';
 import {
   DISCONNECT_GRACE_MS,
   WAKE_MARGIN_MS,
@@ -21,6 +24,7 @@ import {
   ROOM_CODE_MAX_ATTEMPTS,
   ROOM_TTL_SECONDS,
   TETRIS_BATTLE_RATE_LIMITS,
+  TETRIS_BATTLE_ROOM_KEYS,
   TetrisBattleRateLimitAction,
 } from './tetris-battle.constants';
 import { TetrisBattleError } from './tetris-battle.errors';
@@ -59,7 +63,8 @@ import { type TetrisBoardSkins, defaultSkinSet, storedBoardSkins, toBoardSkins }
 
 
 /**
- * Redis 키 (모두 TTL 있음 — DECISIONS D-012: allkeys-lru라 TTL 없는 키가 쌓이면 다른 키가 밀려난다)
+ * Redis 키 (모두 TTL 있음 — DECISIONS D-012: allkeys-lru라 TTL 없는 키가 쌓이면 다른 키가 밀려난다).
+ * 키 문자열은 공용 부품 `createGameRoomKeys('tetris-battle:')`(TETRIS_BATTLE_ROOM_KEYS)가 만든다 — 아래 모양 그대로
  *
  * | 키 | 타입 | TTL |
  * |---|---|---|
@@ -75,10 +80,8 @@ import { type TetrisBoardSkins, defaultSkinSet, storedBoardSkins, toBoardSkins }
  *
  * 로비 인덱스에 남은 코드의 방 키가 TTL로 사라졌으면 listRooms가 발견 즉시 ZREM한다.
  */
-const roomKey = (code: string) => `tetris-battle:room:${code}`;
-const LOBBY_INDEX_KEY = 'tetris-battle:rooms';
-/** 로비 요약 캐시 (REST, D-025) — String JSON, TTL LOBBY_COUNTS_CACHE_MS. 응답 모양이 바뀌어 키를 새로 둔다(배포 중 옛 모양 캐시를 읽지 않게) */
-const LOBBY_SUMMARY_CACHE_KEY = 'tetris-battle:lobby-summary';
+/** lobby-summary: 응답 모양이 바뀌어 키를 새로 뒀다(배포 중 옛 모양 캐시를 읽지 않게) — 모양을 또 바꾸면 키도 바꾼다 */
+const KEYS = TETRIS_BATTLE_ROOM_KEYS;
 
 /** 로비 요약 — 방 수 + 바로 들어갈 수 있는 방 미리보기 */
 export interface LobbySummary {
@@ -87,44 +90,9 @@ export interface LobbySummary {
   /** 입장 가능한 대기 방(빈자리 있음) — 사람 많은 순, 같으면 최근 생성 순, 최대 LOBBY_PREVIEW_LIMIT개 */
   rooms: Pick<RoomSummary, 'code' | 'name' | 'playerCount' | 'maxPlayers' | 'locked'>[];
 }
-const rateLimitKey = (action: string, subject: string) => `tetris-battle:rl:${action}:${subject}`;
-const probeKey = (code: string) => `tetris-battle:probe:${code}`;
-/** 소켓 단위 — 자리를 넘겨준 옛 탭이 계속 답해도 넘겨받은 소켓의 생존으로 세지 않게 */
-const heartbeatKey = (code: string, socketId: string) => `tetris-battle:hb:${code}:${socketId}`;
-const heartbeatProbeKey = (code: string) => `tetris-battle:hbprobe:${code}`;
 
-/**
- * 방 단위 원자 변경 — 버전 비교 후 쓰기(CAS) Lua.
- *
- * 왜 CAS인가(락 `SET NX PX` 대신):
- *  - 변경 로직(입장·이탈·방장 이양·정리)을 전부 TypeScript에 두고 Lua는 "버전이 같으면 쓴다" 한 가지만 한다
- *    → 규칙은 단위 테스트로, 원자성은 이 짧은 스크립트로 검증한다. Lua에 JSON 조작을 넣으면 둘 다 어려워진다.
- *  - 락은 보유자가 PX보다 오래 멈추면(GC·Redis 지연) 두 쓰기가 겹치고, 해제 토큰 검증·대기 재시도까지 필요하다.
- *    CAS는 멈춘 쪽이 늦게 쓰려 할 때 버전이 달라 실패하고 다시 읽을 뿐이라 그런 창이 없다.
- *  - WATCH/MULTI는 어댑터 pub 클라이언트(여러 서비스가 공유하는 한 연결)에서 쓰면 다른 요청의 명령과 섞여 깨진다.
- *
- * KEYS[1] 방 Hash, KEYS[2] 로비 ZSET
- * ARGV[1] 기대 버전('0' = 아직 없어야 함 — 생성), ARGV[2] 새 JSON(''이면 삭제), ARGV[3] TTL(초), ARGV[4] 코드, ARGV[5] 로비 점수
- * 반환: 1 성공 · 0 버전 불일치(다른 레플리카가 먼저 바꿈 또는 방이 사라짐)
- */
-export const ROOM_CAS_SCRIPT = `
-local cur = redis.call('HGET', KEYS[1], 'v')
-if ARGV[1] == '0' then
-  if cur then return 0 end
-elseif cur ~= ARGV[1] then
-  return 0
-end
-if ARGV[2] == '' then
-  redis.call('DEL', KEYS[1])
-  redis.call('ZREM', KEYS[2], ARGV[4])
-else
-  redis.call('HSET', KEYS[1], 'v', tostring(tonumber(ARGV[1]) + 1), 'json', ARGV[2])
-  redis.call('EXPIRE', KEYS[1], ARGV[3])
-  redis.call('ZADD', KEYS[2], ARGV[5], ARGV[4])
-  redis.call('EXPIRE', KEYS[2], ARGV[3])
-end
-return 1
-`;
+/** 방 CAS Lua — 공용 저장소(game-room.store.ts)로 옮겼다. 실제 Redis 스펙이 이 경로로 import한다 */
+export { ROOM_CAS_SCRIPT } from '../game-room/game-room.store';
 
 /** Redis에 저장하는 플레이어 — 토큰은 해시만, socketId는 멤버십 판정 기준 */
 export interface StoredPlayer {
@@ -275,15 +243,8 @@ interface MutationOutcome<T> {
 /** WAITING 방 우선, 같은 상태면 최근 생성 순 */
 const STATUS_ORDER: Record<RoomStatus, number> = { WAITING: 0, PLAYING: 1, RESULT: 2 };
 
-/**
- * 방 이름·채팅에 금지하는 문자: 제어(Cc)·서로게이트(Cs)·사용자 정의(Co)·미할당(Cn) + bidi 제어
- * (U+202A–202E 임베딩·오버라이드, U+2066–2069 격리, U+200E·200F 방향 표시, U+061C 아랍 문자 표시).
- * 서식 문자(Cf) 전체를 막지 않는 이유: ZWJ(U+200D)·이모지 변형 선택자(U+FE0F) 등 이모지 구성 문자가 Cf/Mn이라
- * 👩‍💻 같은 이모지가 막힌다. 제로폭 문자로 금칙어를 쪼개는 우회는 금칙어 정규화(한글·영문만 남김)가 막는다.
- */
-const DISALLOWED_CHARS = /[\p{Cc}\p{Cs}\p{Co}\p{Cn}\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/u;
-
-export const containsDisallowedChars = (text: string): boolean => DISALLOWED_CHARS.test(text);
+/** 방 이름·채팅 금지 문자 판정 — 공용 텍스트 정책(game-room-text.ts) */
+export { containsDisallowedChars } from '../game-room/game-room-text';
 
 @Injectable()
 export class TetrisBattleRoomService {
@@ -295,6 +256,9 @@ export class TetrisBattleRoomService {
   private matchFinishedListener: ((matchId: string) => void) | null = null;
   private socketEvictor: SocketEvictor | null = null;
   private readonly matches = new TetrisBattleMatchStore();
+  /** 방 Hash·로비 인덱스·로비 요약 캐시 (공용 부품) */
+  private readonly rooms = new GameRoomStore<StoredRoom>(KEYS, ROOM_TTL_SECONDS, this.logger);
+  private readonly rateLimiter = new GameRoomRateLimiter<TetrisBattleRateLimitAction>(KEYS, TETRIS_BATTLE_RATE_LIMITS, this.logger);
   /** 깨우기 타이머(D-009) — 프로세스 종료를 막지 않는다. 테스트는 setWakeScheduler로 바꾼다 */
   private wakeScheduler: (task: () => void, delayMs: number) => void = (task, delayMs) => {
     setTimeout(task, delayMs).unref();
@@ -411,8 +375,8 @@ export class TetrisBattleRoomService {
     const redis = this.readyRedisClient();
     if (!redis) return null;
     try {
-      const cached = await redis.get(LOBBY_SUMMARY_CACHE_KEY);
-      if (cached) return JSON.parse(cached) as LobbySummary;
+      const cached = await this.rooms.readLobbySummary<LobbySummary>(redis);
+      if (cached) return cached;
 
       const summaries = await this.scanLobby(redis, now);
       const waiting = summaries.filter((r) => r.status === 'WAITING');
@@ -423,7 +387,7 @@ export class TetrisBattleRoomService {
         .slice(0, LOBBY_PREVIEW_LIMIT)
         .map(({ code, name, playerCount, maxPlayers, locked }) => ({ code, name, playerCount, maxPlayers, locked }));
       const summary: LobbySummary = { waitingRooms: waiting.length, playingRooms: summaries.length - waiting.length, rooms };
-      await redis.set(LOBBY_SUMMARY_CACHE_KEY, JSON.stringify(summary), 'PX', LOBBY_COUNTS_CACHE_MS);
+      await this.rooms.writeLobbySummary(redis, summary, LOBBY_COUNTS_CACHE_MS);
       return summary;
     } catch (error) {
       this.logger.warn(`로비 요약 조회 실패 — 503: ${(error as Error).message}`);
@@ -436,54 +400,20 @@ export class TetrisBattleRoomService {
    * TTL로 사라진 방은 빼고 인덱스에서 정리, 유예가 지난 끊긴 플레이어는 인원에서 빼고, 남은 사람이 없는 방은 뺀다
    */
   private async scanLobby(redis: Redis, now: number): Promise<RoomSummary[]> {
-    const codes = await redis.zrevrange(LOBBY_INDEX_KEY, 0, LOBBY_SCAN_LIMIT - 1);
-    if (codes.length === 0) return [];
-
-    const pipeline = redis.pipeline();
-    for (const code of codes) pipeline.hget(roomKey(code), 'json');
-    const results = (await pipeline.exec()) ?? [];
+    // 사라진 방의 인덱스 정리·인덱스 끝 정리는 저장소가 한다
+    const stored = await this.rooms.scanLobby(redis, LOBBY_SCAN_LIMIT, LOBBY_TAIL_SWEEP_BATCH);
 
     const summaries: RoomSummary[] = [];
-    const vanished: string[] = [];
-    codes.forEach((code, i) => {
-      const json = results[i]?.[1];
-      if (typeof json !== 'string') {
-        vanished.push(code);
-        return;
-      }
+    for (const source of stored) {
       // 읽기 전용 정리 — 유예가 지난 끊긴 플레이어는 목록 인원에서 뺀다(실제 제거는 다음 변경 때)
-      const room = this.pruneDisconnected(JSON.parse(json) as StoredRoom, now);
+      const room = this.pruneDisconnected(source, now);
       if (room.players.length > 0) summaries.push(this.toSummary(room));
-    });
-
-    if (vanished.length > 0) {
-      // TTL로 사라진 방을 인덱스에서 정리 — 실패해도 다음 조회에서 다시 시도된다
-      redis.zrem(LOBBY_INDEX_KEY, ...vanished).catch((error: unknown) => {
-        this.logger.warn(`로비 인덱스 정리 실패: ${(error as Error).message}`);
-      });
     }
-    // 인덱스가 읽는 범위(최근 LOBBY_SCAN_LIMIT개)보다 크면 가장 오래된 쪽도 조금씩 정리한다 — 범위 밖으로 밀린 사라진 방 코드가
-    // 영영 남아 인덱스가 끝없이 커지지 않게(tetris-audit BE-03). 인덱스 점수는 생성 시각이라 오래 살아 있는 방도 있어 존재 확인으로 지운다
-    if (codes.length === LOBBY_SCAN_LIMIT) void this.sweepLobbyTail(redis);
 
     return summaries
       .map((summary, index) => ({ summary, index }))
       .sort((a, b) => STATUS_ORDER[a.summary.status] - STATUS_ORDER[b.summary.status] || a.index - b.index)
       .map(({ summary }) => summary);
-  }
-
-  private async sweepLobbyTail(redis: Redis): Promise<void> {
-    try {
-      const oldest = await redis.zrange(LOBBY_INDEX_KEY, 0, LOBBY_TAIL_SWEEP_BATCH - 1);
-      if (oldest.length === 0) return;
-      const pipeline = redis.pipeline();
-      for (const code of oldest) pipeline.exists(roomKey(code));
-      const results = (await pipeline.exec()) ?? [];
-      const gone = oldest.filter((_, i) => results[i]?.[1] === 0);
-      if (gone.length > 0) await redis.zrem(LOBBY_INDEX_KEY, ...gone);
-    } catch (error) {
-      this.logger.warn(`로비 인덱스 끝 정리 실패: ${(error as Error).message}`);
-    }
   }
 
   // ==================== 생성·입장·이탈 ====================
@@ -1313,7 +1243,7 @@ export class TetrisBattleRoomService {
     const redis = this.readyRedisClient();
     if (!redis) return;
     try {
-      await redis.set(heartbeatKey(code, socketId), '1', 'PX', HEARTBEAT_TTL_MS);
+      await touchHeartbeat(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS);
     } catch (error) {
       this.logger.warn(`하트비트 기록 실패: code=${code}, ${(error as Error).message}`);
       return;
@@ -1328,14 +1258,14 @@ export class TetrisBattleRoomService {
    */
   private async reconcileHeartbeats(redis: Redis, code: string, now: number): Promise<void> {
     try {
-      if ((await redis.set(heartbeatProbeKey(code), '1', 'PX', HEARTBEAT_PROBE_INTERVAL_MS, 'NX')) !== 'OK') return;
+      if (!(await acquireIntervalGate(redis, KEYS.heartbeatProbe(code), HEARTBEAT_PROBE_INTERVAL_MS))) return;
       const loaded = await this.loadRoom(redis, code);
       if (!loaded) return;
       const due = loaded.room.players.filter(
         (p) => p.heartbeat === true && p.connected && p.socketId !== null && now - (p.connectedAt ?? p.joinedAt) >= HEARTBEAT_TTL_MS,
       );
       if (due.length === 0) return;
-      const beats = await redis.mget(...due.map((p) => heartbeatKey(code, p.socketId as string)));
+      const beats = await redis.mget(...due.map((p) => KEYS.heartbeat(code, p.socketId as string)));
       const silent = new Map(due.filter((_, i) => beats[i] === null).map((p) => [p.playerId, p.socketId]));
       if (silent.size === 0) return;
 
@@ -1388,7 +1318,7 @@ export class TetrisBattleRoomService {
       if (snap?.status === 'PLAYING' && self?.alive) throw new TetrisBattleError('MATCH_ALREADY_STARTED');
     }
     // 제어·bidi 문자(줄바꿈·방향 오버라이드 등)는 화면을 깨거나 다른 사람의 문장처럼 위장하는 데 쓰인다
-    if (containsDisallowedChars(text) || containsForbiddenWord(text)) throw new TetrisBattleError('CHAT_FORBIDDEN');
+    if (!chatTextAllowed(text)) throw new TetrisBattleError('CHAT_FORBIDDEN');
     // 빈도 제한은 방·플레이어 단위 — 재연결(새 소켓)로 카운터를 초기화하지 못하게
     if (!(await this.consumeRateLimit('chat', `${code}:${player.playerId}`))) throw new TetrisBattleError('RATE_LIMITED');
     return { playerId: player.playerId, name: player.name, text, at: new Date(now).toISOString() };
@@ -1409,21 +1339,11 @@ export class TetrisBattleRoomService {
   // ==================== 빈도 제한 ====================
 
   /**
-   * 고정 윈도 빈도 제한. 한도 안이면 true.
+   * 고정 윈도 빈도 제한(공용 GameRoomRateLimiter, 한도 TETRIS_BATTLE_RATE_LIMITS). 한도 안이면 true.
    * Redis 명령이 실패하면 통과시킨다(팀 채팅 레이트 리밋과 같은 fail-open — 보조 방어선 때문에 기능 전체를 막지 않는다).
    */
   async consumeRateLimit(action: TetrisBattleRateLimitAction, subject: string): Promise<boolean> {
-    const redis = this.requireRedis();
-    const { limit, windowSec } = TETRIS_BATTLE_RATE_LIMITS[action];
-    const key = rateLimitKey(action, subject);
-    try {
-      // MULTI: INCR과 TTL 설정 사이에 키가 TTL 없이 남지 않게. NX: 윈도 시작 때만 TTL
-      const results = await redis.multi().incr(key).expire(key, windowSec, 'NX').exec();
-      return Number(results?.[0]?.[1] ?? 0) <= limit;
-    } catch (error) {
-      this.logger.warn(`빈도 제한 확인 실패 — 통과: action=${action}, ${(error as Error).message}`);
-      return true;
-    }
+    return this.rateLimiter.consume(this.requireRedis(), action, subject);
   }
 
   // ==================== 내부: 저장·CAS ====================
@@ -1435,9 +1355,7 @@ export class TetrisBattleRoomService {
   }
 
   private async loadRoom(redis: Redis, code: string): Promise<{ version: string; room: StoredRoom } | null> {
-    const hash = await redis.hgetall(roomKey(code));
-    if (!hash.v || !hash.json) return null;
-    return { version: hash.v, room: JSON.parse(hash.json) as StoredRoom };
+    return this.rooms.load(redis, code);
   }
 
   /** 기대 버전과 같을 때만 쓴다(room=null이면 삭제). 성공 여부 */
@@ -1447,18 +1365,7 @@ export class TetrisBattleRoomService {
     expectedVersion: string,
     room: StoredRoom | null,
   ): Promise<boolean> {
-    const result = await redis.eval(
-      ROOM_CAS_SCRIPT,
-      2,
-      roomKey(code),
-      LOBBY_INDEX_KEY,
-      expectedVersion,
-      room ? JSON.stringify(room) : '',
-      String(ROOM_TTL_SECONDS),
-      code,
-      String(room?.createdAt ?? 0),
-    );
-    return Number(result) === 1;
+    return this.rooms.compareAndSet(redis, code, expectedVersion, room);
   }
 
   /**
@@ -1548,8 +1455,7 @@ export class TetrisBattleRoomService {
   private async reconcileLiveness(redis: Redis, code: string, now: number): Promise<void> {
     if (!this.liveSocketProbe) return;
     try {
-      const gate = await redis.set(probeKey(code), '1', 'PX', LIVENESS_PROBE_INTERVAL_MS, 'NX');
-      if (gate !== 'OK') return;
+      if (!(await acquireIntervalGate(redis, KEYS.probe(code), LIVENESS_PROBE_INTERVAL_MS))) return;
       const live = await this.liveSocketProbe(code);
       let ghostIds: string[] = [];
 
@@ -1691,7 +1597,7 @@ export class TetrisBattleRoomService {
     };
   }
 
-  // ==================== 내부: 이름·코드·토큰·비밀번호 ====================
+  // ==================== 내부: 이름 (판정은 공용 텍스트 정책, 여기서는 에러 코드로만 바꾼다) ====================
 
   private assertPlayerName(name: string): void {
     const verdict = checkPlayerName(name);
@@ -1701,10 +1607,8 @@ export class TetrisBattleRoomService {
 
   /** 방 이름: 1~20자, 제어·서식 문자 금지, 금칙어 금지 (플레이어 이름보다 허용 문자가 넓다 — 이모지·문장부호 허용) */
   private assertRoomName(name: string): void {
-    const length = Array.from(name).length;
-    if (length === 0 || length > ROOM_NAME_MAX_LENGTH || containsDisallowedChars(name)) {
-      throw new TetrisBattleError('ROOM_NAME_INVALID');
-    }
-    if (containsForbiddenWord(name)) throw new TetrisBattleError('ROOM_NAME_FORBIDDEN');
+    const verdict = checkRoomName(name, ROOM_NAME_MAX_LENGTH);
+    if (verdict === 'INVALID') throw new TetrisBattleError('ROOM_NAME_INVALID');
+    if (verdict === 'FORBIDDEN') throw new TetrisBattleError('ROOM_NAME_FORBIDDEN');
   }
 }

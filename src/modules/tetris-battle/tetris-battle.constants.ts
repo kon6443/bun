@@ -1,9 +1,14 @@
+import { createGameRoomKeys } from '../game-room/game-room-keys';
+
 /**
  * 대전 서버 내부 상수 (프론트 계약이 아닌 값 — 계약 상수는 tetris-battle.events.ts)
  *
  * 빈도 제한을 공용 `throttle.constants.ts`가 아니라 여기 두는 이유: HTTP 스로틀러가 아니라
  * 이 모듈의 Redis 카운터가 쓰는 값이고, 공용 파일은 다른 브랜치와 충돌 위험이 크다(DECISIONS D-003).
  */
+
+/** 방 Redis 키 (공용 부품 game-room-keys, 접두사 `tetris-battle:`) — 문자열은 배포 중 옛·새 레플리카가 같이 읽는다. 바꾸지 않는다 */
+export const TETRIS_BATTLE_ROOM_KEYS = createGameRoomKeys('tetris-battle:');
 
 /** 방 키 TTL(초) — 쓰기마다 갱신. 2시간 동안 아무 변경이 없는 방은 Redis가 지운다 */
 export const ROOM_TTL_SECONDS = 2 * 60 * 60;
