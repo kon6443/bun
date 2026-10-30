@@ -26,6 +26,7 @@ const DEFAULT_MESSAGES: Record<TetrisBattleErrorCode, string> = {
   PLAYER_NOT_ALIVE: '이미 탈락했습니다.',
   SEAT_IN_USE: '다른 탭이나 기기에서 경기 중입니다. 경기가 끝나면 들어올 수 있습니다.',
   PLAYER_NOT_FOUND: '내보낼 참가자를 찾을 수 없습니다.',
+  LOBBY_CHAT_NOT_JOINED: '채팅방에 먼저 들어가 주세요.',
 };
 
 /**

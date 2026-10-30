@@ -143,6 +143,20 @@ export class ChatDto extends RoomCodeDto {
   text: string;
 }
 
+/** 로비 채팅 (tetris-chat D-001) — 글자 규칙은 방 채팅과 같다. name은 게스트만 쓰고 형식·금칙어는 서비스가 본다(NAME_* code) */
+export class LobbyChatDto {
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(1, CHAT_TEXT_MAX_LENGTH)
+  text: string;
+
+  @IsOptional()
+  @Transform(normalizeName)
+  @IsString()
+  @MaxLength(NAME_PRECHECK_MAX)
+  name?: string;
+}
+
 export class EmoteDto extends RoomCodeDto {
   @IsIn(TETRIS_BATTLE_EMOTE_IDS)
   emoteId: TetrisBattleEmoteId;
