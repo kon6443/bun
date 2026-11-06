@@ -1,6 +1,6 @@
 name: CI
 
-# 검증 게이트 — verify(lint → typecheck → test → build)와 e2e 두 잡을 병렬로.
+# 검증 게이트 — lint · check(typecheck → test → build) · e2e 세 잡을 병렬로.
 # - pull_request: PR 단계에서 검증한다 (브랜치 보호 필수 체크 대상).
 # - workflow_call: deploy-to-oci.yml 이 배포 전에 호출한다. main push 검증은 이 경로로 한다
 #   (push 트리거를 따로 두면 배포 실행과 중복으로 돈다).
@@ -18,7 +18,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify:
+  # pnpm ci:core(lint → typecheck → test → build)를 두 잡으로 나눠 병렬로 돈다 — 검사 항목은 ci:core와 같다.
+  # lint가 가장 길어(로컬 실측 lint 43s · typecheck 7s · test 26s · build 3s) 따로 떼고 나머지는 한 잡에 순서대로 둔다.
+  # 검사 항목을 바꾸면 package.json의 ci:core와 같이 맞춘다 (docs/tasks/ci-cd-perf-2026-11)
+  lint:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -37,10 +40,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint · Typecheck · Test · Build
-        run: pnpm ci:core
+      - name: Lint
+        run: pnpm lint
 
-  # E2E는 verify와 병렬로 돈다 — 설치를 한 번 더 하지만(pnpm 캐시) 직렬 18s가 크리티컬 패스에서 빠진다
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm (package.json packageManager 버전)
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js (운영 이미지와 같은 24)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  # E2E는 다른 잡과 병렬로 돈다 — 설치를 한 번 더 하지만(pnpm 캐시) 직렬 18s가 크리티컬 패스에서 빠진다
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
