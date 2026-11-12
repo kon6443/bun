@@ -277,4 +277,43 @@ describe('UserSkinService (tetris-skins D-003)', () => {
       await expect(service.equip(1, { background: '' })).rejects.toMatchObject({ status: 422, code: 'USER_SKIN_UNKNOWN' });
     });
   });
+
+  describe('게임 무관 슬롯 키 메서드 (포트리스 탱크 스킨, fortress DESIGN §13)', () => {
+    it('slotItemsOf: 그 슬롯 키만 읽어 사용자별 장착 id(없으면 null)·강화 레벨 — 쿼리 2번, 모든 userId 포함', async () => {
+      repository.find.mockResolvedValue([row(1, 'FORTRESS_TANK', 'desert')]);
+      levelRepository.find.mockResolvedValue([levelRow(1, 'FORTRESS_TANK', 'desert', 3), levelRow(2, 'FORTRESS_TANK', 'neon', 2)]);
+      const result = await service.slotItemsOf([1, 2, 1], 'FORTRESS_TANK');
+      expect(repository.find).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ slot: 'FORTRESS_TANK' }) }));
+      expect(levelRepository.find).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ slot: 'FORTRESS_TANK' }) }));
+      expect(result.get(1)).toEqual({ equipped: 'desert', levels: new Map([['desert', 3]]) });
+      expect(result.get(2)).toEqual({ equipped: null, levels: new Map([['neon', 2]]) });
+      repository.find.mockClear();
+      expect((await service.slotItemsOf([], 'FORTRESS_TANK')).size).toBe(0);
+      expect(repository.find).not.toHaveBeenCalled();
+    });
+
+    it('equipItem: 트랜잭션 안에서 그 슬롯 키로 저장(행 없으면 INSERT)', async () => {
+      txRepository.update.mockResolvedValue(updated(0));
+      await service.equipItem(1, 'FORTRESS_TANK', 'arctic');
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(txRepository.insert).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, slot: 'FORTRESS_TANK', skinId: 'arctic' }));
+    });
+
+    it('upgradeItem: 테트리스와 같은 잠금·잔액·원장 — REF_KEY는 슬롯 키 기준, 에러 details slot은 넘긴 이름', async () => {
+      await service.upgradeItem(1, 'FORTRESS_TANK', 'desert', 2, '포트리스 탱크 desert Lv2 강화', 'tank');
+      expect(lockQb.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(pointService.record).toHaveBeenCalledWith(manager, {
+        userId: 1,
+        amount: -SKIN_LEVEL_COSTS[0],
+        reason: 'SKIN_UPGRADE',
+        refKey: 'FORTRESS_TANK:desert:2',
+        memo: '포트리스 탱크 desert Lv2 강화',
+      });
+      await expect(service.upgradeItem(1, 'FORTRESS_TANK', 'desert', 3, 'm', 'tank')).rejects.toMatchObject({
+        status: 409,
+        code: 'USER_SKIN_LEVEL_MISMATCH',
+        details: { slot: 'tank', id: 'desert', level: 1 },
+      });
+    });
+  });
 });

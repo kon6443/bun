@@ -17,6 +17,9 @@ import { GameSessionService } from './modules/games/game-session.service';
 import { GameViewService } from './modules/games/game-view.service';
 import { GameHallOfFameService } from './modules/games/game-hall-of-fame.service';
 import { TetrisBattleRoomService } from './modules/tetris-battle/tetris-battle-room.service';
+import { FortressRoomService } from './modules/fortress/fortress-room.service';
+import { FortressMatchService } from './modules/fortress/fortress-match.service';
+import { FortressLobbyChatService } from './modules/fortress/fortress-lobby-chat.service';
 import { TetrisLobbyChatService } from './modules/tetris-battle/tetris-lobby-chat.service';
 import { ConfigService } from '@nestjs/config';
 import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
@@ -111,6 +114,11 @@ async function bootstrap() {
     app.get(TetrisBattleRoomService).setRedisClient(redisAdapter.getPubClient());
     // 로비 전체 채팅 최근 대화(tetris-chat D-001) — 같은 연결
     app.get(TetrisLobbyChatService).setRedisClient(redisAdapter.getPubClient());
+    // 포트리스 대전 방·경기 상태(레플리카 간 공유, 원자 변경은 CAS Lua) — 같은 연결
+    app.get(FortressRoomService).setRedisClient(redisAdapter.getPubClient());
+    app.get(FortressMatchService).setRedisClient(redisAdapter.getPubClient());
+    // 포트리스 로비 전체 채팅 최근 대화(D-016) — 같은 연결
+    app.get(FortressLobbyChatService).setRedisClient(redisAdapter.getPubClient());
 
     // HTTP 스로틀 저장소 전용 Redis 연결 (레플리카 간 카운터 공유 — 어댑터 클라이언트와 분리, 이유는 저장소 주석)
     app.get<RedisThrottlerStorage>(getStorageToken()).connect({
