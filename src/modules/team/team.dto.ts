@@ -306,6 +306,14 @@ export class TeamUserDto {
   })
   teamNickname: string | null;
 
+  @ApiProperty({
+    description: '이 팀 가입 시각 (재가입이면 재가입 시각). 멤버 카드의 "가입일" 표시용',
+    example: '2026-01-01T00:00:00.000Z',
+    nullable: true,
+    type: Date,
+  })
+  joinedAt: Date | null;
+
   @ApiProperty({ description: '생년월일', example: '1990-01-01', nullable: true })
   birth: Date | null;
 

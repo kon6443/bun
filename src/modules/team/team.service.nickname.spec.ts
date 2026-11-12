@@ -87,12 +87,14 @@ describe('TeamService — 팀 닉네임', () => {
       teamMemberRepository.createQueryBuilder.mockReturnValue(qb as never);
       return qb;
     };
+    const JOINED_AT = new Date('2026-01-02T03:04:05.000Z');
     const raw = (userId: number, userName: string | null, teamNickname: string | null) => ({
       user_USER_ID: userId,
       user_USER_NAME: userName,
       tm_TEAM_NICKNAME: teamNickname,
       tm_ROLE: 'MEMBER',
       tm_ACT_STATUS: 1,
+      tm_JOINED_AT: JOINED_AT,
     });
 
     it('팀 닉네임 컬럼을 함께 읽어야 함', async () => {
@@ -101,6 +103,16 @@ describe('TeamService — 팀 닉네임', () => {
       await service.getTeamUsers(7, 3);
 
       expect(qb.select).toHaveBeenCalledWith(expect.arrayContaining(['user.userName', 'tm.teamNickname']));
+    });
+
+    // 프론트 멤버 카드 "가입일"이 이 값을 읽는다 — 빠져 있어 "Invalid Date"로 보였다 (team-nickname WORKLOG 실측 절)
+    it('이 팀 가입 시각(joinedAt)을 함께 내려야 함', async () => {
+      const qb = mockRaw([raw(1, '계정A', '팀A')]);
+
+      const [user] = await service.getTeamUsers(7, 3);
+
+      expect(qb.select).toHaveBeenCalledWith(expect.arrayContaining(['tm.joinedAt']));
+      expect(user.joinedAt).toEqual(JOINED_AT);
     });
 
     it('userName은 팀 닉네임 → 계정 닉네임 → 기본 표시명, teamNickname은 원값이어야 함', async () => {

@@ -1020,6 +1020,8 @@ export class TeamService {
       userName: string;
       /** 팀 닉네임 원값 — 미설정이면 null (설정 UI용) */
       teamNickname: string | null;
+      /** 이 팀 가입 시각(USER_TEAMS.JOINED_AT, DB 기본 SYSTIMESTAMP) — 재가입이면 재가입 시각 */
+      joinedAt: Date | null;
       birth: Date | null;
       kakaoEmail: string | null;
       role: TeamMemberRoleType;
@@ -1045,6 +1047,7 @@ export class TeamService {
         'tm.role',
         'tm.actStatus',
         'tm.teamNickname',
+        'tm.joinedAt',
         'user.createdDate',
         'user.isActivated',
       ])
@@ -1065,6 +1068,7 @@ export class TeamService {
       userId: raw.user_USER_ID,
       userName: getTeamDisplayName(raw.tm_TEAM_NICKNAME, raw.user_USER_NAME, Number(raw.user_USER_ID)),
       teamNickname: raw.tm_TEAM_NICKNAME ?? null,
+      joinedAt: raw.tm_JOINED_AT ?? null,
       birth: raw.user_BIRTH,
       kakaoEmail: raw.user_KAKAO_EMAIL,
       role: raw.tm_ROLE,
