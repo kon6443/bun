@@ -1,0 +1,58 @@
+{
+  "engineVersion": 2,
+  "sha256": "4df48ae4f0edab414fb6dc2ddfef43dba2506516bb5fdbb4618d7348b3a00cef",
+  "files": [
+    {
+      "path": "__fixtures__/golden-matches.json",
+      "sha256": "0a8b4cd4e56f8ffbe25a473e0a677db7d44da281fcbb4385c68a111bce0c5dbd"
+    },
+    {
+      "path": "constants.ts",
+      "sha256": "d9ccde3d5cf7637f1b72109b9c7b416a288244be735e57c5330f9b7c78999b0f"
+    },
+    {
+      "path": "data.ts",
+      "sha256": "22a845f24ea955f56b8a613a77e001c10e8db2457cf83d05bc9fd0d8460d43d0"
+    },
+    {
+      "path": "game.ts",
+      "sha256": "b075bf4a769624fced68d5a0e00f0c6bb3125041bd0b7e5ccb9aa1e9a420bda7"
+    },
+    {
+      "path": "hash.ts",
+      "sha256": "ad429aa7ea5b636491327be8aefd8832a9575966bb84e6aa7f703420b954dff2"
+    },
+    {
+      "path": "index.ts",
+      "sha256": "a386e656b8dbef5e4132fdc322dd391ec0ca72fe76fded7a842075f9e8742a27"
+    },
+    {
+      "path": "maps.ts",
+      "sha256": "0e22a18a7ec7c03632aa9dd03cfcdefd1b943012809acb9982685df69b527866"
+    },
+    {
+      "path": "math.ts",
+      "sha256": "a1eaddac564d58840f343e6c5be134f6c8c432cf5b450dbcd68fd477e3c72963"
+    },
+    {
+      "path": "random.ts",
+      "sha256": "9bc663e2eb022776a5b35feac614e20476335a1191c93a251b338ab48cf979f3"
+    },
+    {
+      "path": "replay.ts",
+      "sha256": "1ba4b1265ae95ec71d0c2951e8064220faf5344d80770149a4eb26713e1a723d"
+    },
+    {
+      "path": "sim.ts",
+      "sha256": "9b14a99fa465745ae97c286795d22c764efea7d83cf8e6be5df0a901ddfa0b1a"
+    },
+    {
+      "path": "state.ts",
+      "sha256": "f2d97ca0699d4ba5d33d83caca4e1c07bd162be7edf2168293271138818eb423"
+    },
+    {
+      "path": "terrain.ts",
+      "sha256": "9fe3293a9b50b1e537e93f5a1e0f8ef0a91053172c333027482332ec90ab0e52"
+    }
+  ]
+}
