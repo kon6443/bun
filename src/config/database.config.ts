@@ -22,6 +22,9 @@ import { UserPointLedger } from '../entities/UserPointLedger';
 import { TetrisBattleMatch } from '../entities/TetrisBattleMatch';
 import { TetrisBattlePlayer } from '../entities/TetrisBattlePlayer';
 import { TetrisBattleReplay } from '../entities/TetrisBattleReplay';
+import { FortressMatch } from '../entities/FortressMatch';
+import { FortressPlayer } from '../entities/FortressPlayer';
+import { FortressReplay } from '../entities/FortressReplay';
 export default registerAs('database', (): TypeOrmModuleOptions => {
   const config: TypeOrmModuleOptions = {
     type: 'oracle',
@@ -30,7 +33,7 @@ export default registerAs('database', (): TypeOrmModuleOptions => {
     connectString: process.env.ORACLE_DB_CONNECT_STR,
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
-    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink, TeamChatMessage, TeamChatReadCursor, TeamTag, TeamTaskTag, Feedback, GameScore, GameReplay, GameReplayViewStat, TetrisBattleMatch, TetrisBattlePlayer, TetrisBattleReplay, UserSkinEquip, UserSkinLevel, UserPointLedger],
+    entities: [User, Team, TeamMember, FileShare, TeamTask, TaskComment, TeamInvitation, TelegramLink, TeamChatMessage, TeamChatReadCursor, TeamTag, TeamTaskTag, Feedback, GameScore, GameReplay, GameReplayViewStat, TetrisBattleMatch, TetrisBattlePlayer, TetrisBattleReplay, FortressMatch, FortressPlayer, FortressReplay, UserSkinEquip, UserSkinLevel, UserPointLedger],
     extra: {
       poolMin: 1,
       poolMax: 3,
