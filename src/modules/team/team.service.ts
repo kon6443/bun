@@ -15,6 +15,8 @@ import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
 import { User } from '../../entities/User';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { getDisplayName, getTeamDisplayName } from '../../common/utils/user.utils';
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -111,11 +113,10 @@ export class TeamService {
     private readonly taskCommentRepository: Repository<TaskComment>,
     @InjectRepository(TeamInvitation)
     private readonly teamInvitationRepository: Repository<TeamInvitation>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
     private readonly configService: ConfigService,
     @Inject(NOTIFICATION_PORT)
     private readonly notificationPort: INotificationPort,
+    private readonly teamDisplayNameService: TeamDisplayNameService,
   ) {}
 
   getTeamTaskUrl({teamId, taskId}:{teamId: number, taskId: number}): string {
@@ -243,7 +244,7 @@ export class TeamService {
    * @param teamIds 팀 ID 목록 (선택)
    * @param taskIds 태스크 ID 목록 (선택)
    * @param actStatus 활성 상태 목록 (선택)
-   * @returns 태스크 목록 (생성자 이름 포함, 시작일시 내림차순)
+   * @returns 태스크 목록 (생성자의 팀 안 표시 이름 포함, 시작일시 내림차순)
    */
   async getTeamTasksBy({
     teamIds,
@@ -271,13 +272,12 @@ export class TeamService {
       completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
-      userName: string | null;
+      userName: string;
     }>
   > {
     const tasksQueryBuilder = this.teamTaskRepository
       .createQueryBuilder('task')
       .innerJoinAndSelect('task.team', 'team')
-      .leftJoinAndSelect('task.user', 'user')
       .select([
         'team.teamName',
         'team.teamDescription',
@@ -295,7 +295,6 @@ export class TeamService {
         'task.completedAt',
         'task.crtdAt',
         'task.crtdBy',
-        'user.userName',
       ]);
 
     if (teamIds?.length) {
@@ -316,6 +315,16 @@ export class TeamService {
       .addOrderBy('task.endAt', 'ASC')
       .getMany();
 
+    // 작성자 이름은 팀마다 다르다(팀 닉네임) — 팀별로 한 번에 해석한다
+    const crtdByByTeam = new Map<number, number[]>();
+    for (const task of tasks) {
+      crtdByByTeam.set(task.teamId, [...(crtdByByTeam.get(task.teamId) ?? []), task.crtdBy]);
+    }
+    const namesByTeam = new Map<number, Map<number, string>>();
+    for (const [teamId, userIds] of crtdByByTeam) {
+      namesByTeam.set(teamId, await this.teamDisplayNameService.getDisplayNames(teamId, userIds));
+    }
+
     return tasks.map(task => ({
       teamName: task.team.teamName,
       teamDescription: task.team.teamDescription,
@@ -333,7 +342,7 @@ export class TeamService {
       completedAt: task.completedAt,
       crtdAt: task.crtdAt,
       crtdBy: task.crtdBy,
-      userName: task.user?.userName || null,
+      userName: namesByTeam.get(task.teamId)?.get(task.crtdBy) ?? getTeamDisplayName(null, null, task.crtdBy),
     }));
   }
 
@@ -343,11 +352,12 @@ export class TeamService {
       const newTeam = manager.create(Team, createTeamDto);
       const savedTeam = await manager.save(Team, newTeam);
 
-      // 2. TeamMember 삽입 (같은 트랜잭션 내)
+      // 2. TeamMember 삽입 (같은 트랜잭션 내) — 팀 닉네임은 지금의 계정 닉네임을 복사해 시작한다 (team-nickname D-004)
       const newTeamMember = manager.create(TeamMember, {
         userId: createTeamDto.leaderId,
         teamId: savedTeam.teamId,
         role: 'MASTER' as RoleKey,
+        teamNickname: await this.getAccountDisplayName(manager, createTeamDto.leaderId),
       });
       await manager.save(TeamMember, newTeamMember);
     });
@@ -837,7 +847,7 @@ export class TeamService {
       completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
-      userName: string | null;
+      userName: string;
       tags: TaskTagView[];
     }>;
   }> {
@@ -875,13 +885,13 @@ export class TeamService {
    * @param taskId 태스크 ID
    * @returns 댓글 목록 (작성자 정보 포함, 생성일시 오름차순)
    */
-  async getCommentsByTaskId(taskId: number): Promise<
+  async getCommentsByTaskId(teamId: number, taskId: number): Promise<
     Array<{
       commentId: number;
       teamId: number;
       taskId: number;
       userId: number;
-      userName: string | null;
+      userName: string;
       commentContent: string;
       status: number;
       mdfdAt: Date | null;
@@ -890,7 +900,6 @@ export class TeamService {
   > {
     const comments = await this.taskCommentRepository
       .createQueryBuilder('comment')
-      .leftJoinAndSelect('comment.user', 'user')
       .where('comment.taskId = :taskId', { taskId })
       .orderBy('comment.commentId', 'ASC')
       .select([
@@ -902,16 +911,20 @@ export class TeamService {
         'comment.status',
         'comment.mdfdAt',
         'comment.crtdAt',
-        'user.userName',
       ])
       .getMany();
+
+    const names = await this.teamDisplayNameService.getDisplayNames(
+      teamId,
+      comments.map(comment => comment.userId),
+    );
 
     return comments.map(comment => ({
       commentId: comment.commentId,
       teamId: comment.teamId,
       taskId: comment.taskId,
       userId: comment.userId,
-      userName: comment.user?.userName || null,
+      userName: names.get(comment.userId) ?? getTeamDisplayName(null, null, comment.userId),
       // 삭제(소프트 삭제)된 댓글은 자리만 남기고 본문은 내보내지 않는다 — 화면에서 가려도 응답에 원문이 실려 있었다
       commentContent: comment.status === ActStatus.INACTIVE ? '' : comment.commentContent,
       status: comment.status,
@@ -944,7 +957,7 @@ export class TeamService {
       completedAt: Date | null;
       crtdAt: Date;
       crtdBy: number;
-      userName: string | null;
+      userName: string;
       tags: TaskTagView[];
     };
     comments: Array<{
@@ -952,7 +965,7 @@ export class TeamService {
       teamId: number;
       taskId: number;
       userId: number;
-      userName: string | null;
+      userName: string;
       commentContent: string;
       status: number;
       mdfdAt: Date | null;
@@ -978,7 +991,7 @@ export class TeamService {
     }
 
     // 4. 댓글 목록 조회
-    const comments = await this.getCommentsByTaskId(taskId);
+    const comments = await this.getCommentsByTaskId(teamId, taskId);
 
     // 5. 태그 조회
     const tagsByTaskId = await findTagsByTaskIds(this.dataSource.manager, [taskId]);
@@ -1003,7 +1016,10 @@ export class TeamService {
   ): Promise<
     Array<{
       userId: number;
-      userName: string | null;
+      /** 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → 사용자{id}) */
+      userName: string;
+      /** 팀 닉네임 원값 — 미설정이면 null (설정 UI용) */
+      teamNickname: string | null;
       birth: Date | null;
       kakaoEmail: string | null;
       role: TeamMemberRoleType;
@@ -1028,6 +1044,7 @@ export class TeamService {
         'user.kakaoEmail',
         'tm.role',
         'tm.actStatus',
+        'tm.teamNickname',
         'user.createdDate',
         'user.isActivated',
       ])
@@ -1046,7 +1063,8 @@ export class TeamService {
     // 3. Raw 데이터를 원하는 형태로 매핑
     return rawResults.map(raw => ({
       userId: raw.user_USER_ID,
-      userName: raw.user_USER_NAME,
+      userName: getTeamDisplayName(raw.tm_TEAM_NICKNAME, raw.user_USER_NAME, Number(raw.user_USER_ID)),
+      teamNickname: raw.tm_TEAM_NICKNAME ?? null,
       birth: raw.user_BIRTH,
       kakaoEmail: raw.user_KAKAO_EMAIL,
       role: raw.tm_ROLE,
@@ -1303,6 +1321,7 @@ export class TeamService {
         }
 
         // 비활성화된 멤버인 경우: 재활성화 (MEMBER 역할로 초기화)
+        // 팀 닉네임은 이 팀에서 쓰던 것을 유지한다 — 없을 때만 지금의 계정 닉네임으로 채운다 (D-004)
         await manager.update(
           TeamMember,
           { teamId: inviteInfo.teamId, userId },
@@ -1310,16 +1329,20 @@ export class TeamService {
             actStatus: ActStatus.ACTIVE,
             role: 'MEMBER' as RoleKey,
             joinedAt: new Date(),
+            ...(existingMember.teamNickname
+              ? {}
+              : { teamNickname: await this.getAccountDisplayName(manager, userId) }),
           },
         );
         message = '팀에 다시 가입했습니다.';
       } else {
-        // 새 멤버인 경우: TeamMember 추가
+        // 새 멤버인 경우: TeamMember 추가 — 팀 닉네임은 지금의 계정 닉네임을 복사해 시작한다 (D-004)
         const newTeamMember = manager.create(TeamMember, {
           userId,
           teamId: inviteInfo.teamId,
           role: 'MEMBER' as RoleKey,
           actStatus: ActStatus.ACTIVE,
+          teamNickname: await this.getAccountDisplayName(manager, userId),
         });
         await manager.save(TeamMember, newTeamMember);
       }
@@ -1395,7 +1418,7 @@ export class TeamService {
   }): Promise<{
     teamId: number;
     userId: number;
-    userName: string | null;
+    userName: string;
     previousRole: string;
     newRole: string;
     teamName: string;
@@ -1460,20 +1483,15 @@ export class TeamService {
       { role: newRole },
     );
 
-    // 9. 대상 사용자 이름 조회
-    const targetUser = await this.userRepository.findOne({
-      where: { userId: targetUserId },
-      select: ['userName'],
-    });
-
-    const userName = targetUser?.userName || null;
+    // 9. 대상 사용자의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임)
+    const userName = await this.teamDisplayNameService.getDisplayName(teamId, targetUserId);
 
     // 10. 알림 전송
     this.notificationPort.notifyTeam({
       team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
       content: {
         title: '👥 역할 변경',
-        subject: userName || `사용자 ${targetUserId}`,
+        subject: userName,
         lines: [`${ROLE_LABELS[previousRole as RoleKey] || previousRole} → ${ROLE_LABELS[newRole]}`],
       },
     });
@@ -1486,6 +1504,36 @@ export class TeamService {
       newRole,
       teamName: actorMember.teamName,
     };
+  }
+
+  /**
+   * 팀 가입 시점의 계정 표시 이름 — 팀 닉네임 초깃값. 이후 계정 닉네임이 바뀌어도 팀 닉네임은 따라가지 않는다 (D-004)
+   */
+  private async getAccountDisplayName(manager: EntityManager, userId: number): Promise<string> {
+    const user = await manager.findOne(User, { where: { userId }, select: ['userId', 'userName'] });
+    return getDisplayName(user?.userName, userId);
+  }
+
+  /**
+   * 내 팀 닉네임 설정 — 본인만, 활성 멤버만 (docs/tasks/team-nickname D-002·D-004)
+   * @param teamNickname 설정할 값(검증·trim 끝난 값)
+   * @returns 바뀐 원값과 팀 안 표시 이름
+   */
+  async updateMyTeamNickname({
+    teamId,
+    userId,
+    teamNickname,
+  }: {
+    teamId: number;
+    userId: number;
+    teamNickname: string;
+  }): Promise<{ teamId: number; userId: number; teamNickname: string; userName: string }> {
+    await this.verifyTeamMemberAccess(teamId, userId);
+
+    await this.teamMemberRepository.update({ teamId, userId }, { teamNickname });
+    const userName = await this.teamDisplayNameService.getDisplayName(teamId, userId);
+
+    return { teamId, userId, teamNickname, userName };
   }
 
   /**
@@ -1509,7 +1557,7 @@ export class TeamService {
   }): Promise<{
     teamId: number;
     userId: number;
-    userName: string | null;
+    userName: string;
     previousStatus: number;
     newStatus: number;
     teamName: string;
@@ -1581,13 +1629,8 @@ export class TeamService {
       }
     });
 
-    // 9. 대상 사용자 이름 조회
-    const targetUser = await this.userRepository.findOne({
-      where: { userId: targetUserId },
-      select: ['userName'],
-    });
-
-    const userName = targetUser?.userName || null;
+    // 9. 대상 사용자의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임)
+    const userName = await this.teamDisplayNameService.getDisplayName(teamId, targetUserId);
 
     // 10. 알림 전송
     const statusLabel = newStatus === ActStatus.ACTIVE ? '활성화' : '비활성화';
@@ -1595,7 +1638,7 @@ export class TeamService {
       team: { teamId, teamName: actorMember.teamName, telegramChatId: actorMember.telegramChatId, discordWebhookUrl: actorMember.discordWebhookUrl },
       content: {
         title: '👥 멤버 상태 변경',
-        subject: userName || `사용자 ${targetUserId}`,
+        subject: userName,
         lines: [`${statusLabel}되었습니다`],
       },
     });

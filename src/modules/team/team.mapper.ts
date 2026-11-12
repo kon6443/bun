@@ -23,7 +23,8 @@ export type PublicTask = {
   completedAt: Date | null;
   crtdAt: Date;
   crtdBy: number;
-  userName: string | null;
+  /** 작성자의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임) */
+  userName: string;
 };
 
 export function toPublicTask(task: PublicTask): PublicTask {

@@ -6,6 +6,8 @@ import { ConfigService } from '@nestjs/config';
 import { TeamChatController } from '../src/modules/team/team-chat.controller';
 import { TeamController } from '../src/modules/team/team.controller';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
+import { TeamDisplayNameService } from '../src/modules/team/team-display-name.service';
+import { createMockTeamDisplayNameService } from '../src/modules/team/__spec__/team-display-name.mock';
 import { TeamService } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TelegramService } from '../src/modules/notification/telegram.service';
@@ -47,6 +49,7 @@ describe('E2E 팀 채팅 REST', () => {
       providers: [
         TeamChatService,
         { provide: TeamService, useValue: teamService },
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService({ [MEMBER.userId]: '멤버' }) },
         { provide: getRepositoryToken(TeamChatMessage), useValue: createMockRepository<TeamChatMessage>() },
         { provide: getRepositoryToken(TeamMember), useValue: createMockRepository<TeamMember>() },
         { provide: getDataSourceToken(), useValue: { transaction: jest.fn(), manager: {} } as unknown as DataSource },

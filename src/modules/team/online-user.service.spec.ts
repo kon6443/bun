@@ -34,6 +34,8 @@ describe('OnlineUserService', () => {
     del: jest.Mock;
     exists: jest.Mock;
     pipeline: jest.Mock;
+    smembers: jest.Mock;
+    eval: jest.Mock;
   };
   let pipeline: Record<string, jest.Mock>;
   let gauge: { set: jest.Mock; remove: jest.Mock };
@@ -81,6 +83,8 @@ describe('OnlineUserService', () => {
       del: jest.fn().mockResolvedValue(1),
       exists: jest.fn().mockResolvedValue(0),
       pipeline: jest.fn(() => pipeline),
+      smembers: jest.fn().mockResolvedValue([]),
+      eval: jest.fn().mockResolvedValue(1),
     };
     gauge = { set: jest.fn(), remove: jest.fn() };
 
@@ -237,6 +241,42 @@ describe('OnlineUserService', () => {
 
       await expect(service.removeSocket(SOCKET_ID)).resolves.toBeNull();
       expect(Logger.prototype.error).toHaveBeenCalled();
+    });
+  });
+
+  // 팀 닉네임이 바뀌면 joinTeam 때 저장한 이름을 바꿔 둔다 — onlineUsers·userLeft가 다시 내보낸다 (team-nickname)
+  describe('updateUserName — 팀 닉네임 변경 반영', () => {
+    it('접속 중이면 팀 온라인 해시와 그 유저의 모든 소켓 매핑을 "있을 때만" 갱신해야 함', async () => {
+      redis.smembers.mockResolvedValue(['s1', 's2']);
+
+      await service.updateUserName(TEAM_ID, USER_ID, '팀닉');
+
+      expect(redis.smembers).toHaveBeenCalledWith(USER_SOCKETS_KEY);
+      // 같은 조건부 스크립트로 — 그 사이 나간 유저를 온라인으로 되살리거나 TTL 없는 키를 만들지 않는다
+      const calls = redis.eval.mock.calls.map(([, numKeys, key, field, value]) => [numKeys, key, field, value]);
+      expect(calls).toEqual([
+        [1, TEAM_ONLINE_KEY, String(USER_ID), '팀닉'],
+        [1, 'socket:s1', 'userName', '팀닉'],
+        [1, 'socket:s2', 'userName', '팀닉'],
+      ]);
+      const scripts = new Set(redis.eval.mock.calls.map(([script]) => script as string));
+      expect(scripts.size).toBe(1);
+      expect([...scripts][0]).toContain("redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1");
+    });
+
+    it('오프라인이면 아무것도 쓰지 않아야 함 (다음 joinTeam이 새 이름으로 등록)', async () => {
+      redis.smembers.mockResolvedValue([]);
+
+      await service.updateUserName(TEAM_ID, USER_ID, '팀닉');
+
+      expect(redis.eval).not.toHaveBeenCalled();
+    });
+
+    it('Redis 오류는 삼키고 로그만 남겨야 함 (닉네임 저장은 이미 끝났다)', async () => {
+      redis.smembers.mockRejectedValue(new Error('ECONNRESET'));
+
+      await expect(service.updateUserName(TEAM_ID, USER_ID, '팀닉')).resolves.toBeUndefined();
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining('updateUserName 실패'));
     });
   });
 

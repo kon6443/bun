@@ -59,6 +59,8 @@ export const TeamSocketEvents = {
   MEMBER_STATUS_CHANGED: 'memberStatusChanged',
   /** 초대 수락으로 멤버 가입·재가입 알림 */
   MEMBER_JOINED: 'memberJoined',
+  /** 멤버의 팀 닉네임 변경 알림 */
+  MEMBER_NICKNAME_CHANGED: 'memberNicknameChanged',
 
   // ===== 채팅 이벤트 =====
   /** 채팅 메시지 수신 */
@@ -205,7 +207,7 @@ export interface CommentCreatedPayload {
   taskId: number;
   teamId: number;
   userId: number;
-  userName: string | null;
+  userName: string;
   commentContent: string;
   crtdAt: string;
 }
@@ -298,7 +300,7 @@ export interface OnlineUsersPayload {
 export interface MemberRoleChangedPayload {
   teamId: number;
   userId: number;
-  userName: string | null;
+  userName: string;
   previousRole: string;
   newRole: string;
   changedBy: number;
@@ -310,7 +312,7 @@ export interface MemberRoleChangedPayload {
 export interface MemberStatusChangedPayload {
   teamId: number;
   userId: number;
-  userName: string | null;
+  userName: string;
   previousStatus: number;
   newStatus: number;
   changedBy: number;
@@ -377,4 +379,18 @@ export interface MemberJoinedPayload {
   userId: number;
   userName: string;
   lastReadMessageId: number;
+}
+
+/**
+ * 팀 닉네임 변경 알림 페이로드 (Server → Client) — 본인이 변경 (docs/tasks/team-nickname)
+ *
+ * 받은 화면은 이 userId의 이름을 `userName`으로 바꾼다(멤버 목록·온라인 목록·채팅·태스크·댓글 작성자).
+ */
+export interface MemberNicknameChangedPayload {
+  teamId: number;
+  userId: number;
+  /** 바뀐 뒤 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → "사용자{id}") */
+  userName: string;
+  /** 저장된 팀 닉네임 */
+  teamNickname: string;
 }
