@@ -1,3 +1,6 @@
 # 디펜스 엔진 사본 — 프론트 원본을 바이트 그대로 둔다(포맷하면 매니페스트 해시가 깨진다, docs/tasks/defense §E0)
 src/modules/games/defense-engine/
 src/modules/games/defense-engine-manifest.json
+# 포트리스 엔진 사본 — 같은 이유(docs/tasks/fortress DESIGN §10)
+src/modules/fortress/engine/
+src/modules/fortress/fortress-engine-manifest.json

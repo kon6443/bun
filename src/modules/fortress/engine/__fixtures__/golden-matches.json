@@ -1,0 +1,3102 @@
+[
+  {
+    "name": "ffa 2인 hills AI 중·중",
+    "config": {
+      "seed": 1,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 126,
+        "power": 97,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 63,
+        "power": 74,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 133,
+        "power": 87,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 50,
+        "power": 84,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 135,
+        "power": 87,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 42,
+        "power": 72,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 117,
+        "power": 98,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 65,
+        "power": 70,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 125,
+        "power": 86,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 50,
+        "power": 84,
+        "weaponId": 1
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 132,
+        "power": 91,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 68,
+        "power": 74,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 99,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 44,
+        "power": 86,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 117,
+        "power": 100,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 56,
+        "power": 90,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 128,
+        "power": 74,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 55,
+        "power": 93,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 127,
+        "power": 77,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 65,
+        "power": 78,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 104,
+        "power": 94,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 62,
+        "power": 80,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 99,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 38,
+        "power": 77,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 118,
+        "power": 97,
+        "weaponId": 2
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "ddc5516a",
+        "d2b63346",
+        "ba14d99a",
+        "3d531554",
+        "015919e7",
+        "65877d17",
+        "c0b1b6ba",
+        "3ae86d3e",
+        "39f428cd",
+        "400c17df",
+        "ed7da896",
+        "4a5ed7c9",
+        "d127cb3e",
+        "2ec0cf8b",
+        "e4399ced",
+        "e769c0be",
+        "e7c63faa",
+        "d2a36827",
+        "4ce6ff0b",
+        "6f72033f",
+        "fc916ea0",
+        "81c66226",
+        "f6d23e9d",
+        "390c32c4",
+        "87756088"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "ffa 2인 canyon AI 하·상",
+    "config": {
+      "seed": 2,
+      "mapId": "canyon",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 134,
+        "power": 95,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 21,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 117,
+        "power": 85,
+        "weaponId": 4
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "b01f2d99",
+        "cd0a8e7c",
+        "bfa360b3"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          1
+        ]
+      }
+    }
+  },
+  {
+    "name": "ffa 3인 hills AI 하·중·상",
+    "config": {
+      "seed": 3,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 1
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 137,
+        "power": 99,
+        "weaponId": 5
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 40,
+        "power": 95,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 84,
+        "power": 76,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 122,
+        "power": 81,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 56,
+        "power": 79,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 25,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 136,
+        "power": 81,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 74,
+        "power": 52,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 143,
+        "power": 88,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 63,
+        "power": 74,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 112,
+        "power": 98,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 71,
+        "power": 67,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 111,
+        "power": 96,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 56,
+        "power": 88,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 117,
+        "power": 97,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 60,
+        "power": 63,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 94,
+        "power": 96,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 48,
+        "power": 66,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 88,
+        "power": 98,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 60,
+        "power": 77,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 93,
+        "power": 90,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 57,
+        "power": 77,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 114,
+        "power": 94,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "9a5e1472",
+        "8a213646",
+        "2870b05f",
+        "e3aeb7e7",
+        "1d5b2b9a",
+        "ef0cc8a1",
+        "309ebd5e",
+        "916fdd30",
+        "62aa1e65",
+        "684ca081",
+        "7ecd44be",
+        "458b435b",
+        "741eb32f",
+        "057cf901",
+        "25e65a77",
+        "1933e816",
+        "031121c8",
+        "d6589a72",
+        "40fd19f9",
+        "763bad13",
+        "c97c695b",
+        "abc1769b",
+        "30bdac56"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          2
+        ]
+      }
+    }
+  },
+  {
+    "name": "ffa 4인 canyon AI 혼합",
+    "config": {
+      "seed": 4,
+      "mapId": "canyon",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 3,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 45,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 23,
+        "power": 62,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 142,
+        "power": 65,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 7,
+        "power": 97,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 106,
+        "power": 85,
+        "weaponId": 5
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 9,
+        "power": 70,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 123,
+        "power": 74,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 34,
+        "power": 58,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 75,
+        "power": 54,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 8,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 73,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 16,
+        "power": 87,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 84,
+        "power": 68,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 48,
+        "power": 60,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 95,
+        "power": 91,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 16,
+        "power": 99,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 79,
+        "power": 63,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 42,
+        "power": 61,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 111,
+        "power": 78,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 16,
+        "power": 94,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 78,
+        "power": 80,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 23,
+        "power": 45,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 120,
+        "power": 87,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 11,
+        "power": 77,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 128,
+        "power": 64,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 121,
+        "power": 88,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 43,
+        "power": 68,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 100,
+        "power": 100,
+        "weaponId": 1
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 102,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 46,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 102,
+        "power": 71,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 129,
+        "power": 87,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 54,
+        "power": 84,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 116,
+        "power": 76,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 124,
+        "power": 84,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 78,
+        "power": 96,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 112,
+        "power": 65,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 133,
+        "power": 100,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 54,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 108,
+        "power": 50,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 116,
+        "power": 93,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 56,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 110,
+        "power": 87,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 47,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 109,
+        "power": 97,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 64,
+        "power": 97,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 127,
+        "power": 99,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 50,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 125,
+        "power": 100,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "af24165e",
+        "7d12abc7",
+        "06905568",
+        "5ea7d8cc",
+        "2d160782",
+        "88e20ea8",
+        "ab2f687c",
+        "6f34d385",
+        "b8a169cf",
+        "f0a3c330",
+        "c0130dca",
+        "f683438f",
+        "7c972e2b",
+        "6d7d4cf6",
+        "10b3fc05",
+        "ceefe5f9",
+        "6da49b26",
+        "27931921",
+        "b1de9eaf",
+        "c22be841",
+        "fb06c150",
+        "0f619233",
+        "62b5a879",
+        "de474f7d",
+        "3ab98b59",
+        "86ad03e1",
+        "94d55613",
+        "ec221a51",
+        "9ce3d7f5",
+        "b2d2d516",
+        "8c99faf4",
+        "5ecfdf27",
+        "4c9df320",
+        "37832259",
+        "182d1e20",
+        "41e428f8",
+        "6885ee3f",
+        "89675466",
+        "0b2bbecd",
+        "498b4ebe",
+        "87bc06bd",
+        "dfcdd427",
+        "8ca7e827",
+        "1a2f683d",
+        "08a36d63",
+        "de44bd4e",
+        "723da210",
+        "79e98105",
+        "eb378133"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "team 2:2 hills AI",
+    "config": {
+      "seed": 5,
+      "mapId": "hills",
+      "mode": "team",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 1,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 3,
+          "team": 1,
+          "tankId": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 59,
+        "power": 52,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 124,
+        "power": 41,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 92,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 142,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 74,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 92,
+        "power": 76,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 129,
+        "power": 76,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 135,
+        "power": 81,
+        "weaponId": 5
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 82,
+        "power": 86,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 99,
+        "power": 51,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 97,
+        "power": 68,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 137,
+        "power": 95,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 66,
+        "power": 84,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 93,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 124,
+        "power": 80,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 132,
+        "power": 97,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 102,
+        "power": 63,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 117,
+        "power": 41,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 71,
+        "power": 88,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 119,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 63,
+        "power": 82,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 104,
+        "power": 58,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 49,
+        "power": 88,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 118,
+        "power": 64,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 58,
+        "power": 85,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 112,
+        "power": 40,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 86,
+        "power": 89,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 97,
+        "power": 89,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 78,
+        "power": 45,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 93,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 56,
+        "power": 89,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 100,
+        "power": 86,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 57,
+        "power": 86,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 95,
+        "power": 100,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "9a6629ed",
+        "3718ef4b",
+        "dd396b07",
+        "33e9593d",
+        "900bc5d4",
+        "2c21da45",
+        "664bd976",
+        "aaa1aa21",
+        "08452735",
+        "0baa7ab1",
+        "d5f314c9",
+        "0395133d",
+        "4c6eb101",
+        "af9d6927",
+        "51cb083e",
+        "719e3b6d",
+        "2eaea3f3",
+        "d88e75a3",
+        "f787ea6f",
+        "454847a9",
+        "dc010a9c",
+        "beb6c0b4",
+        "35c0e406",
+        "1ebef237",
+        "3f65117d",
+        "6f865a18",
+        "a87305f8",
+        "9a696c84",
+        "ad0e8f4a",
+        "00bb8f33",
+        "af01e57b",
+        "664faf56",
+        "455705b3",
+        "a01ff4ff"
+      ],
+      "result": {
+        "kind": "win",
+        "team": 0,
+        "slots": [
+          0,
+          2
+        ]
+      }
+    }
+  },
+  {
+    "name": "team 2:2 canyon AI 상·하",
+    "config": {
+      "seed": 6,
+      "mapId": "canyon",
+      "mode": "team",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 1,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 3,
+          "team": 1,
+          "tankId": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 9,
+        "power": 87,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 18,
+        "power": 100,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 20,
+        "power": 57,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 100,
+        "power": 80,
+        "weaponId": 5
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 75,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 91,
+        "power": 82,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 75,
+        "power": 100,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 95,
+        "power": 54,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 65,
+        "power": 69,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 88,
+        "power": 67,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 55,
+        "power": 54,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 99,
+        "power": 89,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 65,
+        "power": 76,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 112,
+        "power": 85,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 67,
+        "power": 69,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 124,
+        "power": 86,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 59,
+        "power": 88,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 112,
+        "power": 84,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 80,
+        "power": 86,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 118,
+        "power": 84,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 63,
+        "power": 66,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 106,
+        "power": 60,
+        "weaponId": 2
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "0266f188",
+        "4eb0bc2b",
+        "54f28f9a",
+        "2636eaad",
+        "c6168583",
+        "33a74582",
+        "da57240e",
+        "958af3e0",
+        "ea960063",
+        "0f9fb905",
+        "745981d8",
+        "8e02e5f2",
+        "c44f2bc5",
+        "1d3d8c5b",
+        "26c8f66f",
+        "0022df01",
+        "546194da",
+        "d3f26725",
+        "0f8d157b",
+        "6f8ea912",
+        "f08a651e",
+        "0f2ff23b"
+      ],
+      "result": {
+        "kind": "win",
+        "team": 0,
+        "slots": [
+          0,
+          2
+        ]
+      }
+    }
+  },
+  {
+    "name": "무기 6종 각 1회",
+    "config": {
+      "seed": 77,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 87,
+        "power": 84,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 113,
+        "power": 99,
+        "weaponId": 2
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 59,
+        "power": 49,
+        "weaponId": 1
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 88,
+        "power": 81,
+        "weaponId": 5
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 92,
+        "power": 39,
+        "weaponId": 4
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 64,
+        "power": 70,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 88,
+        "power": 80,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 97,
+        "power": 62,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 78,
+        "power": 89,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "96ac5f87",
+        "4c47b7ea",
+        "586ab7f3",
+        "34606c84",
+        "d7c6b210",
+        "82a80788",
+        "074956bf",
+        "78db7e4a",
+        "8ba34b6a"
+      ],
+      "result": {
+        "kind": "ongoing"
+      }
+    }
+  },
+  {
+    "name": "스킵 3회 탈락",
+    "config": {
+      "seed": 8,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "skip"
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "skip"
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "skip"
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "5caed216",
+        "93dda578",
+        "1f83b1da",
+        "ea318088",
+        "bef20d14"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "협곡 낙하 즉사",
+    "config": {
+      "seed": 6,
+      "mapId": "canyon",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 2
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": -160,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "55649629"
+      ],
+      "result": {
+        "kind": "ongoing"
+      }
+    }
+  },
+  {
+    "name": "턴 상한 무승부",
+    "config": {
+      "seed": 9,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 1
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "02c97230",
+        "9944538c",
+        "deba373d",
+        "0a6e62bd",
+        "806a6970",
+        "e5c6ca96",
+        "20cf334c",
+        "b51db7d8",
+        "17516685",
+        "6daab6eb",
+        "c6c4a62c",
+        "5b3132ec",
+        "8607d15f",
+        "17c06edc",
+        "a1f7f0b4",
+        "63e243e1",
+        "4036a257",
+        "13175b8c",
+        "b9cddd82",
+        "62e95228",
+        "bda12753",
+        "47b456c7",
+        "947dc78d",
+        "18c37886",
+        "2aa68f85",
+        "1f4e84a2",
+        "aa044d14",
+        "ef88c71e",
+        "1252c8fc",
+        "f23a5666",
+        "39dfeea3",
+        "3813c968",
+        "7d5f4d7a",
+        "a4b32542",
+        "87168552",
+        "0004cf18",
+        "042b0076",
+        "9b9836e9",
+        "aad7cc55",
+        "d5bbbb4f",
+        "09e6dcbc",
+        "43cd60a4",
+        "2e9e822b",
+        "3348d12b",
+        "2426a510",
+        "b00aa597",
+        "6be09777",
+        "00d261cb",
+        "15e01036",
+        "1250cba5",
+        "ce564781",
+        "0445823b",
+        "4f9414c4",
+        "3f3d9341",
+        "5ed7bace",
+        "8f2503a9",
+        "1651d816",
+        "e964d1f1",
+        "af1de97e",
+        "b534f55b"
+      ],
+      "result": {
+        "kind": "draw"
+      }
+    }
+  },
+  {
+    "name": "턴 상한 HP 판정 승",
+    "config": {
+      "seed": 10,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 2
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "3d68bb13",
+        "85e38a82",
+        "784647a3",
+        "10a613f3",
+        "b204a2c6",
+        "335bfa65",
+        "ef822d29",
+        "8d06bc88",
+        "a6ba8c5e",
+        "62099839",
+        "22399367",
+        "69146ebd",
+        "5458a254",
+        "8d6b0d03",
+        "f035e6a5",
+        "00b043f2",
+        "4d22ad30",
+        "9b9bfa0f",
+        "7143ebda",
+        "678adff6",
+        "855e3cae",
+        "f79b6fb5",
+        "e5183d0c",
+        "f6411e24",
+        "15311f28",
+        "663b14e7",
+        "287afd28",
+        "7c78a190",
+        "2077fe1f",
+        "e4976117",
+        "29391f95",
+        "c5498178",
+        "94f358ed",
+        "d941800f",
+        "66fa1713",
+        "13faf459",
+        "abfa5ef2",
+        "3edcaaa5",
+        "22980f1c",
+        "7e8a8ad7",
+        "195bd694",
+        "04a4269f",
+        "2b2fce9f",
+        "9bd2f048",
+        "487e5422",
+        "462e8758",
+        "7a9141e7",
+        "03ea995b",
+        "7f674c72",
+        "7e3e8a3c",
+        "f1dd8497",
+        "ebd03454",
+        "2a7d1f27",
+        "496e7d46",
+        "fa54199a",
+        "23b8a19f",
+        "5e16454f",
+        "dbfdc091",
+        "b94afbfb",
+        "63be6800"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "기권 남의 턴·현재 턴",
+    "config": {
+      "seed": 11,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "resign",
+        "slot": 0
+      },
+      {
+        "kind": "resign",
+        "slot": 1
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "hashes": [
+        "db44e08f",
+        "d70609b8"
+      ],
+      "result": {
+        "kind": "win",
+        "slots": [
+          2
+        ]
+      }
+    }
+  },
+  {
+    "name": "실패 MOVE_RANGE",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 121,
+        "angle": 45,
+        "power": 50,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "MOVE_RANGE",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 ANGLE_RANGE",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 181,
+        "power": 50,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "ANGLE_RANGE",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 POWER_RANGE",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 45,
+        "power": -1,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "POWER_RANGE",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 WEAPON_UNKNOWN",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 45,
+        "power": 50,
+        "weaponId": 99
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "WEAPON_UNKNOWN",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 WEAPON_COOLDOWN",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 45,
+        "power": 50,
+        "weaponId": 3
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 45,
+        "power": 50,
+        "weaponId": 3
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "WEAPON_COOLDOWN",
+      "at": 2
+    }
+  },
+  {
+    "name": "실패 BAD_KIND",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "pass"
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "BAD_KIND",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 SLOT_NOT_ALIVE",
+    "config": {
+      "seed": 12,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "resign",
+        "slot": 3
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "SLOT_NOT_ALIVE",
+      "at": 0
+    }
+  },
+  {
+    "name": "실패 NOT_RUNNING",
+    "config": {
+      "seed": 8,
+      "mapId": "hills",
+      "mode": "ffa",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 0,
+          "tankId": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "kind": "skip"
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "skip"
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      },
+      {
+        "kind": "skip"
+      },
+      {
+        "kind": "fire",
+        "move": 0,
+        "angle": 90,
+        "power": 0,
+        "weaponId": 0
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "reason": "NOT_RUNNING",
+      "at": 5
+    }
+  },
+  {
+    "name": "실패 설정 BAD_TEAMS",
+    "config": {
+      "seed": 13,
+      "mapId": "hills",
+      "mode": "team",
+      "players": [
+        {
+          "slot": 0,
+          "team": 0,
+          "tankId": 0
+        },
+        {
+          "slot": 1,
+          "team": 1,
+          "tankId": 1
+        },
+        {
+          "slot": 2,
+          "team": 0,
+          "tankId": 2
+        }
+      ]
+    },
+    "actions": [],
+    "expected": {
+      "ok": false,
+      "reason": "BAD_TEAMS",
+      "at": -1
+    }
+  }
+]

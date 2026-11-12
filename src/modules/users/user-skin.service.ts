@@ -110,6 +110,16 @@ export class UserSkinService {
     if (!item) throw new UserSkinUnknownErrorResponseDto({ details: { slot, id: skinId } });
     if (!this.isOwned(userId, item)) throw new UserSkinNotOwnedErrorResponseDto({ details: { slot, id: skinId } });
 
+    await this.upgradeItem(userId, TETRIS_SKIN_SLOT_KEYS[slot], skinId, level, `${slot} ${skinId} Lv${level} 강화`, slot);
+    return this.getSkins(userId);
+  }
+
+  /**
+   * 아이템 한 단계 강화 — 게임 무관(DB 슬롯 키로). 카탈로그·보유 확인은 호출 쪽이 먼저 한다.
+   * 사용자 행을 잠가 같은 사용자의 강화·적립(포트리스 결과 저장)과 줄 세운다 — 다른 아이템을 동시에 강화해도 잔액을 넘겨 쓰지 않는다.
+   * 이미 그 레벨 이상이면 아무것도 하지 않는다(중복 클릭). `detailSlot`은 에러 details의 slot 값(API 슬롯 이름)
+   */
+  async upgradeItem(userId: number, slotKey: string, skinId: string, level: number, memo: string, detailSlot: string): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       // findOne/take를 쓰지 않는다 — Oracle은 row-limit 절과 FOR UPDATE를 함께 쓸 수 없다(ORA-02014)
       const locked = await manager
@@ -120,12 +130,11 @@ export class UserSkinService {
         .getMany();
       if (locked.length === 0) throw new UserNotFoundErrorResponseDto();
 
-      const slotKey = TETRIS_SKIN_SLOT_KEYS[slot];
       const levels = manager.getRepository(UserSkinLevel);
       const current = (await levels.findOneBy({ userId, slot: slotKey, skinId }))?.level ?? SKIN_MIN_LEVEL;
       if (level <= current) return;
       const cost = level === current + 1 ? nextLevelCost(current) : null;
-      if (cost === null) throw new UserSkinLevelMismatchErrorResponseDto({ details: { slot, id: skinId, level: current } });
+      if (cost === null) throw new UserSkinLevelMismatchErrorResponseDto({ details: { slot: detailSlot, id: skinId, level: current } });
 
       const { balance } = await this.userPointService.pointsOf(userId, manager);
       if (balance < cost) throw new UserPointsInsufficientErrorResponseDto({ details: { balance, cost } });
@@ -135,11 +144,33 @@ export class UserSkinService {
         amount: -cost,
         reason: USER_POINT_REASONS.SKIN_UPGRADE,
         refKey: `${slotKey}:${skinId}:${level}`,
-        memo: `${slot} ${skinId} Lv${level} 강화`,
+        memo,
       });
       await levels.save(levels.create({ userId, slot: slotKey, skinId, level, updatedAt: new Date() }));
     });
-    return this.getSkins(userId);
+  }
+
+  /** 슬롯 하나 장착 — 게임 무관(DB 슬롯 키로). 카탈로그·보유 확인은 호출 쪽이 먼저 한다 */
+  async equipItem(userId: number, slotKey: string, skinId: string): Promise<void> {
+    await this.dataSource.transaction((manager) => this.saveEquip(manager, userId, slotKey, skinId));
+  }
+
+  /**
+   * 한 슬롯(DB 키)의 사용자별 상태 — 게임 무관. equipped = 장착 행의 아이템 id(행이 없으면 null), levels = 강화한 아이템만(없으면 Lv1).
+   * 카탈로그 대조는 호출 쪽이 한다. 결과에 모든 userId가 들어 있다(행이 없어도). 쿼리 2번(장착·레벨) — N+1 없음
+   */
+  async slotItemsOf(userIds: readonly number[], slotKey: string): Promise<Map<number, { equipped: string | null; levels: Map<string, number> }>> {
+    const ids = [...new Set(userIds)];
+    const result = new Map(ids.map((id) => [id, { equipped: null as string | null, levels: new Map<string, number>() }]));
+    if (ids.length === 0) return result;
+    const equips = await this.equipRepository.find({ select: { userId: true, skinId: true }, where: { userId: In(ids), slot: slotKey } });
+    for (const row of equips) {
+      const entry = result.get(row.userId);
+      if (entry) entry.equipped = row.skinId;
+    }
+    const levels = await this.levelRepository.find({ select: { userId: true, skinId: true, level: true }, where: { userId: In(ids), slot: slotKey } });
+    for (const row of levels) result.get(row.userId)?.levels.set(row.skinId, row.level);
+    return result;
   }
 
   /** 슬롯 일부만 바꾼다 — 모르는 아이템은 422, 획득하지 않은 아이템은 403. 하나라도 거절되면 아무것도 바꾸지 않는다 */

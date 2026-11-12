@@ -10,6 +10,8 @@ export const USER_POINT_REASONS = {
   TETRIS_SCORE: 'TETRIS_SCORE',
   /** 스킨 강화 소비 — REF_KEY = 슬롯 키:아이템:목표 레벨 */
   SKIN_UPGRADE: 'SKIN_UPGRADE',
+  /** 포트리스 경기 적립 — REF_KEY = matchId:playerId (docs/tasks/fortress DESIGN §13) */
+  FORTRESS_MATCH: 'FORTRESS_MATCH',
 } as const;
 
 export interface UserPoints {
