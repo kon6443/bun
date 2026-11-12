@@ -48,6 +48,7 @@ NestJS + TypeScript 백엔드. Oracle DB (TypeORM), Socket.IO + Redis Pub/Sub. �
 | 게임 SEO · 유입 · 바이럴 · 트래픽 | `docs/tasks/games-growth/STATUS.md` |
 | 테트리스 대전 · 멀티 · 게임방 · 가비지 · 테트리스 연출 | `docs/tasks/tetris-battle/STATUS.md` |
 | 디펜스 게임 · 레벨링 · 타워/몬스터 밸런스 | `docs/tasks/defense/STATUS.md` (공통 랭킹·리플레이 구조는 위 `games`, 공유는 `game-share` 문서) |
+| 포트리스 · 포격 게임 · 턴제 대전 · 게임 방 공용화 | `docs/tasks/fortress/STATUS.md` |
 | 배포 · Swarm · 스택 · 롤백 · 서버 운영 | `docs/deploy.md` |
 | DB 스키마 변경 · 마이그레이션 · Entity 수정 (설계 단계) | `.claude/rules/schema-migrations.md` + `docs/tasks/tasks-nestjs-improvements.md`에서 `grep -n 'DB 마이그레이션\|Entity↔DB'`로 찾은 절 |
 | 테스트 작성 · 리팩터링 · 코드 품질 개선 | `docs/tasks/tasks-nestjs-improvements.md` (해당 태스크 절) |
