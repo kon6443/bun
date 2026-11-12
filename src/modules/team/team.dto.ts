@@ -4,6 +4,7 @@
  * Following NestJS standard DTO pattern
  */
 import { ApiProperty, OmitType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   INVITE_DEFAULT_USAGE_MAX_CNT,
   INVITE_MAX_EXPIRATION_MS,
@@ -22,6 +23,8 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsInt,
+  Length,
+  IsByteLength,
 } from 'class-validator';
 import { TaskStatus, ActStatus } from '../../common/enums/task-status.enum';
 import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
@@ -292,8 +295,24 @@ export class TeamUserDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
   userId: number;
 
-  @ApiProperty({ description: '사용자 이름', example: '홍길동', nullable: true })
-  userName: string | null;
+  @ApiProperty({ description: '팀 안 표시 이름 — 팀 닉네임, 없으면 계정 닉네임, 그것도 없으면 "사용자{id}"', example: '홍길동' })
+  userName: string;
+
+  @ApiProperty({
+    description: '팀 닉네임 원값 (설정 화면용) — 팀 가입 때 계정 닉네임을 복사해 시작한다. 이전 데이터에 한해 null일 수 있다',
+    example: '기획팀 길동',
+    nullable: true,
+    type: String,
+  })
+  teamNickname: string | null;
+
+  @ApiProperty({
+    description: '이 팀 가입 시각 (재가입이면 재가입 시각). 멤버 카드의 "가입일" 표시용',
+    example: '2026-01-01T00:00:00.000Z',
+    nullable: true,
+    type: Date,
+  })
+  joinedAt: Date | null;
 
   @ApiProperty({ description: '생년월일', example: '1990-01-01', nullable: true })
   birth: Date | null;
@@ -431,8 +450,8 @@ export class TaskCommentWithUserDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
   userId: number;
 
-  @ApiProperty({ description: '작성자 이름', example: '홍길동', nullable: true })
-  userName: string | null;
+  @ApiProperty({ description: '작성자의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → "사용자{id}")', example: '홍길동' })
+  userName: string;
 
   @ApiProperty({ description: '댓글 내용', example: '이 태스크에 대한 의견입니다.' })
   commentContent: string;
@@ -632,8 +651,8 @@ export class MemberRoleDataDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
   userId: number;
 
-  @ApiProperty({ description: '사용자 이름', example: '홍길동', nullable: true })
-  userName: string | null;
+  @ApiProperty({ description: '대상의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → "사용자{id}")', example: '홍길동' })
+  userName: string;
 
   @ApiProperty({ description: '이전 역할', example: 'MEMBER' })
   previousRole: string;
@@ -670,8 +689,8 @@ export class MemberStatusDataDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
   userId: number;
 
-  @ApiProperty({ description: '사용자 이름', example: '홍길동', nullable: true })
-  userName: string | null;
+  @ApiProperty({ description: '대상의 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → "사용자{id}")', example: '홍길동' })
+  userName: string;
 
   @ApiProperty({ description: '이전 상태 (0: 비활성, 1: 활성)', example: 1 })
   previousStatus: number;
@@ -683,6 +702,52 @@ export class MemberStatusDataDto {
 export class UpdateMemberStatusResponseDto extends ApiSuccessResponseDto {
   @ApiProperty({ description: '상태 변경 결과', type: MemberStatusDataDto })
   data: MemberStatusDataDto;
+}
+
+// ==================== Team Nickname DTOs (docs/tasks/team-nickname) ====================
+
+/** 팀 닉네임 상한 — 계정 닉네임(users.dto.ts UpdateUserDto)과 같다 */
+export const TEAM_NICKNAME_MAX_LENGTH = 20;
+/**
+ * 저장 상한 — USER_TEAMS.TEAM_NICKNAME은 VARCHAR2(100 BYTE)다.
+ * `@Length`는 이모지·이형 선택자를 1자로 세서 20자가 UTF-8로 최대 140바이트가 될 수 있다(❤️×20 = 120바이트) → ORA-12899로 500.
+ * 바이트로도 막아 422로 돌려준다.
+ */
+export const TEAM_NICKNAME_MAX_BYTES = 100;
+
+const trimString = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+export class UpdateTeamNicknameDto {
+  @ApiProperty({
+    description: `팀 닉네임 (앞뒤 공백 제거 후 1~${TEAM_NICKNAME_MAX_LENGTH}자, 팀 안 중복 허용)`,
+    example: '기획팀 길동',
+    minLength: 1,
+    maxLength: TEAM_NICKNAME_MAX_LENGTH,
+  })
+  @Transform(trimString)
+  @IsString({ message: '팀 닉네임은 문자열이어야 합니다.' })
+  @Length(1, TEAM_NICKNAME_MAX_LENGTH, { message: `팀 닉네임은 1자 이상 ${TEAM_NICKNAME_MAX_LENGTH}자 이하여야 합니다.` })
+  @IsByteLength(1, TEAM_NICKNAME_MAX_BYTES, { message: '팀 닉네임이 너무 깁니다. 이모지·특수문자를 줄여 주세요.' })
+  teamNickname: string;
+}
+
+export class TeamNicknameDataDto {
+  @ApiProperty({ description: '팀 ID', example: 1 })
+  teamId: number;
+
+  @ApiProperty({ description: '사용자 ID (본인)', example: 1 })
+  userId: number;
+
+  @ApiProperty({ description: '저장된 팀 닉네임', example: '기획팀 길동' })
+  teamNickname: string;
+
+  @ApiProperty({ description: '바뀐 뒤 팀 안 표시 이름 (팀 닉네임 → 계정 닉네임 → "사용자{id}")', example: '기획팀 길동' })
+  userName: string;
+}
+
+export class TeamNicknameResponseDto extends ApiSuccessResponseDto {
+  @ApiProperty({ description: '팀 닉네임 변경 결과', type: TeamNicknameDataDto })
+  data: TeamNicknameDataDto;
 }
 
 // ==================== Team Users Query DTO ====================

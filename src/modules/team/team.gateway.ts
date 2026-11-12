@@ -17,9 +17,10 @@ import { Server, Socket } from 'socket.io';
 
 import { WsJwtGuard, AuthenticatedSocket } from '../../common/guards/ws-jwt-auth.guard';
 import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
-import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamService } from './team.service';
 import { OnlineUserService } from './online-user.service';
+import { getDisplayName } from '../../common/utils/user.utils';
+import { TeamDisplayNameService } from './team-display-name.service';
 import { TeamChatMessage } from '../../entities/TeamChatMessage';
 import { TeamChatService, toChatMessageView } from './team-chat.service';
 import { TeamForbiddenErrorResponseDto } from './team-error.dto';
@@ -48,6 +49,7 @@ import {
   ChatReceivedPayload,
   ChatReadUpdatedPayload,
   MemberJoinedPayload,
+  MemberNicknameChangedPayload,
 } from './team.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 
@@ -84,6 +86,7 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly configService: ConfigService,
     private readonly onlineUserService: OnlineUserService,
     private readonly teamChatService: TeamChatService,
+    private readonly teamDisplayNameService: TeamDisplayNameService,
     @InjectMetric('ws_connections_active')
     private readonly wsConnectionsActive: Gauge<string>,
     @InjectMetric('ws_events_total')
@@ -176,8 +179,8 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       // 채팅 등 후속 이벤트의 room 식별을 위해 teamId 캐싱
       client.data.teamId = teamId;
 
-      // 온라인 유저에 추가
-      const userName = getDisplayName(client.data.user?.userName, userId);
+      // 온라인 유저에 추가 — 이름은 팀 안 표시 이름(팀 닉네임 → 계정 닉네임). 핸드셰이크 때 읽은 user가 아니라 지금 값을 쓴다
+      const userName = await this.teamDisplayNameService.getDisplayName(teamId, userId);
 
       const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
         teamId,
@@ -336,7 +339,19 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         });
       }
 
-      const payload: ChatReceivedPayload = toChatMessageView(saved, user.userName);
+      // 보낸 사람 이름은 팀 안 표시 이름 — 소켓 연결 뒤 팀 닉네임이 바뀌었을 수 있어 매번 조회한다.
+      // 메시지는 이미 저장됐다 — 조회가 실패해도 브로드캐스트는 계정 닉네임으로 보낸다
+      let senderName: string;
+      try {
+        senderName = await this.teamDisplayNameService.getDisplayName(teamId, userId);
+      } catch (error) {
+        this.logger.warn(
+          `채팅 보낸 사람 표시 이름 조회 실패 — 계정 닉네임으로 대체: teamId=${teamId}, userId=${userId}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        senderName = getDisplayName(user.userName, userId);
+      }
+      const payload: ChatReceivedPayload = toChatMessageView(saved, senderName);
       this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.CHAT_RECEIVED, payload);
       this.logger.debug(`채팅 브로드캐스트: teamId=${teamId}, userId=${userId}, messageId=${payload.messageId}`);
     } finally {
@@ -564,6 +579,15 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   emitMemberJoined(teamId: number, payload: MemberJoinedPayload): void {
     this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.MEMBER_JOINED, payload);
     this.logger.debug(`멤버 가입 브로드캐스트: teamId=${teamId}, userId=${payload.userId}`);
+  }
+
+  /**
+   * 팀 닉네임 변경 브로드캐스트 — 온라인 목록(Redis)의 이름도 함께 바꾼다 (docs/tasks/team-nickname)
+   */
+  async notifyMemberNicknameChanged(teamId: number, payload: MemberNicknameChangedPayload): Promise<void> {
+    await this.onlineUserService.updateUserName(teamId, payload.userId, payload.userName);
+    this.server.to(this.getRoomName(teamId)).emit(TeamSocketEvents.MEMBER_NICKNAME_CHANGED, payload);
+    this.logger.debug(`팀 닉네임 변경 브로드캐스트: teamId=${teamId}, userId=${payload.userId}`);
   }
 
   // ===== 유틸리티 =====

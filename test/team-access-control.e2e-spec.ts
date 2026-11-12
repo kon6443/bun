@@ -7,6 +7,8 @@ import { TeamController } from '../src/modules/team/team.controller';
 import { TeamService } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
+import { TeamDisplayNameService } from '../src/modules/team/team-display-name.service';
+import { createMockTeamDisplayNameService } from '../src/modules/team/__spec__/team-display-name.mock';
 import { TelegramService } from '../src/modules/notification/telegram.service';
 import { DiscordService } from '../src/modules/notification/discord.service';
 import { NOTIFICATION_PORT } from '../src/common/port/notification.port';
@@ -40,15 +42,25 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
   let e2e: E2eApp;
   let app: INestApplication;
   let taskCommentRepository: MockRepository<TaskComment>;
+  let teamMemberRepository: MockRepository<TeamMember>;
   let teamService: TeamService;
 
   /** 태스크 태그 연결(task-tags.ts)이 트랜잭션 안팎에서 쓰는 EntityManager */
   let manager: Record<'find' | 'count' | 'save' | 'delete' | 'insert' | 'createQueryBuilder', jest.Mock>;
   let dataSource: { transaction: jest.Mock; manager: typeof manager };
-  let gateway: Record<'emitTaskCreated' | 'emitTaskUpdated' | 'emitCommentUpdated' | 'emitCommentDeleted', jest.Mock>;
+  let gateway: Record<
+    | 'emitTaskCreated'
+    | 'emitTaskUpdated'
+    | 'emitCommentCreated'
+    | 'emitCommentUpdated'
+    | 'emitCommentDeleted'
+    | 'notifyMemberNicknameChanged',
+    jest.Mock
+  >;
 
   beforeEach(async () => {
     taskCommentRepository = createMockRepository<TaskComment>();
+    teamMemberRepository = createMockRepository<TeamMember>();
     manager = {
       find: jest.fn().mockResolvedValue([]),
       count: jest.fn(),
@@ -63,6 +75,8 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
       emitTaskUpdated: jest.fn(),
       emitCommentUpdated: jest.fn(),
       emitCommentDeleted: jest.fn(),
+      emitCommentCreated: jest.fn(),
+      notifyMemberNicknameChanged: jest.fn().mockResolvedValue(undefined),
     };
 
     e2e = await createE2eApp({
@@ -74,11 +88,12 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
         TeamService,
         { provide: getDataSourceToken(), useValue: dataSource as unknown as DataSource },
         { provide: getRepositoryToken(Team), useValue: createMockRepository<Team>() },
-        { provide: getRepositoryToken(TeamMember), useValue: createMockRepository<TeamMember>() },
+        { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepository },
         { provide: getRepositoryToken(TeamTask), useValue: createMockRepository<TeamTask>() },
         { provide: getRepositoryToken(TaskComment), useValue: taskCommentRepository },
         { provide: getRepositoryToken(TeamInvitation), useValue: createMockRepository<TeamInvitation>() },
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
+        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() }, // 가드(OptionalJwtAuthGuard)용
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService({ [AUTHOR.userId]: '작성자' }) },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
         // 컨트롤러가 DI로 받는 나머지 — 이번 검증 대상이 아니라 동작만 막아둔다
@@ -218,6 +233,103 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ code: 'SUCCESS' });
+    });
+  });
+
+  // 팀 단위 닉네임 — 본인만·활성 멤버만, 입력은 trim 후 1~20자 (docs/tasks/team-nickname D-002·D-004)
+  describe('팀 닉네임 변경', () => {
+    const nicknameUrl = () => e2e.url(`/teams/${TEAM_ID}/users/me/nickname`);
+
+    it('비멤버가 설정하면 403 TEAM_FORBIDDEN이고 저장·알림이 없어야 함', async () => {
+      mockMembership(false);
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname: '침입자' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('TEAM_FORBIDDEN');
+      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+      expect(gateway.notifyMemberNicknameChanged).not.toHaveBeenCalled();
+    });
+
+    it('멤버면 앞뒤 공백을 지워 본인 행에 저장하고 팀에 알려야 함', async () => {
+      mockMembership(true);
+      const displayNames = e2e.moduleRef.get(TeamDisplayNameService) as unknown as { getDisplayName: jest.Mock };
+      displayNames.getDisplayName.mockResolvedValue('기획 길동');
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname: '  기획 길동  ' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        code: 'SUCCESS',
+        data: { teamId: TEAM_ID, userId: AUTHOR.userId, teamNickname: '기획 길동', userName: '기획 길동' },
+        message: '',
+      });
+      expect(teamMemberRepository.update).toHaveBeenCalledWith(
+        { teamId: TEAM_ID, userId: AUTHOR.userId },
+        { teamNickname: '기획 길동' },
+      );
+      expect(gateway.notifyMemberNicknameChanged).toHaveBeenCalledWith(TEAM_ID, res.body.data);
+    });
+
+    it.each([
+      ['빈 문자열', ''],
+      ['공백만', '   '],
+      ['21자', '가'.repeat(21)],
+      // 20자지만 UTF-8 120바이트 — 컬럼 VARCHAR2(100 BYTE)를 넘어 ORA-12899(500)가 나던 값
+      ['20자지만 100바이트 초과(❤️×20)', '❤️'.repeat(20)],
+    ])('%s이면 422 VALIDATION_ERROR이고 저장하지 않아야 함', async (_desc, teamNickname) => {
+      mockMembership(true);
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('남의 userId를 실어 보내도 받지 않아야 함 (본인만, forbidNonWhitelisted)', async () => {
+      mockMembership(true);
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname: '대리', userId: 1 });
+
+      expect(res.status).toBe(422);
+      expect(teamMemberRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('20자는 허용해야 함 (경계)', async () => {
+      mockMembership(true);
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname: '가'.repeat(20) });
+
+      expect(res.status).toBe(200);
+    });
+
+    it('댓글 생성 뒤 팀 표시 이름 조회가 실패해도 201이고 계정 닉네임으로 알려야 함', async () => {
+      jest.spyOn(teamService, 'createTaskComment').mockResolvedValue(
+        createTaskComment({ commentId: COMMENT_ID, taskId: TASK_ID, teamId: TEAM_ID, userId: AUTHOR.userId }),
+      );
+      const displayNames = e2e.moduleRef.get(TeamDisplayNameService) as unknown as { getDisplayName: jest.Mock };
+      displayNames.getDisplayName.mockRejectedValue(new Error('ORA-03113'));
+
+      const res = await request(app.getHttpServer())
+        .post(e2e.url(`/teams/${TEAM_ID}/tasks/${TASK_ID}/comments`))
+        .send({ commentContent: '댓글' });
+
+      expect(res.status).toBe(201);
+      expect(gateway.emitCommentCreated).toHaveBeenCalledWith(
+        TEAM_ID,
+        expect.objectContaining({ commentId: COMMENT_ID, userId: AUTHOR.userId, userName: '작성자' }),
+      );
+    });
+
+    it('소켓 알림이 실패해도 저장은 성공으로 응답해야 함', async () => {
+      mockMembership(true);
+      gateway.notifyMemberNicknameChanged.mockRejectedValue(new Error('redis down'));
+
+      const res = await request(app.getHttpServer()).put(nicknameUrl()).send({ teamNickname: '팀닉' });
+
+      expect(res.status).toBe(200);
+      expect(teamMemberRepository.update).toHaveBeenCalled();
     });
   });
 

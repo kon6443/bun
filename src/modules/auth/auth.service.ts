@@ -11,11 +11,10 @@ import {
   AuthInvalidTokenErrorResponseDto,
   AuthKakaoApiErrorResponseDto,
 } from './auth-error.dto';
-import { getDisplayName } from '../../common/utils/user.utils';
+import { generateRandomNickname, getDisplayName } from '../../common/utils/user.utils';
 
 export type UserType = {
   kakaoId?: string;
-  kakaoNickname?: string;
   isActivated?: 0 | 1;
 };
 
@@ -99,26 +98,32 @@ export class AuthService {
     return users;
   }
 
-  async userSignUp({ user }: { user: UserType }): Promise<number> {
-    const { kakaoNickname, kakaoId } = user;
+  /**
+   * 회원가입 — 닉네임은 카카오에서 받지 않고 랜덤 기본값을 준다 (docs/tasks/team-nickname D-001·D-002)
+   * @returns 생성된 userId와 부여한 닉네임
+   */
+  async userSignUp({ user }: { user: UserType }): Promise<{ userId: number; userName: string }> {
+    const { kakaoId } = user;
+    const userName = generateRandomNickname();
 
     const newUser = this.userRepository.create({
       kakaoId: kakaoId!,
-      userName: kakaoNickname || null,
+      userName,
       isActivated: 1,
       createdDate: new Date(),
     });
 
     const savedUser = await this.userRepository.save(newUser);
-    return savedUser.userId;
+    return { userId: savedUser.userId, userName };
   }
 
   async postKakaoSignInUp({
     kakaoUserSign,
   }: {
-    kakaoUserSign: { accessToken: string; kakaoNickname?: string };
+    // 요청의 kakaoNickname은 받기만 하고 쓰지 않는다 — 구 프론트 호환용 (D-001)
+    kakaoUserSign: { accessToken: string };
   }): Promise<{ userId: number; userName: string; loginType: string; accessToken: string }> {
-    const { accessToken, kakaoNickname } = kakaoUserSign;
+    const { accessToken } = kakaoUserSign;
     const startedAt = Date.now();
 
     // 카카오 accessToken 검증 요청, 응답으로 kakaoId 수신
@@ -139,12 +144,8 @@ export class AuthService {
 
     const writeStartedAt = Date.now();
     if (!user) {
-      // 내부 Users 테이블에 없을 경우 회원가입 처리
-      userId = await this.userSignUp({
-        user: { kakaoId, kakaoNickname } as UserType,
-      });
-      // 신규 사용자: 카카오 닉네임 또는 기본 닉네임
-      userName = getDisplayName(kakaoNickname || null, userId);
+      // 내부 Users 테이블에 없을 경우 회원가입 처리 — 랜덤 기본 닉네임
+      ({ userId, userName } = await this.userSignUp({ user: { kakaoId } }));
     } else {
       // 로그인한 userId 응답
       userId = user.userId;

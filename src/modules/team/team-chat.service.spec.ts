@@ -5,12 +5,14 @@ import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { Redis } from 'ioredis';
 import { TeamChatService } from './team-chat.service';
 import { TeamService } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService, MockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { TeamChatMessage } from '../../entities/TeamChatMessage';
 import { TeamMember } from '../../entities/TeamMember';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { CHAT_RATE_LIMITS } from '../../common/constants/chat.constants';
 import { createMockQueryBuilder, createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
-import { createTeamChatMessage, createTeamMemberView, createUser, FIXED_DATE } from '../../entities/__spec__/entity.factory';
+import { createTeamChatMessage, createTeamMemberView, FIXED_DATE } from '../../entities/__spec__/entity.factory';
 import { TeamForbiddenErrorResponseDto } from './team-error.dto';
 import { advanceReadCursor, findLatestMessageId } from './chat-read-cursor';
 
@@ -38,6 +40,7 @@ describe('TeamChatService', () => {
   let messageRepository: MockRepository<TeamChatMessage> & { existsBy: jest.Mock };
   let teamMemberRepository: MockRepository<TeamMember>;
   let teamService: { verifyTeamMemberAccess: jest.Mock };
+  let teamDisplayNameService: MockTeamDisplayNameService;
   let manager: { save: jest.Mock; create: jest.Mock; findOneByOrFail: jest.Mock; findOneBy: jest.Mock };
 
   beforeEach(async () => {
@@ -47,6 +50,7 @@ describe('TeamChatService', () => {
     messageRepository = Object.assign(createMockRepository<TeamChatMessage>(), { existsBy: jest.fn() });
     teamMemberRepository = createMockRepository<TeamMember>();
     teamService = { verifyTeamMemberAccess: jest.fn().mockResolvedValue(createTeamMemberView()) };
+    teamDisplayNameService = createMockTeamDisplayNameService({ 1: '홍길동' });
     manager = {
       save: jest.fn((_entity, data) => Promise.resolve({ ...data, messageId: 101 })),
       create: jest.fn((_entity, data) => data),
@@ -68,6 +72,7 @@ describe('TeamChatService', () => {
           } as unknown as DataSource,
         },
         { provide: TeamService, useValue: teamService },
+        { provide: TeamDisplayNameService, useValue: teamDisplayNameService },
       ],
     }).compile();
 
@@ -183,7 +188,7 @@ describe('TeamChatService', () => {
   describe('getMessages', () => {
     const rows = (ids: number[]) =>
       ids.map((id) =>
-        createTeamChatMessage({ messageId: id, teamId: TEAM_ID, user: createUser({ userName: '홍길동' }) }),
+        createTeamChatMessage({ messageId: id, teamId: TEAM_ID }),
       );
 
     it('beforeId와 afterId를 함께 주면 400으로 거부해야 함', async () => {
@@ -260,6 +265,33 @@ describe('TeamChatService', () => {
         timestamp: FIXED_DATE.toISOString(),
       });
     });
+
+    // 보낸 사람 이름은 지금의 팀 안 표시 이름 — 지난 메시지에도 바뀐 팀 닉네임이 보인다 (team-nickname)
+    it('보낸 사람 이름을 이 팀의 표시 이름으로 한 번에 해석해야 함', async () => {
+      teamDisplayNameService.getDisplayNames.mockResolvedValue(
+        new Map([
+          [1, '팀닉'],
+          [2, '다른팀원'],
+        ]),
+      );
+      messageRepository.createQueryBuilder.mockReturnValue(
+        createMockQueryBuilder({
+          getMany: [
+            createTeamChatMessage({ messageId: 102, teamId: TEAM_ID, userId: 2 }),
+            createTeamChatMessage({ messageId: 101, teamId: TEAM_ID, userId: 1 }),
+          ],
+        }) as never,
+      );
+
+      const { messages } = await service.getMessages(TEAM_ID, USER_ID, {});
+
+      expect(teamDisplayNameService.getDisplayNames).toHaveBeenCalledTimes(1);
+      expect(teamDisplayNameService.getDisplayNames).toHaveBeenCalledWith(TEAM_ID, [1, 2]);
+      expect(messages.map((m) => [m.userId, m.userName])).toEqual([
+        [1, '팀닉'],
+        [2, '다른팀원'],
+      ]);
+    });
   });
 
   describe('getReadState', () => {
@@ -267,8 +299,8 @@ describe('TeamChatService', () => {
       teamMemberRepository.createQueryBuilder.mockReturnValue(
         createMockQueryBuilder({
           getRawMany: [
-            { userId: '1', userName: '김팀장', lastReadMessageId: '104' },
-            { userId: USER_ID, userName: null, lastReadMessageId: null },
+            { userId: '1', userName: '김팀장', teamNickname: '기획 김팀장', lastReadMessageId: '104' },
+            { userId: USER_ID, userName: null, teamNickname: null, lastReadMessageId: null },
           ],
         }) as never,
       );
@@ -282,8 +314,9 @@ describe('TeamChatService', () => {
         myLastReadMessageId: 0,
         myUnreadCount: 3,
         members: [
-          { userId: 1, userName: '김팀장', lastReadMessageId: 104 },
-          // 커서 행이 없으면 0, 이름이 없으면 기본 표시명
+          // 팀 닉네임이 있으면 팀 닉네임 (team-nickname)
+          { userId: 1, userName: '기획 김팀장', lastReadMessageId: 104 },
+          // 커서 행이 없으면 0, 팀 닉네임·계정 닉네임이 모두 없으면 기본 표시명
           { userId: USER_ID, userName: `사용자${USER_ID}`, lastReadMessageId: 0 },
         ],
       });

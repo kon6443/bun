@@ -9,6 +9,7 @@ import { TeamGateway } from './team.gateway';
 import { OnlineUserService } from './online-user.service';
 import { TeamChatService } from './team-chat.service';
 import { TeamTagService } from './team-tag.service';
+import { TeamDisplayNameService } from './team-display-name.service';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
@@ -48,9 +49,10 @@ import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
     OnlineUserService, // Redis 기반 온라인 유저 관리
     TeamChatService, // 채팅 저장·읽음 커서 (원본 Oracle, Redis는 레이트 리밋만)
     TeamTagService, // 팀 태그 CRUD·재정렬 (태스크 연결은 TeamService + task-tags.ts)
+    TeamDisplayNameService, // 팀 안 표시 이름 해석 (팀 닉네임 → 계정 닉네임)
     WsJwtGuard, // WebSocket 인증 Guard
     WsExceptionFilter, // WebSocket 예외 필터 (DI 기반)
   ],
-  exports: [TeamService, TeamGateway, OnlineUserService, TeamChatService],
+  exports: [TeamService, TeamGateway, OnlineUserService, TeamChatService, TeamDisplayNameService],
 })
 export class TeamModule {}

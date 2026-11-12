@@ -20,6 +20,11 @@ export class TeamMember {
   @Column({ name: "ACT_STATUS", type: "number", default: 1 })
   actStatus: number;
 
+  // 팀 안에서만 보이는 닉네임 — 가입 때 계정 닉네임을 복사하고 이후 독립 (docs/tasks/team-nickname D-004).
+  // NULL은 복사 전 데이터만 해당하며 읽을 때 계정 닉네임으로 대체한다
+  @Column({ name: "TEAM_NICKNAME", type: "varchar2", length: 100, nullable: true })
+  teamNickname: string | null;
+
   // 관계
   @ManyToOne(() => Team, (team) => team.teamMembers)
   @JoinColumn({ name: "TEAM_ID" })
