@@ -6,13 +6,14 @@ import { TeamChatMessage } from '../../entities/TeamChatMessage';
 import { TeamChatReadCursor } from '../../entities/TeamChatReadCursor';
 import { TeamMember } from '../../entities/TeamMember';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { getDisplayName } from '../../common/utils/user.utils';
+import { getDisplayName, getTeamDisplayName } from '../../common/utils/user.utils';
 import {
   CHAT_HISTORY_DEFAULT_LIMIT,
   CHAT_RATE_LIMITS,
   ChatRateLimitAction,
 } from '../../common/constants/chat.constants';
 import { TeamService } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
 import { TeamChatBadRequestErrorResponseDto } from './team-error.dto';
 import { ChatReceivedPayload } from './team.events';
 import { ChatMessagesDto, ChatReadStateDto, GetChatMessagesQueryDto } from './team-chat.dto';
@@ -38,6 +39,7 @@ export class TeamChatService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly teamService: TeamService,
+    private readonly teamDisplayNameService: TeamDisplayNameService,
   ) {}
 
   /**
@@ -136,15 +138,14 @@ export class TeamChatService {
 
     const qb = this.messageRepository
       .createQueryBuilder('m')
-      .innerJoin('m.user', 'u')
-      .select(['m.messageId', 'm.teamId', 'm.userId', 'm.content', 'm.clientMsgId', 'm.crtdAt', 'u.userId', 'u.userName'])
+      .select(['m.messageId', 'm.teamId', 'm.userId', 'm.content', 'm.clientMsgId', 'm.crtdAt'])
       .where('m.teamId = :teamId', { teamId })
       .andWhere('m.status = :active', { active: ActStatus.ACTIVE });
 
     if (afterId) qb.andWhere('m.messageId > :afterId', { afterId });
     if (beforeId) qb.andWhere('m.messageId < :beforeId', { beforeId });
 
-    // limit + 1개를 읽어 한 개가 더 있으면 hasMore. ManyToOne 조인이라 행이 늘지 않아 limit을 그대로 쓴다
+    // limit + 1개를 읽어 한 개가 더 있으면 hasMore
     const rows = await qb
       .orderBy('m.messageId', ascending ? 'ASC' : 'DESC')
       .limit(limit + 1)
@@ -154,8 +155,14 @@ export class TeamChatService {
     const page = rows.slice(0, limit);
     if (!ascending) page.reverse();
 
+    // 보낸 사람 이름은 팀 안 표시 이름(팀 닉네임 → 계정 닉네임) — 지금 값으로 해석하므로 지난 메시지에도 바뀐 이름이 보인다
+    const names = await this.teamDisplayNameService.getDisplayNames(
+      teamId,
+      page.map((m) => Number(m.userId)),
+    );
+
     return {
-      messages: page.map((m) => toChatMessageView(m, m.user?.userName)),
+      messages: page.map((m) => toChatMessageView(m, names.get(Number(m.userId)))),
       hasMore,
     };
   }
@@ -172,16 +179,22 @@ export class TeamChatService {
       .leftJoin(TeamChatReadCursor, 'c', 'c.teamId = ut.teamId AND c.userId = ut.userId')
       .select('ut.userId', 'userId')
       .addSelect('u.userName', 'userName')
+      .addSelect('ut.teamNickname', 'teamNickname')
       .addSelect('c.lastReadMessageId', 'lastReadMessageId')
       .where('ut.teamId = :teamId', { teamId })
       .andWhere('ut.actStatus = :active', { active: ActStatus.ACTIVE })
       .orderBy('ut.userId', 'ASC')
-      .getRawMany<{ userId: number; userName: string | null; lastReadMessageId: number | null }>();
+      .getRawMany<{
+        userId: number;
+        userName: string | null;
+        teamNickname: string | null;
+        lastReadMessageId: number | null;
+      }>();
 
     // Oracle 결과는 Number()로 고정한다 — 계약상 JSON number (D-016)
     const members = rows.map((r) => ({
       userId: Number(r.userId),
-      userName: getDisplayName(r.userName, Number(r.userId)),
+      userName: getTeamDisplayName(r.teamNickname, r.userName, Number(r.userId)),
       lastReadMessageId: Number(r.lastReadMessageId ?? 0),
     }));
 

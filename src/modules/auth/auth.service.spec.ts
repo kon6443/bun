@@ -14,6 +14,8 @@ import {
 } from './auth-error.dto';
 
 const SECRET = 'test-jwt-secret';
+// 랜덤 기본 닉네임 형식 — 형용사+동물(한글) + 4자리 숫자 (common/utils/user.utils.ts)
+const RANDOM_NICKNAME = /^[가-힣]+\d{4}$/;
 
 const CONFIG: Record<string, string> = {
   JWT_SECRET: SECRET,
@@ -145,30 +147,17 @@ describe('AuthService', () => {
   });
 
   describe('userSignUp', () => {
-    it('카카오 닉네임을 userName으로 저장하고 userId를 반환해야 함', async () => {
-      const created = createUser({ userId: 0 });
-      userRepository.create.mockReturnValue(created);
+    // 카카오 닉네임은 받지 않는다 — 랜덤 기본 닉네임을 저장하고 같은 값을 돌려준다 (team-nickname D-001·D-002)
+    it('랜덤 닉네임을 userName으로 저장하고 userId·userName을 반환해야 함', async () => {
+      userRepository.create.mockReturnValue(createUser({ userId: 0 }));
       userRepository.save.mockResolvedValue(createUser({ userId: 77 }));
 
-      const result = await service.userSignUp({
-        user: { kakaoId: '999', kakaoNickname: '카카오닉' },
-      });
+      const result = await service.userSignUp({ user: { kakaoId: '999' } });
 
-      expect(result).toBe(77);
+      expect(result.userId).toBe(77);
+      expect(result.userName).toMatch(RANDOM_NICKNAME);
       expect(userRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ kakaoId: '999', userName: '카카오닉', isActivated: 1 }),
-      );
-    });
-
-    // 카카오가 닉네임 동의를 받지 못한 계정은 nickname이 없다
-    it('카카오 닉네임이 없으면 userName을 null로 저장해야 함', async () => {
-      userRepository.create.mockReturnValue(createUser());
-      userRepository.save.mockResolvedValue(createUser({ userId: 5 }));
-
-      await service.userSignUp({ user: { kakaoId: '999' } });
-
-      expect(userRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userName: null }),
+        expect.objectContaining({ kakaoId: '999', userName: result.userName, isActivated: 1 }),
       );
     });
   });
@@ -205,13 +194,14 @@ describe('AuthService', () => {
       userRepository.create.mockReturnValue(createUser());
       userRepository.save.mockResolvedValue(createUser({ userId: 100 }));
 
+      // 구 프론트가 kakaoNickname을 보내도 저장·응답에 쓰지 않는다
       const result = await service.postKakaoSignInUp({
-        kakaoUserSign: { accessToken: 'tok', kakaoNickname: '신규유저' },
+        kakaoUserSign: { accessToken: 'tok', kakaoNickname: '신규유저' } as { accessToken: string },
       });
 
-      expect(result).toEqual(
-        expect.objectContaining({ userId: 100, userName: '신규유저' }),
-      );
+      expect(result.userId).toBe(100);
+      expect(result.userName).toMatch(RANDOM_NICKNAME);
+      expect(userRepository.create).toHaveBeenCalledWith(expect.objectContaining({ userName: result.userName }));
       expect(userRepository.save).toHaveBeenCalled();
     });
 
@@ -226,19 +216,6 @@ describe('AuthService', () => {
       });
 
       expect(result.userName).toBe(expected);
-    });
-
-    it('신규 가입인데 카카오 닉네임이 없으면 기본 닉네임을 반환해야 함', async () => {
-      mockKakaoResponse(200, { id: 456 });
-      userRepository.find.mockResolvedValue([]);
-      userRepository.create.mockReturnValue(createUser());
-      userRepository.save.mockResolvedValue(createUser({ userId: 100 }));
-
-      const result = await service.postKakaoSignInUp({
-        kakaoUserSign: { accessToken: 'tok' },
-      });
-
-      expect(result.userName).toBe('사용자100');
     });
 
     describe('발급된 accessToken', () => {

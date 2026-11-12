@@ -7,6 +7,8 @@ import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamService } from '../src/modules/team/team.service';
 import { OnlineUserService } from '../src/modules/team/online-user.service';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
+import { TeamDisplayNameService } from '../src/modules/team/team-display-name.service';
+import { createMockTeamDisplayNameService } from '../src/modules/team/__spec__/team-display-name.mock';
 import { TeamSocketEvents } from '../src/modules/team/team.events';
 import { User } from '../src/entities/User';
 import { createUser, createTeamMemberView, createTeamChatMessage } from '../src/entities/__spec__/entity.factory';
@@ -92,6 +94,10 @@ describe('E2E WS 팀 게이트웨이', () => {
         { provide: TeamService, useValue: teamService },
         { provide: OnlineUserService, useValue: onlineUserService },
         { provide: TeamChatService, useValue: teamChatService },
+        {
+          provide: TeamDisplayNameService,
+          useValue: createMockTeamDisplayNameService({ [USER_A.userId]: '유저A', [USER_B.userId]: '유저B' }),
+        },
         { provide: getRepositoryToken(User), useValue: userRepository },
         {
           provide: ConfigService,

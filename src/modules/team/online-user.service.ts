@@ -8,10 +8,23 @@ import { OnlineUserInfo } from './team.events';
  * Redis 키 패턴:
  * - socket:{socketId}         → Hash { teamId, userId, userName }  (TTL 1시간)
  * - team:{teamId}:user:{userId}:sockets → Set of socketIds         (TTL 1시간)
- * - team:{teamId}:online      → Hash { userId → userName }         (TTL 없음)
+ * - team:{teamId}:online      → Hash { userId → userName }         (TTL 2시간)
+ * userName은 팀 안 표시 이름(팀 닉네임 → 계정 닉네임)이다. 팀 닉네임이 바뀌면 updateUserName으로 갱신한다.
  */
 
 const SOCKET_KEY_TTL = 3600; // 1시간 (고아 키 자동 정리 안전장치)
+
+/**
+ * 이미 있는 필드만 바꾼다 — 이름 변경 중에 유저가 나갔으면 온라인 목록·소켓 매핑을 되살리지 않는다.
+ * KEYS[1]=hash · ARGV[1]=field · ARGV[2]=value
+ */
+const HSET_IF_FIELD_EXISTS_SCRIPT = `
+if redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
+  redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+  return 1
+end
+return 0
+`;
 const TEAM_ONLINE_KEY_TTL = 7200; // 2시간 (online 해시 — 서버 재시작 시 고아 데이터 자동 정리)
 
 // 팀별 온라인 유저 수 Gauge 재계산 주기 (Prometheus scrape 15s 보다 길게 — 설계 결정 P3).
@@ -163,6 +176,28 @@ export class OnlineUserService implements OnModuleDestroy {
     } catch (error) {
       this.logger.error(`addUserToOnline 실패: ${(error as Error).message}`);
       return { wasAlreadyOnline: false };
+    }
+  }
+
+  /**
+   * 온라인 유저의 표시 이름 갱신 — 팀 닉네임 변경 시 (docs/tasks/team-nickname)
+   *
+   * joinTeam 때 저장한 이름이 onlineUsers·userLeft로 다시 나가므로 바꿔 둔다. 오프라인이면 할 일 없다
+   * (다음 joinTeam이 새 이름으로 등록한다). 실패해도 다음 joinTeam에서 맞춰지므로 예외를 올리지 않는다.
+   */
+  async updateUserName(teamId: number, userId: number, userName: string): Promise<void> {
+    try {
+      const socketIds = await this.redis.smembers(this.userSocketsKey(teamId, userId));
+      if (socketIds.length === 0) return;
+
+      await Promise.all([
+        this.redis.eval(HSET_IF_FIELD_EXISTS_SCRIPT, 1, this.teamOnlineKey(teamId), String(userId), userName),
+        ...socketIds.map((socketId) =>
+          this.redis.eval(HSET_IF_FIELD_EXISTS_SCRIPT, 1, this.socketKey(socketId), 'userName', userName),
+        ),
+      ]);
+    } catch (error) {
+      this.logger.error(`updateUserName 실패: ${(error as Error).message}`);
     }
   }
 

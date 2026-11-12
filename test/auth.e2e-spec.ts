@@ -90,14 +90,14 @@ describe('E2E 인증 (카카오 로그인)', () => {
     });
 
     it('카카오 토큰으로 가입하고 JWT를 반환해야 함', async () => {
-      const res = await login({ accessToken: KAKAO_TOKEN, kakaoNickname: '신규유저' });
+      const res = await login({ accessToken: KAKAO_TOKEN });
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
         code: 'SUCCESS',
         data: {
           userId: 100,
-          userName: '신규유저',
+          userName: expect.stringMatching(/^[가-힣]+\d{4}$/),
           loginType: 'KAKAO',
           tokenType: 'Bearer',
           accessToken: expect.any(String),
@@ -105,10 +105,16 @@ describe('E2E 인증 (카카오 로그인)', () => {
       });
     });
 
-    it('닉네임이 없으면 기본 표시명을 만들어야 함', async () => {
-      const res = await login({ accessToken: KAKAO_TOKEN });
+    // 구 프론트가 보내는 kakaoNickname은 400 없이 받되 쓰지 않는다 (team-nickname D-001)
+    it('kakaoNickname을 보내도 저장·응답에 쓰지 않고 랜덤 닉네임을 줘야 함', async () => {
+      const res = await login({ accessToken: KAKAO_TOKEN, kakaoNickname: '카카오닉' });
 
-      expect(res.body.data.userName).toBe('사용자100');
+      expect(res.status).toBe(201);
+      expect(res.body.data.userName).toMatch(/^[가-힣]+\d{4}$/);
+      expect(res.body.data.userName).not.toBe('카카오닉');
+      expect(userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userName: res.body.data.userName }),
+      );
     });
   });
 

@@ -5,7 +5,13 @@ import { ApiSuccessResponseDto } from '../../common/dto/api-response.dto';
 // ==================== Request DTOs ====================
 
 export class KakaoSignInUpDto {
-  @ApiProperty({ description: '카카오 닉네임', example: 'kakao_test_nick', required: false })
+  /** @deprecated 서버가 쓰지 않는다 — 신규 가입 닉네임은 랜덤 부여. 구 프론트 호환을 위해 받기만 한다(forbidNonWhitelisted) */
+  @ApiProperty({
+    description: '(사용 안 함) 카카오 닉네임 — 보내도 무시된다. 신규 가입자 닉네임은 서버가 랜덤으로 부여',
+    example: 'kakao_test_nick',
+    required: false,
+    deprecated: true,
+  })
   @IsString()
   @IsOptional()
   kakaoNickname?: string;
@@ -22,7 +28,7 @@ export class KakaoSignInUpDataDto {
   @ApiProperty({ description: '사용자 ID', example: 1 })
   userId: number;
 
-  @ApiProperty({ description: '사용자 닉네임', example: '홍길동' })
+  @ApiProperty({ description: '사용자 닉네임 (신규 가입자는 랜덤 기본 닉네임)', example: '용감한수달4821' })
   userName: string;
 
   @ApiProperty({ description: '로그인 타입', example: 'KAKAO' })

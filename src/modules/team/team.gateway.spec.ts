@@ -7,6 +7,8 @@ import { TeamGateway } from './team.gateway';
 import { TeamService } from './team.service';
 import { OnlineUserService } from './online-user.service';
 import { TeamChatService } from './team-chat.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService, MockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { TeamForbiddenErrorResponseDto } from './team-error.dto';
 import { TeamSocketEvents } from './team.events';
 import { AuthenticatedSocket, WsJwtGuard } from '../../common/guards/ws-jwt-auth.guard';
@@ -46,7 +48,9 @@ describe('TeamGateway', () => {
     getOnlineUsersCount: jest.Mock;
     isSocketRegistered: jest.Mock;
     trackActiveTeam: jest.Mock;
+    updateUserName: jest.Mock;
   };
+  let teamDisplayNameService: MockTeamDisplayNameService;
   let teamChatService: { consumeRateLimit: jest.Mock; sendMessage: jest.Mock; markRead: jest.Mock };
   let metrics: { inc: jest.Mock; dec: jest.Mock; startTimer: jest.Mock };
   let endTimer: jest.Mock;
@@ -88,7 +92,10 @@ describe('TeamGateway', () => {
       getOnlineUsersCount: jest.fn().mockResolvedValue(0),
       isSocketRegistered: jest.fn().mockResolvedValue(false),
       trackActiveTeam: jest.fn(),
+      updateUserName: jest.fn().mockResolvedValue(undefined),
     };
+    // 팀 안 표시 이름 — 기본은 계정 닉네임과 같은 '홍길동'
+    teamDisplayNameService = createMockTeamDisplayNameService({ [USER_ID]: '홍길동' });
     teamChatService = {
       consumeRateLimit: jest.fn().mockResolvedValue(true),
       sendMessage: jest.fn().mockResolvedValue(
@@ -108,6 +115,7 @@ describe('TeamGateway', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: OnlineUserService, useValue: onlineUserService },
         { provide: TeamChatService, useValue: teamChatService },
+        { provide: TeamDisplayNameService, useValue: teamDisplayNameService },
         { provide: getToken('ws_connections_active'), useValue: metrics },
         { provide: getToken('ws_events_total'), useValue: metrics },
         { provide: getToken('ws_event_duration_seconds'), useValue: metrics },
@@ -267,17 +275,18 @@ describe('TeamGateway', () => {
       expect(clientRoomEmit).not.toHaveBeenCalled();
     });
 
-    it('이름이 없는 사용자는 기본 표시명으로 등록해야 함', async () => {
+    // 핸드셰이크 때 읽은 계정 닉네임이 아니라 지금의 팀 안 표시 이름으로 등록한다 (team-nickname)
+    it('팀 닉네임이 있으면 팀 닉네임으로 등록·알려야 함', async () => {
+      teamDisplayNameService.getDisplayName.mockResolvedValue('팀닉');
       const client = createClient();
-      client.data.user = createUser({ userId: USER_ID, userName: null });
 
       await gateway.handleJoinTeam(client, { teamId: TEAM_ID });
 
-      expect(onlineUserService.addUserToOnline).toHaveBeenCalledWith(
-        TEAM_ID,
-        USER_ID,
-        `사용자${USER_ID}`,
-        SOCKET_ID,
+      expect(teamDisplayNameService.getDisplayName).toHaveBeenCalledWith(TEAM_ID, USER_ID);
+      expect(onlineUserService.addUserToOnline).toHaveBeenCalledWith(TEAM_ID, USER_ID, '팀닉', SOCKET_ID);
+      expect(clientRoomEmit).toHaveBeenCalledWith(
+        TeamSocketEvents.USER_JOINED,
+        expect.objectContaining({ userId: USER_ID, userName: '팀닉' }),
       );
     });
 
@@ -467,14 +476,29 @@ describe('TeamGateway', () => {
       expect(typeof payload.messageId).toBe('number');
     });
 
-    it('이름이 없는 사용자는 기본 표시명으로 보내야 함', async () => {
+    // 소켓 연결 뒤 팀 닉네임이 바뀌었을 수 있다 — 연결 때 읽은 user.userName을 쓰지 않는다 (team-nickname)
+    it('보낸 사람 이름은 메시지마다 조회한 팀 안 표시 이름이어야 함', async () => {
+      teamDisplayNameService.getDisplayName.mockResolvedValue('팀닉');
       const client = createClient({ teamId: TEAM_ID });
-      client.data.user = createUser({ userId: USER_ID, userName: null });
 
       await gateway.handleChatMessage(client, dto);
 
+      expect(teamDisplayNameService.getDisplayName).toHaveBeenCalledWith(TEAM_ID, USER_ID);
       const [, payload] = serverRoomEmit.mock.calls[0] as [string, { userName: string }];
-      expect(payload.userName).toBe(`사용자${USER_ID}`);
+      expect(payload.userName).toBe('팀닉');
+    });
+
+    // 메시지는 이미 저장됐다 — 이름 조회 실패로 브로드캐스트를 놓치면 다른 팀원은 새로고침 전까지 못 본다 (R2 리뷰 지적)
+    it('표시 이름 조회가 실패해도 계정 닉네임으로 브로드캐스트해야 함', async () => {
+      teamDisplayNameService.getDisplayName.mockRejectedValue(new Error('ORA-03113'));
+      const client = createClient({ teamId: TEAM_ID });
+      client.data.user = createUser({ userId: USER_ID, userName: '계정닉' });
+
+      await gateway.handleChatMessage(client, dto);
+
+      const [event, payload] = serverRoomEmit.mock.calls[0] as [string, { userName: string; messageId: number }];
+      expect(event).toBe(TeamSocketEvents.CHAT_RECEIVED);
+      expect(payload).toMatchObject({ messageId: 101, userName: '계정닉' });
     });
 
   });
@@ -535,6 +559,18 @@ describe('TeamGateway', () => {
 
       expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
       expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.MEMBER_JOINED, payload);
+    });
+  });
+
+  describe('notifyMemberNicknameChanged', () => {
+    it('온라인 목록의 이름을 바꾸고 팀 room에 memberNicknameChanged를 보내야 함', async () => {
+      const payload = { teamId: TEAM_ID, userId: USER_ID, userName: '팀닉', teamNickname: '팀닉' };
+
+      await gateway.notifyMemberNicknameChanged(TEAM_ID, payload);
+
+      expect(onlineUserService.updateUserName).toHaveBeenCalledWith(TEAM_ID, USER_ID, '팀닉');
+      expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
+      expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.MEMBER_NICKNAME_CHANGED, payload);
     });
   });
 

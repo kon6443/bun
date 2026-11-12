@@ -3,14 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { TeamService } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService, MockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
-import { createUser, createTeamMemberView } from '../../entities/__spec__/entity.factory';
+import { createTeamMemberView } from '../../entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import {
   TeamForbiddenErrorResponseDto,
@@ -28,17 +29,18 @@ import {
 describe('TeamService — 역할 변경', () => {
   let service: TeamService;
   let teamMemberRepository: MockRepository<TeamMember>;
-  let userRepository: MockRepository<User>;
+  let teamDisplayNameService: MockTeamDisplayNameService;
   let notificationPort: { notifyTeam: jest.Mock };
 
   beforeEach(async () => {
     teamMemberRepository = createMockRepository<TeamMember>();
-    userRepository = createMockRepository<User>();
+    teamDisplayNameService = createMockTeamDisplayNameService({ 2: '대상자' });
     notificationPort = { notifyTeam: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: teamDisplayNameService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn() } as unknown as DataSource,
@@ -51,7 +53,6 @@ describe('TeamService — 역할 변경', () => {
           provide: getRepositoryToken(TeamInvitation),
           useValue: createMockRepository<TeamInvitation>(),
         },
-        { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: NOTIFICATION_PORT, useValue: notificationPort },
       ],
@@ -116,8 +117,6 @@ describe('TeamService — 역할 변경', () => {
 
     it('요청자 역할은 대소문자 무관하게 인식해야 함 (DB에 소문자가 있어도)', async () => {
       mockMembers({ userId: 1, role: 'master' }, { userId: 2, role: 'member' });
-      userRepository.findOne.mockResolvedValue(createUser());
-
       await expect(changeRole('MANAGER')).resolves.toHaveProperty('newRole', 'MANAGER');
     });
   });
@@ -137,8 +136,6 @@ describe('TeamService — 역할 변경', () => {
       '%s가 %s를 %s로: 허용=%s',
       async (actorRole, targetRole, newRole, allowed) => {
         mockMembers({ userId: 1, role: actorRole }, { userId: 2, role: targetRole });
-        userRepository.findOne.mockResolvedValue(createUser());
-
         const promise = changeRole(newRole);
 
         if (allowed) {
@@ -165,8 +162,6 @@ describe('TeamService — 역할 변경', () => {
     });
 
     it('대상 멤버만 지정해 역할을 갱신해야 함', async () => {
-      userRepository.findOne.mockResolvedValue(createUser({ userName: '대상자' }));
-
       await changeRole('MANAGER');
 
       expect(teamMemberRepository.update).toHaveBeenCalledWith(
@@ -176,8 +171,6 @@ describe('TeamService — 역할 변경', () => {
     });
 
     it('이전 역할과 새 역할을 함께 반환해야 함', async () => {
-      userRepository.findOne.mockResolvedValue(createUser({ userName: '대상자' }));
-
       const result = await changeRole('MANAGER');
 
       expect(result).toEqual({
@@ -190,28 +183,17 @@ describe('TeamService — 역할 변경', () => {
       });
     });
 
-    it('대상 사용자 조회 시 userName만 select해야 함 (민감정보 미조회)', async () => {
-      userRepository.findOne.mockResolvedValue(createUser());
-
+    // 응답·소켓·알림 모두 이 팀의 표시 이름(팀 닉네임 → 계정 닉네임)을 쓴다 (team-nickname)
+    it('대상 이름은 이 팀의 표시 이름으로 조회해 알림 제목에도 써야 함', async () => {
       await changeRole('MANAGER');
 
-      expect(userRepository.findOne).toHaveBeenCalledWith({
-        where: { userId: 2 },
-        select: ['userName'],
-      });
-    });
-
-    it('userName이 없으면 null로 반환해야 함', async () => {
-      userRepository.findOne.mockResolvedValue(createUser({ userName: null }));
-
-      const result = await changeRole('MANAGER');
-
-      expect(result.userName).toBeNull();
+      expect(teamDisplayNameService.getDisplayName).toHaveBeenCalledWith(1, 2);
+      expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.objectContaining({ subject: '대상자' }) }),
+      );
     });
 
     it('팀에 역할 변경 알림을 보내야 함', async () => {
-      userRepository.findOne.mockResolvedValue(createUser({ userName: '대상자' }));
-
       await changeRole('MANAGER');
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
@@ -222,13 +204,13 @@ describe('TeamService — 역할 변경', () => {
       );
     });
 
-    it('대상 사용자를 못 찾아도 알림은 userId로 대체 표기해야 함', async () => {
-      userRepository.findOne.mockResolvedValue(null);
+    it('이름이 하나도 없으면 알림은 기본 표시명으로 대체 표기해야 함', async () => {
+      teamDisplayNameService.getDisplayName.mockResolvedValue('사용자2');
 
       await changeRole('MANAGER');
 
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
-        expect.objectContaining({ content: expect.objectContaining({ subject: '사용자 2' }) }),
+        expect.objectContaining({ content: expect.objectContaining({ subject: '사용자2' }) }),
       );
     });
   });

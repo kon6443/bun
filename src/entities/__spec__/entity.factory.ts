@@ -80,6 +80,7 @@ export const createTeamMember = (overrides: Partial<TeamMember> = {}): TeamMembe
   joinedAt: FIXED_DATE,
   role: 'MEMBER' satisfies RoleKey,
   actStatus: ActStatus.ACTIVE,
+  teamNickname: null,
   team: UNSET,
   user: UNSET,
   ...overrides,
