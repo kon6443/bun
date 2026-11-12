@@ -8,6 +8,8 @@ import { TeamController } from '../src/modules/team/team.controller';
 import { TeamService, TeamMemberType } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
+import { TeamDisplayNameService } from '../src/modules/team/team-display-name.service';
+import { createMockTeamDisplayNameService } from '../src/modules/team/__spec__/team-display-name.mock';
 import { TelegramService } from '../src/modules/notification/telegram.service';
 import { DiscordService } from '../src/modules/notification/discord.service';
 import { NOTIFICATION_PORT } from '../src/common/port/notification.port';
@@ -77,6 +79,7 @@ describe('E2E 초대·연동 (권한 경계)', () => {
         { provide: TelegramService, useValue: telegramService },
         { provide: DiscordService, useValue: {} },
         { provide: TeamGateway, useValue: teamGateway },
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService({ [ACTOR.userId]: '요청자' }) },
         { provide: TeamChatService, useValue: { getReadCursor: jest.fn().mockResolvedValue(104) } },
       ],
     });

@@ -17,6 +17,7 @@ import { TeamService } from './team.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TeamGateway } from './team.gateway';
 import { TeamChatService } from './team-chat.service';
+import { TeamDisplayNameService } from './team-display-name.service';
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -53,6 +54,8 @@ import {
   DeleteDiscordWebhookResponseDto,
   UpdateMemberRoleResponseDto,
   UpdateMemberStatusResponseDto,
+  UpdateTeamNicknameDto,
+  TeamNicknameResponseDto,
 } from './team.dto';
 import {
   TeamForbiddenErrorResponseDto,
@@ -98,6 +101,7 @@ export class TeamController {
     private readonly telegramService: TelegramService,
     private readonly discordService: DiscordService,
     private readonly teamGateway: TeamGateway, // WebSocket Gateway DI
+    private readonly teamDisplayNameService: TeamDisplayNameService,
   ) {}
 
   /**
@@ -482,13 +486,13 @@ export class TeamController {
       userId: user.userId,
     });
 
-    // WebSocket: 팀 전체에 댓글 생성 알림
+    // WebSocket: 팀 전체에 댓글 생성 알림 — 작성자 이름은 팀 안 표시 이름
     this.teamGateway.emitCommentCreated(teamId, {
       commentId: comment.commentId,
       taskId,
       teamId,
       userId: user.userId,
-      userName: user.userName,
+      userName: await this.resolveNameAfterCommit(teamId, user),
       commentContent: comment.commentContent,
       crtdAt: comment.crtdAt?.toISOString() ?? new Date().toISOString(),
     });
@@ -795,6 +799,43 @@ export class TeamController {
     return { code: 'SUCCESS', data: null, message: '' };
   }
 
+  // ==================== 팀 닉네임 API (docs/tasks/team-nickname) ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':teamId/users/me/nickname')
+  @ApiOperation({
+    summary: '내 팀 닉네임 설정',
+    description:
+      '이 팀 안에서만 보이는 내 이름을 바꾼다. 본인만, 활성 멤버만. 팀 가입 때 계정 닉네임으로 시작하며 이후 계정 닉네임 변경과 무관하다. 팀 전체에 memberNicknameChanged 소켓 이벤트를 보낸다.',
+  })
+  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
+  @ApiBody({ type: UpdateTeamNicknameDto })
+  @ApiResponse({ status: 200, description: 'SUCCESS', type: TeamNicknameResponseDto })
+  @ApiCommonUnauthorizedResponse()
+  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
+  @ApiCommonValidationResponse()
+  @ApiCommonInternalServerErrorResponse()
+  async updateMyTeamNickname(
+    @CurrentUser() user: User,
+    @Param('teamId', ParseIntPipe) teamId: number,
+    @Body() dto: UpdateTeamNicknameDto,
+  ) {
+    const userId = user.userId;
+    const result = await this.teamService.updateMyTeamNickname({ teamId, userId, teamNickname: dto.teamNickname });
+
+    // 저장은 끝났다 — 알림 실패로 API를 실패시키지 않는다. 다른 화면은 다음 조회·재접속 때 맞춰진다
+    try {
+      await this.teamGateway.notifyMemberNicknameChanged(teamId, result);
+    } catch (error) {
+      this.logger.warn(
+        `memberNicknameChanged 알림 실패: teamId=${teamId}, userId=${userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    return { code: 'SUCCESS', data: result, message: '' };
+  }
+
   // ==================== 멤버 역할 관리 API ====================
 
   @UseGuards(JwtAuthGuard)
@@ -896,17 +937,37 @@ export class TeamController {
   }
 
   /**
+   * 저장이 끝난 뒤 알림에 실을 팀 안 표시 이름 — 조회가 실패해도 API를 실패시키지 않는다.
+   * 500을 받은 클라이언트가 재시도하면 이미 저장된 데이터가 중복된다(댓글 등). 계정 닉네임으로 대신 보낸다.
+   */
+  private async resolveNameAfterCommit(teamId: number, user: User): Promise<string> {
+    try {
+      return await this.teamDisplayNameService.getDisplayName(teamId, user.userId);
+    } catch (error) {
+      this.logger.warn(
+        `팀 표시 이름 조회 실패 — 계정 닉네임으로 대체: teamId=${teamId}, userId=${user.userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return getDisplayName(user.userName, user.userId);
+    }
+  }
+
+  /**
    * 초대 수락 후 팀 room에 memberJoined (D-018) — 다른 화면이 안 읽은 인원 수에 새 멤버를 넣게 한다.
    *
    * 가입은 이미 COMMIT됐으므로 알림 실패로 API를 실패시키지 않는다. 다른 화면은 다음 read-state 조회 때 맞춰진다.
    */
   private async notifyMemberJoined(teamId: number, user: User): Promise<void> {
     try {
-      const lastReadMessageId = await this.teamChatService.getReadCursor(teamId, user.userId);
+      const [lastReadMessageId, userName] = await Promise.all([
+        this.teamChatService.getReadCursor(teamId, user.userId),
+        // 재가입이면 예전 팀 닉네임이 남아 있다 — 팀 안 표시 이름으로 보낸다
+        this.teamDisplayNameService.getDisplayName(teamId, user.userId),
+      ]);
       this.teamGateway.emitMemberJoined(teamId, {
         teamId,
         userId: user.userId,
-        userName: getDisplayName(user.userName, user.userId),
+        userName,
         lastReadMessageId,
       });
     } catch (error) {

@@ -158,7 +158,7 @@ pnpm ci:all              # lint → typecheck → 스텁 검사 → test → tes
 pnpm check:stubs         # TODO/FIXME/XXX/HACK + describe/it/test.only 검출 (발견 시 실패)
 ```
 
-> **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` 뒤 두 잡을 병렬로 돌린다 — `verify`(`pnpm ci:core`)와 `e2e`(`pnpm test:e2e`). 단위 테스트(jest)는 파일 단위 트랜스파일만 하고(`tsconfig.spec.json`) 타입 검사는 `pnpm typecheck`(테스트 파일 포함)가 맡는다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: [ci, build]`) 이미지 빌드와 병렬로 돈 뒤 둘 다 통과해야 배포로 간다. 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
+> **CI 게이트**: `.github/workflows/ci.yml`이 PR마다(`pull_request`) `pnpm install --frozen-lockfile` 뒤 세 잡을 병렬로 돌린다 — `lint`(`pnpm lint`), `check`(`pnpm typecheck` → `test` → `build`, 둘을 합치면 `pnpm ci:core`와 같은 항목)와 `e2e`(`pnpm test:e2e`). 단위 테스트(jest)는 파일 단위 트랜스파일만 하고(`tsconfig.spec.json`) 타입 검사는 `pnpm typecheck`(테스트 파일 포함)가 맡는다. `main` push 배포(`deploy-to-oci.yml`)는 같은 워크플로를 먼저 호출하고(`workflow_call`, `needs: [ci, build]`) 이미지 빌드와 병렬로 돈 뒤 둘 다 통과해야 배포로 간다. 배포 단계는 재사용 워크플로 `deploy-prod-nest.yml`이고, 수동 롤백(`rollback-prod-nest.yml`)도 이를 쓴다 — 사용법은 [`docs/deploy.md`](docs/deploy.md). 스텁 검사(`check:stubs`)는 CI에 없으므로 PR 전 `pnpm ci:all`로 확인한다.
 >
 > `pnpm ci:all` 기준선(2026-10-26 실측, Node 런타임 고정·CI 병렬화 반영): lint 0 errors / 경고 6건, typecheck 0, 스텁 0건, 단위 **1787/1787**(74 스위트), E2E **277 통과 · 58 skip**(Redis·opt-in 필요 — 테트리스 대전 실제 Redis 스펙은 `TETRIS_BATTLE_REDIS_TEST_PORT`, 주면 skip이 2건으로 준다), build 통과.
 > ⚠️ `--testPathPattern`(단수형)은 현재 jest가 거부한다 — `--testPathPatterns`(복수형)를 쓴다.

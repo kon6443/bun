@@ -3,15 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { TeamService } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService, MockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { createUser, createTeamMemberView } from '../../entities/__spec__/entity.factory';
+import { createTeamMemberView } from '../../entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import { initReadCursorAtLatest } from './chat-read-cursor';
 
@@ -41,7 +42,7 @@ const TARGET_ID = 2;
 describe('TeamService — 멤버 상태 변경', () => {
   let service: TeamService;
   let teamMemberRepository: MockRepository<TeamMember>;
-  let userRepository: MockRepository<User>;
+  let teamDisplayNameService: MockTeamDisplayNameService;
   let notificationPort: { notifyTeam: jest.Mock };
   let manager: { update: jest.Mock };
 
@@ -49,12 +50,13 @@ describe('TeamService — 멤버 상태 변경', () => {
     initReadCursorAtLatestMock.mockReset();
     manager = { update: jest.fn() };
     teamMemberRepository = createMockRepository<TeamMember>();
-    userRepository = createMockRepository<User>();
+    teamDisplayNameService = createMockTeamDisplayNameService({ [TARGET_ID]: '김대상' });
     notificationPort = { notifyTeam: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: teamDisplayNameService },
         {
           provide: getDataSourceToken(),
           // 실제 트랜잭션 대신 콜백을 즉시 실행 — 상태 UPDATE와 커서 초기화가 같은 manager로 묶이는지 본다
@@ -70,14 +72,12 @@ describe('TeamService — 멤버 상태 변경', () => {
           provide: getRepositoryToken(TeamInvitation),
           useValue: createMockRepository<TeamInvitation>(),
         },
-        { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: NOTIFICATION_PORT, useValue: notificationPort },
       ],
     }).compile();
 
     service = module.get(TeamService);
-    userRepository.findOne.mockResolvedValue(createUser({ userName: '김대상' }));
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -272,33 +272,25 @@ describe('TeamService — 멤버 상태 변경', () => {
   describe('사용자 이름 조회와 알림', () => {
     beforeEach(() => mockMembers({ role: 'MASTER' }, { role: 'MEMBER' }));
 
-    it('이름 조회는 userName 컬럼만 select해야 함', async () => {
-      await changeStatus();
+    // 응답·소켓·알림 모두 이 팀의 표시 이름(팀 닉네임 → 계정 닉네임)을 쓴다 (team-nickname)
+    it('대상 이름은 이 팀의 표시 이름으로 조회해야 함', async () => {
+      const result = await changeStatus();
 
-      // 민감 컬럼이 응답·로그로 새지 않도록 필요한 컬럼만 가져온다
-      expect(userRepository.findOne).toHaveBeenCalledWith({
-        where: { userId: TARGET_ID },
-        select: ['userName'],
-      });
+      expect(teamDisplayNameService.getDisplayName).toHaveBeenCalledWith(1, TARGET_ID);
+      expect(result.userName).toBe('김대상');
     });
 
-    it('이름이 없으면 사용자 ID로 대체해 알려야 함', async () => {
-      userRepository.findOne.mockResolvedValue(createUser({ userName: null }));
+    it('이름이 하나도 없으면 기본 표시명으로 대체해 알려야 함', async () => {
+      teamDisplayNameService.getDisplayName.mockResolvedValue(`사용자${TARGET_ID}`);
 
       const result = await changeStatus();
 
-      expect(result.userName).toBeNull();
+      expect(result.userName).toBe(`사용자${TARGET_ID}`);
       expect(notificationPort.notifyTeam).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.objectContaining({ subject: `사용자 ${TARGET_ID}`, lines: ['비활성화되었습니다'] }),
+          content: expect.objectContaining({ subject: `사용자${TARGET_ID}`, lines: ['비활성화되었습니다'] }),
         }),
       );
-    });
-
-    it('조회된 사용자가 없어도 실패하지 않아야 함', async () => {
-      userRepository.findOne.mockResolvedValue(null);
-
-      await expect(changeStatus()).resolves.toMatchObject({ userName: null });
     });
 
     it.each([

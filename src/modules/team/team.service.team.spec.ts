@@ -3,15 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { TeamService, TeamMemberType } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
+import { User } from '../../entities/User';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { createTeam, createTeamMemberView } from '../../entities/__spec__/entity.factory';
+import { createTeam, createTeamMemberView, createUser } from '../../entities/__spec__/entity.factory';
 import { createMockRepository, MockRepository } from '../../common/__spec__/mock-repository';
 import {
   TeamForbiddenErrorResponseDto,
@@ -32,7 +34,7 @@ const LEADER_ID = 42;
 describe('TeamService — 팀 생성·수정', () => {
   let service: TeamService;
   let teamRepository: MockRepository<Team>;
-  let manager: { create: jest.Mock; save: jest.Mock };
+  let manager: { create: jest.Mock; save: jest.Mock; findOne: jest.Mock };
   let dataSource: { transaction: jest.Mock };
 
   beforeEach(async () => {
@@ -40,6 +42,8 @@ describe('TeamService — 팀 생성·수정', () => {
     manager = {
       create: jest.fn((_entity, data) => data),
       save: jest.fn((_entity, data) => Promise.resolve(data)),
+      // 팀 닉네임 초깃값용 계정 닉네임 조회 (D-004)
+      findOne: jest.fn().mockResolvedValue(createUser({ userId: LEADER_ID, userName: '리더계정' })),
     };
     // 실제 트랜잭션 대신 콜백을 즉시 실행 — 롤백이 아니라 "무엇을 한 단위로 묶었는가"가 관심사
     dataSource = {
@@ -51,6 +55,7 @@ describe('TeamService — 팀 생성·수정', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService() },
         { provide: getDataSourceToken(), useValue: dataSource as unknown as DataSource },
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: createMockRepository<TeamMember>() },
@@ -60,7 +65,6 @@ describe('TeamService — 팀 생성·수정', () => {
           provide: getRepositoryToken(TeamInvitation),
           useValue: createMockRepository<TeamInvitation>(),
         },
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
       ],
@@ -103,7 +107,30 @@ describe('TeamService — 팀 생성·수정', () => {
         userId: LEADER_ID,
         teamId: TEAM_ID,
         role: 'MASTER',
+        teamNickname: '리더계정',
       });
+    });
+
+    // 팀 닉네임은 가입 시점의 계정 닉네임 복사본 — 이후 마이페이지 변경과 무관 (team-nickname D-004)
+    it('생성자의 팀 닉네임을 지금의 계정 닉네임으로 채워야 함 (같은 트랜잭션)', async () => {
+      manager.save.mockResolvedValueOnce({ ...createTeamDto, teamId: TEAM_ID });
+
+      await service.insertTeam({ createTeamDto });
+
+      expect(manager.findOne).toHaveBeenCalledWith(User, { where: { userId: LEADER_ID }, select: ['userId', 'userName'] });
+      expect(manager.create).toHaveBeenCalledWith(TeamMember, expect.objectContaining({ teamNickname: '리더계정' }));
+    });
+
+    it('계정 닉네임이 없으면 기본 표시명으로 채워야 함', async () => {
+      manager.save.mockResolvedValueOnce({ ...createTeamDto, teamId: TEAM_ID });
+      manager.findOne.mockResolvedValue(createUser({ userId: LEADER_ID, userName: null }));
+
+      await service.insertTeam({ createTeamDto });
+
+      expect(manager.create).toHaveBeenCalledWith(
+        TeamMember,
+        expect.objectContaining({ teamNickname: `사용자${LEADER_ID}` }),
+      );
     });
 
     it('멤버의 teamId는 저장된 팀에서 받아와야 함', async () => {

@@ -4,12 +4,13 @@ import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { sign, verify, JwtPayload } from 'jsonwebtoken';
 import { TeamService } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import { INVITE_DEFAULT_USAGE_MAX_CNT } from '../../common/constants/app.constants';
@@ -61,7 +62,7 @@ describe('TeamService — 초대 플로우', () => {
   let teamMemberRepository: MockRepository<TeamMember>;
   let teamInvitationRepository: MockRepository<TeamInvitation>;
   let configService: { get: jest.Mock };
-  let manager: { createQueryBuilder: jest.Mock; update: jest.Mock; create: jest.Mock; save: jest.Mock };
+  let manager: { createQueryBuilder: jest.Mock; update: jest.Mock; create: jest.Mock; save: jest.Mock; findOne: jest.Mock };
   let dataSource: { transaction: jest.Mock };
 
   beforeEach(async () => {
@@ -76,6 +77,8 @@ describe('TeamService — 초대 플로우', () => {
       update: jest.fn(),
       create: jest.fn((_entity, data) => data),
       save: jest.fn(),
+      // 팀 닉네임 초깃값용 계정 닉네임 조회 (D-004)
+      findOne: jest.fn().mockResolvedValue({ userId: 20, userName: '가입자계정' }),
     };
     // 실제 트랜잭션 대신 콜백을 즉시 실행 — 롤백 검증이 아니라 로직 검증이 목적
     dataSource = {
@@ -87,13 +90,13 @@ describe('TeamService — 초대 플로우', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService() },
         { provide: getDataSourceToken(), useValue: dataSource as unknown as DataSource },
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepository },
         { provide: getRepositoryToken(TeamTask), useValue: createMockRepository<TeamTask>() },
         { provide: getRepositoryToken(TaskComment), useValue: createMockRepository<TaskComment>() },
         { provide: getRepositoryToken(TeamInvitation), useValue: teamInvitationRepository },
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: configService },
         { provide: NOTIFICATION_PORT, useValue: { notifyTeam: jest.fn() } },
       ],
@@ -503,6 +506,44 @@ describe('TeamService — 초대 플로우', () => {
       );
       expect(invite.usageCurCnt).toBe(1);
       expect(manager.save).toHaveBeenCalledWith(TeamInvitation, invite);
+    });
+
+    // 팀 닉네임은 가입 시점의 계정 닉네임 복사본 — 이후 마이페이지 변경과 무관 (team-nickname D-004)
+    it('신규 멤버의 팀 닉네임을 지금의 계정 닉네임으로 채워야 함', async () => {
+      mockVerified();
+      teamMemberRepository.findOne.mockResolvedValue(null);
+      manager.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getOne: createTeamInvitation() }));
+
+      await service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 });
+
+      expect(manager.create).toHaveBeenCalledWith(TeamMember, expect.objectContaining({ teamNickname: '가입자계정' }));
+    });
+
+    it('재가입하면 이 팀에서 쓰던 팀 닉네임을 유지해야 함', async () => {
+      mockVerified();
+      teamMemberRepository.findOne.mockResolvedValue(
+        createTeamMember({ actStatus: ActStatus.INACTIVE, teamNickname: '예전팀닉' }),
+      );
+      manager.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getOne: createTeamInvitation() }));
+
+      await service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 });
+
+      const [, , patch] = manager.update.mock.calls.find(([entity]) => entity === TeamMember)!;
+      expect(patch).not.toHaveProperty('teamNickname');
+    });
+
+    it('재가입인데 팀 닉네임이 비어 있으면(백필 전 데이터) 지금의 계정 닉네임으로 채워야 함', async () => {
+      mockVerified();
+      teamMemberRepository.findOne.mockResolvedValue(createTeamMember({ actStatus: ActStatus.INACTIVE, teamNickname: null }));
+      manager.createQueryBuilder.mockReturnValue(createMockQueryBuilder({ getOne: createTeamInvitation() }));
+
+      await service.acceptTeamInvite({ token: VALID_TOKEN, userId: 20 });
+
+      expect(manager.update).toHaveBeenCalledWith(
+        TeamMember,
+        { teamId: 1, userId: 20 },
+        expect.objectContaining({ teamNickname: '가입자계정' }),
+      );
     });
 
     it('신규 멤버의 채팅 읽음 커서를 같은 트랜잭션에서 팀 최신 메시지로 맞춰야 함', async () => {

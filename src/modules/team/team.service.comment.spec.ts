@@ -3,12 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { TeamService, TeamMemberType } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService, MockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT } from '../../common/port/notification.port';
 import { ActStatus } from '../../common/enums/task-status.enum';
 import {
@@ -49,8 +50,10 @@ describe('TeamService — 댓글 CRUD', () => {
   let teamTaskRepository: MockRepository<TeamTask>;
   let taskCommentRepository: MockRepository<TaskComment>;
   let notificationPort: { notifyTeam: jest.Mock };
+  let teamDisplayNameService: MockTeamDisplayNameService;
 
   beforeEach(async () => {
+    teamDisplayNameService = createMockTeamDisplayNameService();
     teamTaskRepository = createMockRepository<TeamTask>();
     taskCommentRepository = createMockRepository<TaskComment>();
     notificationPort = { notifyTeam: jest.fn() };
@@ -58,6 +61,7 @@ describe('TeamService — 댓글 CRUD', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: teamDisplayNameService },
         {
           provide: getDataSourceToken(),
           useValue: { transaction: jest.fn() } as unknown as DataSource,
@@ -70,7 +74,6 @@ describe('TeamService — 댓글 CRUD', () => {
           provide: getRepositoryToken(TeamInvitation),
           useValue: createMockRepository<TeamInvitation>(),
         },
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: { get: jest.fn((k: string) => CONFIG[k]) } },
         { provide: NOTIFICATION_PORT, useValue: notificationPort },
       ],
@@ -434,7 +437,7 @@ describe('TeamService — 댓글 CRUD', () => {
     it('삭제된 댓글은 본문을 빈 문자열로 내보내고 자리(status=0)는 남겨야 함', async () => {
       mockComments([createTaskComment({ commentId: 1, commentContent: '지운 원문', status: ActStatus.INACTIVE })]);
 
-      const [comment] = await service.getCommentsByTaskId(1);
+      const [comment] = await service.getCommentsByTaskId(1, 1);
 
       // 화면은 "삭제된 댓글입니다"로 가리지만 응답에 원문이 있으면 개발자도구로 읽힌다
       expect(comment.commentContent).toBe('');
@@ -445,9 +448,28 @@ describe('TeamService — 댓글 CRUD', () => {
     it('정상 댓글은 본문을 그대로 내보내야 함', async () => {
       mockComments([createTaskComment({ commentContent: '살아있는 댓글', status: ActStatus.ACTIVE })]);
 
-      const [comment] = await service.getCommentsByTaskId(1);
+      const [comment] = await service.getCommentsByTaskId(1, 1);
 
       expect(comment.commentContent).toBe('살아있는 댓글');
+    });
+
+    // 작성자 이름은 이 팀의 표시 이름(팀 닉네임 → 계정 닉네임) — 작성자들을 한 번에 해석한다 (team-nickname)
+    it('작성자 이름을 이 팀의 표시 이름으로 한 번에 해석해야 함', async () => {
+      mockComments([
+        createTaskComment({ commentId: 1, userId: 3 }),
+        createTaskComment({ commentId: 2, userId: 4 }),
+      ]);
+      teamDisplayNameService.getDisplayNames.mockResolvedValue(
+        new Map([
+          [3, '팀닉'],
+          [4, '계정닉'],
+        ]),
+      );
+
+      const comments = await service.getCommentsByTaskId(7, 1);
+
+      expect(teamDisplayNameService.getDisplayNames).toHaveBeenCalledWith(7, [3, 4]);
+      expect(comments.map((c) => c.userName)).toEqual(['팀닉', '계정닉']);
     });
   });
 });

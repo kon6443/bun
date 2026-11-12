@@ -27,6 +27,15 @@
 - 이미지 빌드 & push: `prod_nest:{short_sha}` / `prod_next:{short_sha}` (git SHA 7자)
 - `infra/docker-stack.app.yml` → 서버 `/home/ubuntu/desktop/deploy/infra/prod_nest.yml` 또는 `prod_next.yml`로 rsync
 - `docker stack deploy --detach=false -c prod_nest.yml prod_nest` (converge 대기 포함)
+- 스택 반영 단계는 재사용 워크플로(`deploy-prod-nest.yml` / `deploy-prod-next.yml`)로 분리돼 있고, 아래 수동 롤백도 같은 경로를 쓴다
+
+### 수동 롤백 (이미지 태그 지정)
+- Actions 탭 → `Rollback prod_nest (image tag)`(bun) / `rollback-prod-next.yml`(next-bun) → **main**에서 Run workflow → `image_tag`에 되돌릴 태그(SHA 7자) 입력
+- 빌드·검증 없이 레지스트리의 기존 이미지로 스택만 다시 반영한다. 태그 형식·main 여부·레지스트리 존재를 먼저 확인한다
+- `image_tag`는 **main에 배포됐던 커밋의 SHA**를 쓴다 — 검증에 실패한 커밋의 이미지도 레지스트리에 남아 있어 존재 확인을 통과한다
+- 배포와 같은 concurrency 그룹이라 동시에 돌지 않고, 진행 중인 것은 끊지 않는다. 단 **대기는 1개뿐**이라 나중 실행이 대기 중이던 것을 취소한다 — 롤백 뒤 실행 결과가 cancelled인지 확인하고, 다시 실행하기 전에 **그 사이 배포된 SHA를 먼저 확인**한다(새 배포를 되돌리지 않게)
+- ⚠️ **사이에 DB 마이그레이션이 있었던 배포 이전으로는 쓰지 않는다** — 코드와 스키마가 어긋난다. 그때는 revert 커밋으로 배포한다
+- 스택 YAML은 실행 시점 main의 `infra/docker-stack.app.yml`이다. 현재 배포 중인 태그를 넣으면 경로 점검용으로 쓸 수 있다 — "업데이트 없음"으로 끝날 것으로 보지만 미검증이고, 같은 이미지로 롤링 재시작(start-first, 무중단)이 일어날 수도 있다
 
 ### 인프라 배포 (bun 레포 `infra/docker-stack.yml`)
 - `infra/docker-stack.yml` 변경 시 `.github/workflows/deploy-infra.yml` 자동 실행

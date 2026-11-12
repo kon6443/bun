@@ -3,12 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { TeamService, TeamMemberType } from './team.service';
+import { TeamDisplayNameService } from './team-display-name.service';
+import { createMockTeamDisplayNameService } from './__spec__/team-display-name.mock';
 import { Team } from '../../entities/Team';
 import { TeamMember } from '../../entities/TeamMember';
 import { TeamTask } from '../../entities/TeamTask';
 import { TaskComment } from '../../entities/TaskComment';
 import { TeamInvitation } from '../../entities/TeamInvitation';
-import { User } from '../../entities/User';
 import { NOTIFICATION_PORT, TeamNotificationParams } from '../../common/port/notification.port';
 import { ActStatus, TaskStatus } from '../../common/enums/task-status.enum';
 import {
@@ -79,6 +80,7 @@ describe('TeamService — 태스크 상태', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamService,
+        { provide: TeamDisplayNameService, useValue: createMockTeamDisplayNameService() },
         {
           provide: getDataSourceToken(),
           useValue: {
@@ -94,7 +96,6 @@ describe('TeamService — 태스크 상태', () => {
           provide: getRepositoryToken(TeamInvitation),
           useValue: createMockRepository<TeamInvitation>(),
         },
-        { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
         { provide: ConfigService, useValue: { get: jest.fn((k: string) => CONFIG[k]) } },
         { provide: NOTIFICATION_PORT, useValue: notificationPort },
       ],
