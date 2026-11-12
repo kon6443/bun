@@ -148,3 +148,19 @@
 - 백엔드 최종 `pnpm ci:all` exit 0 — lint 경고 6(기준선)·단위 1947/1947(85)·e2e 317 통과·58 skip·build
 - 백엔드 커밋(원자): `83bf493` feat(auth) 카카오 닉네임 저장 중단·랜덤 닉네임 · `e29e643` feat(team) 팀 단위 닉네임 · `9184df5` fix(team) 멤버 목록 joinedAt · docs(team) 태스크 문서
 - joinedAt 수정은 의도가 달라 별도 커밋 — 팀 닉네임 커밋 시점에 잠시 걷어내고 tsc·spec 통과 확인 후 복원
+
+## 2026-11-12 — 백엔드 배포
+
+- PR #327 feat-onam-team-nickname → develop: CI check·e2e·lint pass → 머지 `f9af06a`
+- PR #328 develop → main: CI pass → 머지 `83d3588` → Deploy NestJS to Docker Swarm run 43184893227 success(build·ci·deploy)
+- 운영 확인: `PUT /api/v1/teams/1/users/me/nickname` 무인증 401(새 경로 존재), 운영 Swagger는 LOCAL 전용이라 404(정상)
+- 배포 직후 조치 판단: `pnpm db:select` USER_TEAMS 19행 NULL 0, 마지막 가입 2026-10-15 → 롤링 중 신규 가입 없음 → …074 재실행 불필요
+- 다음: 프론트(next-bun-fe) 같은 순서로 배포
+
+## 2026-11-12 — 프론트 배포 (next-bun-fe 보고) · 태스크 종료
+
+- 프론트 최종 `pnpm ci:core` EXIT 0 — lint 0·typecheck·1977 passed/12 skipped·build 62/62
+- 프론트 원자 커밋 6개: `b91f0d9` fix(auth) kakaoNickname 제거 · `9447562` fix(dialog) preventDefault된 Esc 무시 · `befc5fa` feat(teams) 팀 단위 닉네임 · `0fae53d` feat(mypage) 안내 문구 · `02bd9ee` fix(teams) 가입일 Invalid Date · `ad63574` fix(a11y) 팀 관리 탭·접힌 요약 이름
+- PR next-bun #405 → develop(머지 `6ecbad2`) · #406 develop → main(머지 `519e0de`) · Deploy Next run 43186847556 success
+- 운영 확인: `/`·`/teams` 200, 운영 /mypage 청크에 새 안내 문구 포함(새 빌드 서빙). 로그인 필요 화면은 운영에서 미확인(사용자 확인 권장)
+- 롤백: 백엔드 `83d3588`·프론트 `519e0de` revert 커밋으로(마이그레이션은 컬럼 추가·백필이라 옛 코드와 호환)
