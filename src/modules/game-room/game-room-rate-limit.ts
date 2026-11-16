@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { GameRoomKeys } from './game-room-keys';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /** action → 한도. 게임마다 자기 표를 넘긴다(예: TETRIS_BATTLE_RATE_LIMITS) */
 export type GameRoomRateLimits<A extends string> = Readonly<Record<A, { readonly limit: number; readonly windowSec: number }>>;
@@ -25,7 +26,7 @@ export class GameRoomRateLimiter<A extends string> {
       const results = await redis.multi().incr(key).expire(key, windowSec, 'NX').exec();
       return Number(results?.[0]?.[1] ?? 0) <= limit;
     } catch (error) {
-      this.logger.warn(`빈도 제한 확인 실패 — 통과: action=${action}, ${(error as Error).message}`);
+      this.logger.warn(`빈도 제한 확인 실패 — 통과: action=${action}, ${toErrorMessage(error)}`);
       return true;
     }
   }

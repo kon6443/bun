@@ -63,6 +63,7 @@ import { TetrisBattleSocket, TetrisBattleWsGuard } from './tetris-battle-ws.guar
 import { TetrisBattleWsExceptionFilter } from './tetris-battle-ws-exception.filter';
 import { TetrisLobbyChatService } from './tetris-lobby-chat.service';
 import { UserSkinService } from '../users/user-skin.service';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 const ok = <T>(data: T): TetrisBattleAck<T> => ({ ok: true, data });
 
@@ -163,7 +164,7 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
       if (change) await this.broadcastChange(current.code, change.room, change.lobbyChanged);
     } catch (error) {
       // 실패하면 이 플레이어는 connected=true로 남는다 — 생존 확인(reconcileLiveness)이 정리한다
-      this.logger.warn(`끊김 처리 실패: code=${current.code}, socket=${client.id}, ${(error as Error).message}`);
+      this.logger.warn(`끊김 처리 실패: code=${current.code}, socket=${client.id}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -646,7 +647,7 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
       const rooms = await this.roomService.listRooms(undefined, { reconcile: false });
       this.server.to(LOBBY_ROOM).emit(TetrisBattleServerEvents.ROOMS_CHANGED, { rooms });
     } catch (error) {
-      this.logger.warn(`로비 목록 브로드캐스트 실패: ${(error as Error).message}`);
+      this.logger.warn(`로비 목록 브로드캐스트 실패: ${toErrorMessage(error)}`);
     }
   }
 

@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'cry
 import type { Redis } from 'ioredis';
 import { promisify } from 'util';
 import type { GameRoomKeys } from './game-room-keys';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /**
  * 대전 방의 비밀값 (게임 공용) — 방 코드·재연결 토큰·방 비밀번호·비밀번호 실패 잠금.
@@ -103,7 +104,7 @@ export async function verifyRoomPassword(
         .expire(ipKey, limits.ip.windowSec, 'NX')
         .exec();
     } catch (error) {
-      logger.warn(`비밀번호 시도 카운터 복원 실패: code=${code}, ${(error as Error).message}`);
+      logger.warn(`비밀번호 시도 카운터 복원 실패: code=${code}, ${toErrorMessage(error)}`);
     }
     return 'OK';
   }
