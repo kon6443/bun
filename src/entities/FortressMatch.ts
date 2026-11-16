@@ -4,13 +4,17 @@ import { Entity, Column, PrimaryColumn } from 'typeorm';
 export const FORTRESS_MATCH_MODES = ['ffa', 'team'] as const;
 export type FortressMatchMode = (typeof FORTRESS_MATCH_MODES)[number];
 
+/** 경기 출처 — online 서버 판정 온라인 대전 · solo 클라이언트가 올린 AI전·같은 기기 대전(서버 재시뮬레이션 검증, D-027) */
+export const FORTRESS_MATCH_SOURCES = ['online', 'solo'] as const;
+export type FortressMatchSource = (typeof FORTRESS_MATCH_SOURCES)[number];
+
 export const FORTRESS_RESULT_KINDS = ['win', 'draw'] as const;
 export type FortressResultKind = (typeof FORTRESS_RESULT_KINDS)[number];
 
 /**
  * 포트리스 경기 — 스키마: migrations/*-CreateFortressMatches.ts (docs/tasks/fortress DESIGN §12)
  *
- * 서버 권위 턴 매치라 경기가 끝나면 서버가 바로 1건 저장한다(제출·검증 단계 없음). 조회는 IS_HIDDEN = 0만.
+ * 온라인(online)은 서버 권위 턴 매치라 경기가 끝나면 서버가 바로 1건 저장한다. solo는 클라이언트가 올린 기록을 서버가 엔진으로 다시 돌려 검증한 뒤 저장한다(D-027). 조회는 IS_HIDDEN = 0만.
  */
 @Entity('FORTRESS_MATCHES')
 export class FortressMatch {
@@ -57,6 +61,10 @@ export class FortressMatch {
 
   @Column({ name: 'ENDED_AT', type: 'timestamp with time zone' })
   endedAt: Date;
+
+  // DB CHECK: FORTRESS_MATCH_SOURCES. 최근 경기 목록은 online만 (마이그레이션 …803000)
+  @Column({ name: 'SOURCE', type: 'varchar2', length: 6, default: 'online' })
+  source: FortressMatchSource;
 
   @Column({ name: 'IS_HIDDEN', type: 'number', default: 0 })
   isHidden: 0 | 1;

@@ -10,6 +10,9 @@ import { FortressTankSkinDto } from './fortress-skin.dto';
  * 시각은 UTC ISO. userId는 싣지 않는다.
  */
 
+/** turns 설명 — 상세·목록 공통(D-027 보충 3) */
+const TURNS_DESCRIPTION = '진행한 턴 수 — 승패를 낸 턴까지 센다(턴 상한으로 끝나면 상한 그대로). 포인트 유효 경기 최소 턴과 같은 기준';
+
 // ==================== Request ====================
 
 export class ListFortressMatchesQueryDto {
@@ -49,12 +52,13 @@ export class FortressMatchPlayerDto {
 export class FortressMatchDto {
   @ApiProperty({ example: 'AbCdEfGhIjKlMnOp' }) matchId: string;
   @ApiProperty({ type: String, nullable: true, example: '한판 해요', description: '방 이름 (모르면 null)' }) roomName: string | null;
+  @ApiProperty({ enum: ['online', 'solo'], description: '출처. online 온라인 대전 · solo 업로드한 AI전·같은 기기 대전(방 이름 null, 최근 목록에 없음)' }) source: 'online' | 'solo';
   @ApiProperty({ enum: ['ffa', 'team'] }) mode: 'ffa' | 'team';
   @ApiProperty({ example: 'hills' }) mapId: string;
   @ApiProperty({ example: 12345 }) seed: number;
   @ApiProperty({ description: '경기를 돌린 엔진 버전', example: 1 }) engineVersion: number;
   @ApiProperty({ example: 2 }) playerCount: number;
-  @ApiProperty({ description: '끝난 턴 수', example: 14 }) turns: number;
+  @ApiProperty({ description: TURNS_DESCRIPTION, example: 14 }) turns: number;
   @ApiProperty({ type: FortressMatchResultDto }) result: FortressMatchResultDto;
   @ApiProperty({ description: '경기 시작 (UTC ISO)' }) startedAt: Date;
   @ApiProperty({ description: '경기 종료 (UTC ISO)' }) endedAt: Date;
@@ -108,7 +112,7 @@ export class FortressMatchListItemDto {
   @ApiProperty({ enum: ['ffa', 'team'] }) mode: 'ffa' | 'team';
   @ApiProperty({ example: 'hills' }) mapId: string;
   @ApiProperty({ example: 2 }) playerCount: number;
-  @ApiProperty({ example: 14 }) turns: number;
+  @ApiProperty({ description: TURNS_DESCRIPTION, example: 14 }) turns: number;
   @ApiProperty({ type: FortressMatchResultDto }) result: FortressMatchResultDto;
   @ApiProperty({ description: '경기 종료 (UTC ISO)' }) endedAt: Date;
   @ApiProperty({ type: [FortressMatchListPlayerDto], description: '순위 오름차순, 같으면 slot 순' }) players: FortressMatchListPlayerDto[];

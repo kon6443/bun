@@ -1,5 +1,5 @@
 import golden from './engine/__fixtures__/golden-matches.json';
-import { type Action, type MatchConfig, type MatchState, applyAction, createMatch } from './engine';
+import { type Action, type MatchConfig, type MatchState, applyAction, createMatch, simulateMatch } from './engine';
 import {
   type BaseAward,
   type PointMatchFacts,
@@ -11,6 +11,7 @@ import {
   playedTurns,
   realShotsBySlot,
   sameOpponentBonusPercent,
+  storedPlayedTurns,
 } from './fortress-points.rules';
 
 type GoldenCase = { name: string; config: MatchConfig; actions: Action[] };
@@ -114,6 +115,28 @@ describe('fortress-points.rules', () => {
     it('턴 상한 판정은 엔진이 turn.no를 올린 뒤 끝나므로 그대로 센다', () => {
       const ongoing = stateAt(0, { kind: 'ongoing' });
       expect(playedTurns(stateAt(ongoing.maxTurns, { kind: 'draw' }))).toBe(ongoing.maxTurns);
+    });
+  });
+
+  describe('storedPlayedTurns — 저장 행(TURNS = turn.no, PLAYER_COUNT)에서 결과 API turns를 만든다(D-027 보충 3)', () => {
+    it.each([
+      ['결정 경기 25수(turn.no 24, 2인)', 24, 2, 25],
+      ['기권으로 끝난 0턴(2인)', 0, 2, 1],
+      ['상한 직전 턴에서 결정(turn.no 59, 2인)', 59, 2, 60],
+      ['턴 상한 2인(60)', 60, 2, 60],
+      ['턴 상한 4인(120)', 120, 4, 120],
+    ])('%s → %i', (_label, turnNo, playerCount, expected) => {
+      expect(storedPlayedTurns(turnNo, playerCount)).toBe(expected);
+    });
+
+    it('끝난 골든 경기마다 state로 센 playedTurns와 같다 — 저장 경로와 포인트 경로가 같은 숫자', () => {
+      const ended = cases
+        .map((c) => ({ c, sim: simulateMatch(c.config, c.actions) }))
+        .flatMap(({ c, sim }) => (sim.ok && sim.final.result.kind !== 'ongoing' ? [{ c, final: sim.final }] : []));
+      expect(ended.length).toBeGreaterThanOrEqual(8);
+      for (const { c, final } of ended) {
+        expect([c.name, storedPlayedTurns(final.turn.no, c.config.players.length)]).toEqual([c.name, playedTurns(final)]);
+      }
     });
   });
 

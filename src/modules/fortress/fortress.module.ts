@@ -16,6 +16,8 @@ import { FortressRoomService } from './fortress-room.service';
 import { FortressPointsService } from './fortress-points.service';
 import { FortressSkinController } from './fortress-skin.controller';
 import { FortressSkinService } from './fortress-skin.service';
+import { FortressSoloService } from './fortress-solo.service';
+import { FortressSoloController } from './fortress-solo.controller';
 import { FortressWsGuard } from './fortress-ws.guard';
 import { FortressWsExceptionFilter } from './fortress-ws-exception.filter';
 
@@ -32,7 +34,7 @@ import { FortressWsExceptionFilter } from './fortress-ws-exception.filter';
     // F7: 공용 포인트 원장(UserPointService)·스킨 장착/강화(UserSkinService)
     UsersModule,
   ],
-  controllers: [FortressResultController, FortressSkinController],
+  controllers: [FortressResultController, FortressSkinController, FortressSoloController],
   providers: [
     FortressGateway,
     FortressRoomService,
@@ -40,10 +42,10 @@ import { FortressWsExceptionFilter } from './fortress-ws-exception.filter';
     FortressResultService,
     FortressPointsService,
     FortressSkinService,
+    FortressSoloService,
     FortressLobbyChatService,
     FortressWsGuard,
     FortressWsExceptionFilter,
   ],
-  exports: [FortressRoomService],
 })
 export class FortressModule {}

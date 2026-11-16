@@ -13,6 +13,11 @@ import { FortressMatchService } from '../src/modules/fortress/fortress-match.ser
 import { FortressResultController } from '../src/modules/fortress/fortress-result.controller';
 import { FortressResultService } from '../src/modules/fortress/fortress-result.service';
 import { FortressPointsService } from '../src/modules/fortress/fortress-points.service';
+import { FortressSkinService } from '../src/modules/fortress/fortress-skin.service';
+import { FortressSoloService } from '../src/modules/fortress/fortress-solo.service';
+import { FortressSoloController } from '../src/modules/fortress/fortress-solo.controller';
+import golden from '../src/modules/fortress/engine/__fixtures__/golden-matches.json';
+import { ENGINE_VERSION, type Action, type MatchConfig, simulateMatch, stateHash } from '../src/modules/fortress/engine';
 import { createE2eApp, E2eApp } from './helpers/e2e-app';
 
 const MATCH = 'AbCdEfGhIjKlMnOp';
@@ -32,6 +37,8 @@ describe('E2E 포트리스 결과', () => {
   let playerRepository: MockRepository<FortressPlayer>;
   let replayRepository: MockRepository<FortressReplay>;
   const get = (path: string) => request(app.getHttpServer()).get(e2e.url(path));
+  const post = (path: string, body: object) => request(app.getHttpServer()).post(e2e.url(path)).send(body);
+  let saved: unknown[];
 
   const row: FortressMatch = {
     matchId: MATCH,
@@ -40,6 +47,7 @@ describe('E2E 포트리스 결과', () => {
     mapId: 'hills',
     seed: 7,
     engineVersion: 1,
+    source: 'online',
     playerCount: 2,
     turns: 9,
     resultKind: 'win',
@@ -54,8 +62,10 @@ describe('E2E 포트리스 결과', () => {
     matchRepository = createMockRepository<FortressMatch>();
     playerRepository = createMockRepository<FortressPlayer>();
     replayRepository = createMockRepository<FortressReplay>();
+    saved = [];
+    const manager = { create: (_entity: unknown, value: unknown) => value, save: async (value: unknown) => (saved.push(value), value) };
     e2e = await createE2eApp({
-      controllers: [FortressResultController],
+      controllers: [FortressResultController, FortressSoloController],
       providers: [
         FortressResultService,
         { provide: FortressMatchService, useValue: { setSaveHook: () => undefined, readyRedisClient: () => null } },
@@ -63,7 +73,12 @@ describe('E2E 포트리스 결과', () => {
         { provide: getRepositoryToken(FortressPlayer), useValue: playerRepository },
         { provide: getRepositoryToken(FortressReplay), useValue: replayRepository },
         { provide: getRepositoryToken(User), useValue: createMockRepository<User>() },
-        { provide: getDataSourceToken(), useValue: { transaction: jest.fn() } as unknown as DataSource },
+        {
+          provide: getDataSourceToken(),
+          useValue: { transaction: jest.fn(async (fn: (m: typeof manager) => Promise<void>) => fn(manager)) } as unknown as DataSource,
+        },
+        FortressSoloService,
+        { provide: FortressSkinService, useValue: { tankSkinOf: jest.fn() } },
         { provide: ConfigService, useValue: { get: () => undefined } },
         { provide: FortressPointsService, useValue: { awardInTransaction: jest.fn(), pointsOf: jest.fn() } },
       ],
@@ -88,12 +103,13 @@ describe('E2E 포트리스 결과', () => {
         data: {
           matchId: MATCH,
           roomName: '한판',
+          source: 'online',
           mode: 'ffa',
           mapId: 'hills',
           seed: 7,
           engineVersion: 1,
           playerCount: 2,
-          turns: 9,
+          turns: 10, // DB TURNS(엔진 turn.no) 9 + 승패를 낸 턴 = 진행한 턴(D-027 보충 3)
           result: { kind: 'win', team: null },
           startedAt: '2026-10-31T01:02:03.000Z',
           endedAt: '2026-10-31T01:03:03.000Z',
@@ -148,7 +164,7 @@ describe('E2E 포트리스 결과', () => {
             mode: 'ffa',
             mapId: 'hills',
             playerCount: 2,
-            turns: 9,
+            turns: 10,
             result: { kind: 'win', team: null },
             endedAt: '2026-10-31T01:03:03.000Z',
             players: [],
@@ -167,6 +183,58 @@ describe('E2E 포트리스 결과', () => {
     ])('%s → 422 VALIDATION_ERROR', async (_label, path) => {
       matchRepository.find.mockResolvedValue([]);
       expect((await get(path).expect(422)).body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+  });
+  describe('POST /fortress/solo-matches (D-027 AI전 업로드)', () => {
+    type GoldenCase = { name: string; config: MatchConfig; actions: Action[] };
+    const won = (golden as unknown as GoldenCase[]).find((c) => c.name === 'ffa 2인 hills AI 중·중') as GoldenCase;
+    const sim = simulateMatch(won.config, won.actions);
+    const body = {
+      engineVersion: ENGINE_VERSION,
+      config: won.config,
+      actions: won.actions,
+      stateHash: sim.ok ? stateHash(sim.final) : '',
+      slots: [
+        { slot: 0, kind: 'human' },
+        { slot: 1, kind: 'ai', aiLevel: 2 },
+      ],
+    };
+
+    it('201 — 게스트도 올린다, matchId(16자)를 돌려주고 경기·참가자 2·리플레이를 한 트랜잭션에 저장', async () => {
+      const res = await post('/fortress/solo-matches', body).expect(201);
+      expect(res.body).toMatchObject({ code: 'SUCCESS', message: '', data: { matchId: expect.stringMatching(/^[A-Za-z0-9_-]{16}$/) } });
+      expect(saved).toHaveLength(4);
+      expect(saved[0]).toMatchObject({ source: 'solo', roomName: null, matchId: res.body.data.matchId });
+    });
+
+    it('엔진 버전이 다르면 409 FORTRESS_SOLO_ENGINE_MISMATCH', async () => {
+      expect((await post('/fortress/solo-matches', { ...body, engineVersion: ENGINE_VERSION + 1 }).expect(409)).body).toMatchObject({
+        code: 'FORTRESS_SOLO_ENGINE_MISMATCH',
+      });
+    });
+
+    it('해시가 다르면 422 FORTRESS_SOLO_REPLAY_INVALID + details.reason', async () => {
+      expect((await post('/fortress/solo-matches', { ...body, stateHash: 'ffffffff' }).expect(422)).body).toMatchObject({
+        code: 'FORTRESS_SOLO_REPLAY_INVALID',
+        details: { reason: 'HASH' },
+      });
+      expect(saved).toEqual([]);
+    });
+
+    it.each([
+      ['모르는 최상위 필드(이름 등)', { ...body, names: ['나'] }],
+      ['자리에 이름 필드', { ...body, slots: [{ slot: 0, kind: 'human', name: '운영자' }, body.slots[1]] }],
+      ['config 누락', { ...body, config: undefined }],
+      ['맵 id 모름', { ...body, config: { ...won.config, mapId: 'moon' } }],
+      ['인원 1명', { ...body, config: { ...won.config, players: won.config.players.slice(0, 1) } }],
+      ['kind 모름', { ...body, slots: [{ slot: 0, kind: 'robot' }, body.slots[1]] }],
+      ['AI 난이도 범위 밖', { ...body, slots: [body.slots[0], { slot: 1, kind: 'ai', aiLevel: 3 }] }],
+      ['AI 난이도 null(리뷰 D1 — @IsOptional이 null을 건너뛰던 경로)', { ...body, slots: [body.slots[0], { slot: 1, kind: 'ai', aiLevel: null }] }],
+      ['stateHash 형식', { ...body, stateHash: 'XYZ' }],
+      ['actions가 배열 아님', { ...body, actions: 'fire' }],
+    ])('%s → 422 VALIDATION_ERROR', async (_label, bad) => {
+      expect((await post('/fortress/solo-matches', bad).expect(422)).body).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(saved).toEqual([]);
     });
   });
 });
