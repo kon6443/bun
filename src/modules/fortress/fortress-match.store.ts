@@ -52,7 +52,7 @@ return 1
 `;
 
 /** 경기 참가자 — 계약 MatchSlot + 서버만 아는 값. skin은 F7 전 경기에 없어 선택(내보낼 때 default로 채운다) */
-export interface StoredMatchSlot extends Omit<MatchSlot, 'skin'> {
+interface StoredMatchSlot extends Omit<MatchSlot, 'skin'> {
   /** 경기 중 끊긴 시각(ms) — MATCH_DISCONNECT_GRACE_MS가 지나면 resign(cause disconnect). 연결 중이면 null */
   disconnectedAt: number | null;
   /** 로그인 참가자 userId, 게스트 null — 결과 저장용(F6). 기능 배포 전에 시작한 경기에는 없다(= null) */

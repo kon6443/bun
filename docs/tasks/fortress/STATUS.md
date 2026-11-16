@@ -1,7 +1,7 @@
 # 포트리스(턴제 포격 대전)
 
-- **상태**: 🚧 구현·리뷰·테스트 완료, 커밋 대기(사용자 "pr 냅둬") — F1~F8 백·프 전부 완료, F3a #320 머지. D-021(미노출 장치 해제·후속 항목) 백·프 완료·리뷰 확정 0(WORKLOG 2026-11-05·11-06). 대기: 사용자 로그인 경로 확인 · 커밋 지시 · 미검증(iOS 실기기·실서버 카운트다운 재접속·다중 레플리카)
-- **최종수정**: 2026-11-09
+- **상태**: ✅ 1차 운영 배포 완료(2026-11-12, bun #329→#330 · next-bun #407·#408→#409). D-027 후속 진행 중: 결과 화면 홈 버튼(프 완료·미커밋) · 백엔드 리팩토링(완료·미커밋) · AI전 다시보기 공유(설계 중) · 프론트 리팩토링(사용자 결정 대기). 이전 상태: 구현·리뷰·테스트 완료, 커밋 대기(사용자 "pr 냅둬") — F1~F8 백·프 전부 완료, F3a #320 머지. D-021(미노출 장치 해제·후속 항목) 백·프 완료·리뷰 확정 0(WORKLOG 2026-11-05·11-06). 대기: 사용자 로그인 경로 확인 · 커밋 지시 · 미검증(iOS 실기기·실서버 카운트다운 재접속·다중 레플리카)
+- **최종수정**: 2026-11-13
 - **관련 문서**: DESIGN.md(설계 정본) · DECISIONS.md · WORKLOG.md(조사 근거 파일:라인) · 선행 `../tetris-battle/`(방·로비·대전) · `../games/`(랭킹·리플레이) · `../game-share/` · `../skin-levels/`(포인트·스킨 레벨) · `../tetris-home/`(홈 개편, 진행 중)
 
 ## 세션·브랜치
@@ -9,7 +9,8 @@
 |---|---|---|---|
 | 메인·백엔드·문서 관리 | 메인(bun) | `bun/.claude/worktrees/fortress` | `feat-onam-fortress` (`origin/main` `6f20fed`) |
 | 메인·백엔드 F3 | 메인(bun) | `bun/.claude/worktrees/game-room` | `refactor-onam-game-room` (`origin/main`) — 단독 PR (D-005) |
-| 프론트 | `next-bun-ec` (2026-11-09 재부팅 후, 이전 `next-bun-c4`) | `next-bun/.claude/worktrees/fortress` | `feat-onam-fortress` (`origin/main`) |
+| 프론트 | `next-bun-ec` (2026-11-09 재부팅 후, 이전 `next-bun-c4`) | `next-bun/.claude/worktrees/fortress` | `feat-onam-fortress` (배포 완료) → `feat-onam-fortress-replay-home` (D-027 홈 버튼, 미커밋) |
+| 메인·백엔드 리팩토링 | 메인(bun) | `bun/.claude/worktrees/fortress` | `refactor-onam-fortress` (develop 기준, D-027 미커밋) |
 | 협의 상대 | `next-bun-35` | `next-bun/.claude/worktrees/skin-levels` | `feat-onam-tetris-home` — 홈 개편 진행 중, 포트리스는 이 파일을 건드리지 않는다 |
 - 이 폴더는 메인만 수정한다. 프론트 세션은 보고·질문을 메인에 보내고, 메인이 사용자에게 묻는다.
 

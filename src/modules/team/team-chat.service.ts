@@ -17,7 +17,8 @@ import { TeamDisplayNameService } from './team-display-name.service';
 import { TeamChatBadRequestErrorResponseDto } from './team-error.dto';
 import { ChatReceivedPayload } from './team.events';
 import { ChatMessagesDto, ChatReadStateDto, GetChatMessagesQueryDto } from './team-chat.dto';
-import { advanceReadCursor, findLatestMessageId, isUniqueConstraintError } from './chat-read-cursor';
+import { advanceReadCursor, findLatestMessageId } from './chat-read-cursor';
+import { isUniqueViolation } from '../../common/utils/oracle-error.utils';
 
 /**
  * 팀 채팅 — 저장·이력·읽음 커서·안읽음 수 (docs/tasks/team-chat-persistence)
@@ -111,7 +112,7 @@ export class TeamChatService {
           }),
         );
       } catch (error) {
-        if (!isUniqueConstraintError(error)) throw error;
+        if (!isUniqueViolation(error)) throw error;
         // 재전송 — 이미 저장된 메시지를 그대로 돌려준다. 커서는 첫 저장 때 이미 올라갔다
         return manager.findOneByOrFail(TeamChatMessage, { teamId, userId, clientMsgId });
       }

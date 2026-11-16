@@ -4,37 +4,15 @@ import { Equal, FindOptionsWhere, In, LessThan, Repository } from 'typeorm';
 import { ApiValidationErrorResponseDto } from '../../common/dto/api-error.dto';
 import { TetrisBattleMatch } from '../../entities/TetrisBattleMatch';
 import { TetrisBattlePlayer } from '../../entities/TetrisBattlePlayer';
+import { GameMatchCursor, decodeGameMatchCursor, encodeGameMatchCursor } from '../game-room/game-match-cursor';
 import { MATCH_ID_PATTERN, MATCH_LIST_DEFAULT_LIMIT } from './tetris-battle.constants';
 import { TetrisBattleUnavailableErrorResponseDto } from './tetris-battle-error.dto';
 import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { BattleLobbyDto, BattleMatchListDto } from './tetris-battle-result.dto';
 
-/** 커서 시각 상한 여유 — 서버 시계 차이를 넉넉히 덮는 1일 */
-const CURSOR_FUTURE_LIMIT_MS = 24 * 60 * 60 * 1000;
-
-/** 커서 원문 — 직전 페이지 마지막 경기의 정렬 키 (CRTD_AT ms, MATCH_ID) */
-interface MatchCursor {
-  t: number;
-  id: string;
-}
-
-/**
- * 커서는 불투명 문자열(base64url JSON)이다 — 클라이언트는 받은 nextCursor를 그대로 돌려줄 뿐 해석하지 않는다.
- * 형식이 틀리면 null(→ 422)
- */
-export const encodeMatchCursor = (c: MatchCursor): string => Buffer.from(JSON.stringify(c)).toString('base64url');
-export const decodeMatchCursor = (raw: string): MatchCursor | null => {
-  try {
-    const c = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Partial<MatchCursor>;
-    // 정수·0 이상·미래 1일 이내·유효한 Date만 — 범위 밖 값은 Invalid Date나 Oracle 바인드 오류(500)가 된다(리뷰 N1)
-    if (typeof c.t !== 'number' || !Number.isSafeInteger(c.t) || c.t < 0 || c.t > Date.now() + CURSOR_FUTURE_LIMIT_MS) return null;
-    if (Number.isNaN(new Date(c.t).getTime())) return null;
-    if (typeof c.id !== 'string' || !MATCH_ID_PATTERN.test(c.id)) return null;
-    return { t: c.t, id: c.id };
-  } catch {
-    return null;
-  }
-};
+/** 커서 형식은 게임 공용(game-match-cursor.ts) — 테트리스는 자기 matchId 형식으로 검증한다 */
+export const encodeMatchCursor = encodeGameMatchCursor;
+export const decodeMatchCursor = (raw: string): GameMatchCursor | null => decodeGameMatchCursor(raw, MATCH_ID_PATTERN);
 
 /**
  * 대전 입구용 조회 (docs/tasks/tetris-battle DESIGN §19, D-025) — 인증 없음, 스키마 변경 없음

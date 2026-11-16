@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import type { Redis } from 'ioredis';
+import { defaultWakeScheduler } from '../game-room/game-room-mutation';
 import {
   type Action,
   type MatchConfig,
@@ -86,9 +87,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
   /** 스위프가 겹치지 않게(이 레플리카 로컬 — 공유 상태 아님) */
   private sweeping = false;
   /** 깨우기 타이머 — 프로세스 종료를 막지 않는다. 테스트는 setWakeScheduler로 바꾼다 */
-  private wakeScheduler: (task: () => void, delayMs: number) => void = (task, delayMs) => {
-    setTimeout(task, delayMs).unref();
-  };
+  private wakeScheduler: (task: () => void, delayMs: number) => void = defaultWakeScheduler;
 
   /** main.ts에서 RedisIoAdapter 초기화 후 호출 (방 서비스와 같은 연결) */
   setRedisClient(client: Redis): void {

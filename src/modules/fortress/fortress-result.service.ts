@@ -3,18 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { DataSource, EntityManager, Equal, FindOptionsWhere, In, LessThan, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, Equal, FindOptionsWhere, In, LessThan, Repository } from 'typeorm';
 import { ApiValidationErrorResponseDto } from '../../common/dto/api-error.dto';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { FortressMatch, FortressMatchMode, FortressResultKind } from '../../entities/FortressMatch';
 import { FortressPlayer } from '../../entities/FortressPlayer';
 import { FortressReplay } from '../../entities/FortressReplay';
+import { isForeignKeyViolation, isUniqueViolation } from '../../common/utils/oracle-error.utils';
 import { User } from '../../entities/User';
 // 커서 형식(base64url JSON { t, id })·검증은 테트리스 대전 최근 목록과 같다 — 순수 함수만 가져온다(테트리스 파일은 바꾸지 않는다)
-import { decodeMatchCursor, encodeMatchCursor } from '../tetris-battle/tetris-battle-browse.service';
+import { decodeGameMatchCursor, encodeGameMatchCursor } from '../game-room/game-match-cursor';
 import { type Action, type MatchConfig, ENGINE_VERSION } from './engine';
 import { FortressMatchService } from './fortress-match.service';
-import { type BaseAward, baseAwards, playedTurns, realShotsBySlot } from './fortress-points.rules';
+import { type BaseAward, baseAwards, playedTurns, realShotsBySlot, storedPlayedTurns } from './fortress-points.rules';
 import { FortressMatchPoints, FortressPointsService } from './fortress-points.service';
 import { storedTankSkin } from './fortress-skins';
 import { FortressMatchStore, StoredMatch } from './fortress-match.store';
@@ -35,7 +36,7 @@ import type { FortressTankSkin, MatchSlot } from './fortress.events';
 type ReplaySlot = Omit<MatchSlot, 'skin'> & { skin?: FortressTankSkin };
 
 /** DB REPLAY 컬럼의 gzip 본문 — engineVersion은 컬럼에 따로 둔다 */
-interface StoredReplayBody {
+export interface StoredReplayBody {
   config: MatchConfig;
   actions: Action[];
   slots: ReplaySlot[];
@@ -53,14 +54,6 @@ interface MatchRecord {
   /** F7 포인트 — 경기 하나만 보고 정한 로그인 참가자별 기본 적립(감쇠·상한은 트랜잭션 안에서) */
   awards: BaseAward[];
 }
-
-/** Oracle 드라이버 에러 번호 — 메시지 문자열이 아니라 번호로 판정한다(테트리스 tetris-audit BE-13과 같은 방식) */
-const oraErrorNum = (error: unknown): number | undefined =>
-  error instanceof QueryFailedError ? (error.driverError as { errorNum?: number } | undefined)?.errorNum : undefined;
-/** ORA-00001 유니크(PK) 위반 — 다른 저장이 먼저 넣었다 */
-const isUniqueViolation = (error: unknown): boolean => oraErrorNum(error) === 1;
-/** ORA-02291 FK 위반 — 그 사이 탈퇴한 USER_ID */
-const isForeignKeyViolation = (error: unknown): boolean => oraErrorNum(error) === 2291;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -189,6 +182,7 @@ export class FortressResultService {
         winnerTeam: match.config.mode === 'team' && result.kind === 'win' ? toTeam(result.team) : null,
         startedAt: new Date(match.startedAt),
         endedAt: new Date(match.endedAt ?? now),
+        source: 'online',
         isHidden: 0,
       },
       players: entries.map((e) => ({
@@ -295,12 +289,13 @@ export class FortressResultService {
     return {
       matchId: match.matchId,
       roomName: match.roomName,
+      source: match.source,
       mode: match.mode,
       mapId: match.mapId,
       seed: match.seed,
       engineVersion: match.engineVersion,
       playerCount: match.playerCount,
-      turns: match.turns,
+      turns: storedPlayedTurns(match.turns, match.playerCount),
       result: { kind: match.resultKind, team: toTeam(match.winnerTeam) },
       startedAt: match.startedAt,
       endedAt: match.endedAt,
@@ -365,10 +360,11 @@ export class FortressResultService {
    * 테트리스 대전 최근 목록(tetris-battle-browse.service.ts)과 같은 방식
    */
   async listMatches({ limit = MATCH_LIST_DEFAULT_LIMIT, cursor }: { limit?: number; cursor?: string }): Promise<FortressMatchListDto> {
-    const after = cursor === undefined ? null : decodeMatchCursor(cursor);
+    const after = cursor === undefined ? null : decodeGameMatchCursor(cursor, MATCH_ID_PATTERN);
     if (cursor !== undefined && !after) throw new ApiValidationErrorResponseDto('cursor가 올바르지 않습니다.');
 
-    const base: FindOptionsWhere<FortressMatch> = { isHidden: 0 };
+    // solo(업로드한 AI전)는 공유 링크로만 — 최근 목록은 온라인 대전만(D-027)
+    const base: FindOptionsWhere<FortressMatch> = { isHidden: 0, source: 'online' };
     const where: FindOptionsWhere<FortressMatch>[] = after
       ? [
           { ...base, crtdAt: LessThan(new Date(after.t)) },
@@ -400,12 +396,12 @@ export class FortressResultService {
         mode: m.mode,
         mapId: m.mapId,
         playerCount: m.playerCount,
-        turns: m.turns,
+        turns: storedPlayedTurns(m.turns, m.playerCount),
         result: { kind: m.resultKind, team: toTeam(m.winnerTeam) },
         endedAt: m.endedAt,
         players: (byMatch.get(m.matchId) ?? []).sort((a, b) => a.place - b.place || a.slot - b.slot),
       })),
-      nextCursor: rows.length > limit ? encodeMatchCursor({ t: last.crtdAt.getTime(), id: last.matchId }) : null,
+      nextCursor: rows.length > limit ? encodeGameMatchCursor({ t: last.crtdAt.getTime(), id: last.matchId }) : null,
     };
   }
 }

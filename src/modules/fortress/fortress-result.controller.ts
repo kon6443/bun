@@ -31,7 +31,8 @@ const THROTTLED = '요청 횟수 초과 (초당 3회 / 분당 60회)';
 /**
  * 포트리스 경기 결과·리플레이·최근 경기 (docs/tasks/fortress DESIGN §12, F6)
  *
- * 인증 없음 — 게스트도 결과·공유 링크·리플레이를 본다(테트리스 대전 결과 조회와 같음). 저장은 서버가 경기 종료 때 한다(제출 API 없음).
+ * 인증 없음 — 게스트도 결과·공유 링크·리플레이를 본다(테트리스 대전 결과 조회와 같음). 온라인 경기는 서버가 경기 종료 때 저장한다.
+ * AI전·같은 기기 대전 업로드는 FortressSoloController(D-027).
  */
 @ApiTags('fortress')
 @Controller('fortress')

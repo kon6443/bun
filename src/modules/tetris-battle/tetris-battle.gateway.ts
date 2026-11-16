@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server } from 'socket.io';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
+import { socketClientIp } from '../game-room/game-room-mutation';
 import {
   HEARTBEAT_MIN_INTERVAL_MS,
   LIVENESS_PROBE_TIMEOUT_MS,
@@ -654,9 +655,6 @@ export class TetrisBattleGateway implements OnGatewayInit, OnGatewayDisconnect, 
    * 첫 값은 요청자가 위조할 수 있어 쓰지 않는다(api-http.md 스로틀 절).
    */
   private clientIp(client: TetrisBattleSocket): string {
-    const xff = client.handshake.headers['x-forwarded-for'];
-    const raw = Array.isArray(xff) ? xff[xff.length - 1] : xff;
-    const last = raw?.split(',').pop()?.trim();
-    return last || client.handshake.address || 'unknown';
+    return socketClientIp(client.handshake);
   }
 }

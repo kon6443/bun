@@ -1,4 +1,4 @@
-import { type Action, type MatchConfig, type MatchResult, type MatchState, applyAction, createMatch } from './engine';
+import { type Action, MAX_ROUNDS, type MatchConfig, type MatchResult, type MatchState, applyAction, createMatch } from './engine';
 
 /**
  * 포트리스 경기 포인트 적립 규칙 — 순수 함수 (docs/tasks/fortress DESIGN §13, D-006·D-010)
@@ -51,11 +51,22 @@ export function realShotsBySlot(config: MatchConfig, actions: readonly Action[])
 }
 
 /**
- * 진행한 턴 수(유효 경기 최소 턴 판정용, 리뷰 B2) — 엔진(game.ts finish)은 승패를 낸 턴에서 turn.no를 올리지 않고 끝내므로
- * 그 턴을 더한다. 턴 상한 판정(no ≥ maxTurns)은 turn.no를 올린 뒤 끝나므로 그대로다. DB TURNS 컬럼·결과 API는 turn.no 그대로 둔다
+ * 진행한 턴 수 — 끝난 경기의 엔진 turn.no와 턴 상한으로 계산한다(리뷰 B2, D-027 보충 3).
+ * 엔진(game.ts finish)은 승패를 낸 턴에서 turn.no를 올리지 않고 끝내므로 그 턴을 더한다. 턴 상한 판정(no ≥ maxTurns)은
+ * turn.no를 올린 뒤 끝나므로 그대로다. 유효 경기 최소 턴 판정과 결과 API의 turns(화면 표시)가 같은 값을 쓴다 — DB TURNS 컬럼은 turn.no 그대로
  */
+export function playedTurnCount(turnNo: number, maxTurns: number): number {
+  return turnNo >= maxTurns ? turnNo : turnNo + 1;
+}
+
+/** 끝난 경기 state의 진행한 턴 수 — playedTurnCount */
 export function playedTurns(state: MatchState): number {
-  return state.turn.no >= state.maxTurns ? state.turn.no : state.turn.no + 1;
+  return playedTurnCount(state.turn.no, state.maxTurns);
+}
+
+/** 저장된 경기 행(TURNS = turn.no, PLAYER_COUNT)의 진행한 턴 수 — 턴 상한은 엔진과 같은 MAX_ROUNDS × 시작 인원(엔진 v1·v2 모두 30) */
+export function storedPlayedTurns(turnNo: number, playerCount: number): number {
+  return playedTurnCount(turnNo, MAX_ROUNDS * playerCount);
 }
 
 /** 경기 하나의 참가자 사실 — 결과 저장 원본(Redis 경기)에서 만든다 */
@@ -119,7 +130,7 @@ export function baseAwards(facts: PointMatchFacts): BaseAward[] {
   });
 }
 
-export interface FinalAward {
+interface FinalAward {
   /** 원장에 넣을 금액 — 0이면 행을 넣지 않는다(원장 CHECK AMOUNT <> 0) */
   amount: number;
   /** 사람이 읽는 내역 (원장 MEMO) */

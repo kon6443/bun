@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { isUniqueViolation } from '../../common/utils/oracle-error.utils';
 import { User } from '../../entities/User';
 import { UserSkinEquip } from '../../entities/UserSkinEquip';
 import { UserSkinLevel } from '../../entities/UserSkinLevel';
@@ -67,11 +68,6 @@ const levelKey = (slot: TetrisSkinSlot, skinId: string) => `${TETRIS_SKIN_SLOT_K
 const levelIn = (book: LevelBook | undefined, slot: TetrisSkinSlot, skinId: string) => book?.get(levelKey(slot, skinId)) ?? SKIN_MIN_LEVEL;
 
 const SLOT_BY_KEY = new Map(TETRIS_SKIN_SLOTS.map((slot) => [TETRIS_SKIN_SLOT_KEYS[slot], slot]));
-
-/** ORA-00001 — 같은 슬롯을 동시에 처음 장착한 두 요청 중 늦은 쪽의 INSERT */
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof QueryFailedError && /ORA-00001/.test(error.message);
-}
 
 /**
  * 스킨 장착 (docs/tasks/tetris-skins D-003) — 카탈로그(skin-catalog.ts)는 코드, 장착은 USER_SKIN_EQUIPS.

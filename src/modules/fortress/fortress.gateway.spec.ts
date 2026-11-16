@@ -215,6 +215,78 @@ describe('FortressGateway', () => {
     expect(roomEmit).toHaveBeenCalledWith(FortressServerEvents.ROOM_STATE, ROOM);
   });
 
+  it('kickPlayer: 강퇴된 소켓을 방 채널에서 빼고 그 소켓에만 kicked, 방에는 roomState', async () => {
+    room.kickPlayer = jest.fn().mockResolvedValue({ room: ROOM, lobbyChanged: true, kickedSocketId: 'sock-b' });
+    await expect(gateway.handleKickPlayer(createClient(), { code: CODE, playerId: 'p2' })).resolves.toEqual({ ok: true, data: {} });
+    expect(room.kickPlayer).toHaveBeenCalledWith(CODE, 'sock-a', 'p2');
+    expect(gateway.server.in).toHaveBeenCalledWith('sock-b');
+    expect(socketsLeave).toHaveBeenCalledWith(CHANNEL);
+    expect(serverTo).toHaveBeenCalledWith('sock-b');
+    expect(roomEmit).toHaveBeenCalledWith(FortressServerEvents.KICKED, { code: CODE });
+    expect(roomEmit).toHaveBeenCalledWith(FortressServerEvents.ROOM_STATE, ROOM);
+  });
+
+  it('kickPlayer: 끊긴 자리(kickedSocketId null)는 kicked를 보내지 않고 roomState만', async () => {
+    room.kickPlayer = jest.fn().mockResolvedValue({ room: ROOM, lobbyChanged: true, kickedSocketId: null });
+    await gateway.handleKickPlayer(createClient(), { code: CODE, playerId: 'p2' });
+    expect(socketsLeave).not.toHaveBeenCalled();
+    expect(roomEmit.mock.calls.map((c) => c[0])).toEqual([FortressServerEvents.ROOM_STATE]);
+  });
+
+  it('setReady·setTank·rematch: 소켓 id로 서비스에 묻고 변경을 방 채널에 roomState', async () => {
+    room.setReady.mockResolvedValue({ room: ROOM, lobbyChanged: false });
+    room.setTank.mockResolvedValue({ room: ROOM, lobbyChanged: false });
+    room.rematch.mockResolvedValue({ room: ROOM, lobbyChanged: true });
+    await gateway.handleSetReady(createClient(), { code: CODE, ready: true });
+    await gateway.handleSetTank(createClient(), { code: CODE, tankId: 2 });
+    await gateway.handleRematch(createClient(), { code: CODE });
+    expect(room.setReady).toHaveBeenCalledWith(CODE, 'sock-a', true);
+    expect(room.setTank).toHaveBeenCalledWith(CODE, 'sock-a', 2);
+    expect(room.rematch).toHaveBeenCalledWith(CODE, 'sock-a');
+    expect(roomEmit.mock.calls.map((c) => c[0])).toEqual([
+      FortressServerEvents.ROOM_STATE,
+      FortressServerEvents.ROOM_STATE,
+      FortressServerEvents.ROOM_STATE,
+    ]);
+  });
+
+  it('chat·emote: 서비스가 확정한 값을 방 채널(보낸 사람 포함)에, 서비스 거부면 방송 없음', async () => {
+    const chat = { playerId: 'p1', name: '방장', text: 'ㅎㅇ', at: 'T' };
+    const emote = { playerId: 'p1', emoteId: 'gg', at: 'T' };
+    room.prepareChat.mockResolvedValue(chat);
+    room.prepareEmote.mockResolvedValueOnce(emote).mockRejectedValueOnce(new FortressError('RATE_LIMITED'));
+    await gateway.handleChat(createClient(), { code: CODE, text: 'ㅎㅇ' });
+    await gateway.handleEmote(createClient(), { code: CODE, emoteId: 'gg' });
+    await expect(gateway.handleEmote(createClient(), { code: CODE, emoteId: 'gg' })).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(serverTo).toHaveBeenCalledWith(CHANNEL);
+    expect(roomEmit.mock.calls).toEqual([
+      [FortressServerEvents.CHAT_MESSAGE, chat],
+      [FortressServerEvents.EMOTE_RECEIVED, emote],
+    ]);
+  });
+
+  describe('heartbeat', () => {
+    beforeEach(() => {
+      room.recordHeartbeat = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('들어간 방의 코드일 때만 기록 — 다른 방 코드·방 없음은 무시', async () => {
+      await gateway.handleHeartbeat(createClient(), { code: CODE });
+      await gateway.handleHeartbeat(createClient({ authResolved: true, userId: null, room: { code: 'ZZZZZZ', playerId: 'p1' } }), { code: CODE });
+      expect(room.recordHeartbeat).not.toHaveBeenCalled();
+
+      await gateway.handleHeartbeat(createClient({ authResolved: true, userId: null, room: { code: CODE, playerId: 'p1' } }), { code: CODE });
+      expect(room.recordHeartbeat).toHaveBeenCalledWith(CODE, 'sock-a');
+    });
+
+    it('최소 간격 안의 연타는 한 번만 기록', async () => {
+      const client = createClient({ authResolved: true, userId: null, room: { code: CODE, playerId: 'p1' } });
+      await gateway.handleHeartbeat(client, { code: CODE });
+      await gateway.handleHeartbeat(client, { code: CODE });
+      expect(room.recordHeartbeat).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('로비 전체 채팅 (D-016 — 테트리스 게이트웨이 spec과 같은 사례)', () => {
     const LOBBY_CHAT = 'fortress:lobby-chat';
     const IP = '10.9.9.9';

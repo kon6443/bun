@@ -5,6 +5,8 @@ import { GameRoomRateLimiter } from '../game-room/game-room-rate-limit';
 import { acquireIntervalGate, touchHeartbeat } from '../game-room/game-room-presence';
 import { chatTextAllowed, checkPlayerName, checkRoomName } from '../game-room/game-room-text';
 import { GameRoomStore } from '../game-room/game-room.store';
+import { RoomMutationDeps, RoomMutationOutcome, defaultWakeScheduler, mutateGameRoom, notifyRoomChange } from '../game-room/game-room-mutation';
+import { findMemberBySocket, isInPlayingMatch, markSeatDisconnected, pruneDisconnectedSeats, removeSeat } from '../game-room/game-room.rules';
 import {
   DISCONNECT_GRACE_MS,
   WAKE_MARGIN_MS,
@@ -234,12 +236,6 @@ export type SocketEvictor = (socketIds: string[]) => void;
  */
 export type RoomChangeListener = (code: string, room: RoomState | null, lobbyChanged: boolean) => void;
 
-interface MutationOutcome<T> {
-  result: T;
-  /** true면 방을 지운다 */
-  deleteRoom?: boolean;
-}
-
 /** WAITING 방 우선, 같은 상태면 최근 생성 순 */
 const STATUS_ORDER: Record<RoomStatus, number> = { WAITING: 0, PLAYING: 1, RESULT: 2 };
 
@@ -260,8 +256,17 @@ export class TetrisBattleRoomService {
   private readonly rooms = new GameRoomStore<StoredRoom>(KEYS, ROOM_TTL_SECONDS, this.logger);
   private readonly rateLimiter = new GameRoomRateLimiter<TetrisBattleRateLimitAction>(KEYS, TETRIS_BATTLE_RATE_LIMITS, this.logger);
   /** 깨우기 타이머(D-009) — 프로세스 종료를 막지 않는다. 테스트는 setWakeScheduler로 바꾼다 */
-  private wakeScheduler: (task: () => void, delayMs: number) => void = (task, delayMs) => {
-    setTimeout(task, delayMs).unref();
+  private wakeScheduler: (task: () => void, delayMs: number) => void = defaultWakeScheduler;
+  private readonly mutationDeps: RoomMutationDeps<StoredRoom, RoomState> = {
+    store: this.rooms,
+    logger: this.logger,
+    maxAttempts: ROOM_CAS_MAX_ATTEMPTS,
+    prune: (room, now) => this.pruneDisconnected(room, now),
+    changeOf: (room, before) => this.changeResult(room, before),
+    notify: (code, room, lobbyChanged) => this.notifyChange(code, room, lobbyChanged),
+    isRejection: (error) => error instanceof TetrisBattleError,
+    roomNotFound: () => new TetrisBattleError('ROOM_NOT_FOUND'),
+    roomBusy: () => new TetrisBattleError('ROOM_BUSY'),
   };
 
   /** main.ts에서 RedisIoAdapter 초기화 후 호출 (GameSessionService와 같은 방식) */
@@ -606,7 +611,7 @@ export class TetrisBattleRoomService {
   }
 
   private assertCanTakeOver(room: StoredRoom, player: StoredPlayer, who: SocketIdentity, tabId: string | undefined): void {
-    const inMatch = room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId) === true;
+    const inMatch = isInPlayingMatch(room, player.playerId);
     const usedElsewhere = player.connected && player.socketId !== null && player.socketId !== who.socketId;
     const sameTab = tabId !== undefined && player.tabId === tabId;
     if (inMatch && usedElsewhere && !sameTab) throw new TetrisBattleError('SEAT_IN_USE');
@@ -655,10 +660,10 @@ export class TetrisBattleRoomService {
     }>(redis, code, now, (room, before) => {
       const player = this.requireMember(room, socketId);
       const target =
-        room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId)
+        isInPlayingMatch(room, player.playerId) && room.match
           ? { matchId: room.match.matchId, playerIds: room.match.playerIds, playerId: player.playerId }
           : null;
-      this.removePlayer(room, player.playerId);
+      removeSeat(room, player.playerId);
       if (room.players.length === 0) return { result: { change: { room: null, lobbyChanged: true }, target }, deleteRoom: true };
       return { result: { change: this.changeResult(room, before), target } };
     });
@@ -713,13 +718,8 @@ export class TetrisBattleRoomService {
       } | null>(redis, code, now, (room, before) => {
         const player = room.players.find((p) => p.socketId === socketId);
         if (!player) return { result: null };
-        player.socketId = null;
-        player.connected = false;
-        player.disconnectedAt = now;
-        const inMatch =
-          room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId)
-            ? { matchId: room.match.matchId, playerId: player.playerId }
-            : null;
+        markSeatDisconnected(player, now);
+        const inMatch = isInPlayingMatch(room, player.playerId) && room.match ? { matchId: room.match.matchId, playerId: player.playerId } : null;
         return { result: { change: this.changeResult(room, before), inMatch } };
       });
       const change = outcome?.change ?? null;
@@ -1231,7 +1231,7 @@ export class TetrisBattleRoomService {
       if (room.status === 'PLAYING') throw new TetrisBattleError('MATCH_ALREADY_STARTED');
       const target = room.players.find((p) => p.playerId === targetId);
       if (!target || target.playerId === host.playerId) throw new TetrisBattleError('PLAYER_NOT_FOUND');
-      this.removePlayer(room, target.playerId);
+      removeSeat(room, target.playerId);
       return { result: { ...this.changeResult(room, before), kickedSocketId: target.socketId } };
     });
   }
@@ -1275,11 +1275,7 @@ export class TetrisBattleRoomService {
         // 판정 뒤 같은 소켓 그대로인 자리만 — 그 사이 재연결로 바뀐 자리는 건드리지 않는다
         const ghosts = room.players.filter((p) => p.connected && p.socketId !== null && silent.get(p.playerId) === p.socketId);
         evicted = ghosts.map((p) => p.socketId as string);
-        for (const p of ghosts) {
-          p.socketId = null;
-          p.connected = false;
-          p.disconnectedAt = now;
-        }
+        for (const p of ghosts) markSeatDisconnected(p, now);
         ghostIds = ghosts.map((p) => p.playerId);
         return { result: ghosts.length > 0 ? this.changeResult(room, before) : null };
       });
@@ -1369,65 +1365,11 @@ export class TetrisBattleRoomService {
   }
 
   /**
-   * 읽기 → 정리(유예 지난 끊긴 플레이어) → 변경 → CAS 쓰기. 버전이 바뀌었으면 처음부터 다시.
-   *
-   * `fn`은 재시도될 수 있으므로 **순수해야 한다**(Redis·소켓 부작용 금지) — 받은 room을 고치고 결과만 돌려준다.
-   * 내용이 하나도 바뀌지 않았으면 쓰지 않는다. 정리 결과 아무도 없으면 방을 지우고 ROOM_NOT_FOUND.
+   * 읽기 → 정리 → 변경 → CAS 쓰기(공용 mutateGameRoom). `fn`은 재시도될 수 있으므로 **순수해야 한다**(Redis·소켓 부작용 금지).
    * P2(startMatch·lock 등)도 이 함수로 방을 바꾼다.
    */
-  private async mutateRoom<T>(
-    redis: Redis,
-    code: string,
-    now: number,
-    fn: (room: StoredRoom, before: StoredRoom) => MutationOutcome<T>,
-  ): Promise<T> {
-    for (let attempt = 0; attempt < ROOM_CAS_MAX_ATTEMPTS; attempt++) {
-      const loaded = await this.loadRoom(redis, code);
-      if (!loaded) throw new TetrisBattleError('ROOM_NOT_FOUND');
-
-      const originalJson = JSON.stringify(loaded.room);
-      const room = this.pruneDisconnected(loaded.room, now);
-
-      if (room.players.length === 0) {
-        // 전원이 유예를 넘겨 끊긴 방 — 삭제(다른 레플리카가 먼저 지웠어도 결과는 같다)
-        if (await this.compareAndSet(redis, code, loaded.version, null)) this.notifyChange(code, null, true);
-        throw new TetrisBattleError('ROOM_NOT_FOUND');
-      }
-
-      const before = JSON.parse(originalJson) as StoredRoom;
-      let outcome: MutationOutcome<T>;
-      try {
-        outcome = fn(room, before);
-      } catch (error) {
-        // 요청은 거부됐지만 정리(유예 지난 플레이어 제거)는 반영하고 방송한다 — fn이 room을 일부 고쳤을 수 있어 다시 계산
-        const prunedOnly = this.pruneDisconnected(loaded.room, now);
-        if (
-          error instanceof TetrisBattleError &&
-          JSON.stringify(prunedOnly) !== originalJson &&
-          (await this.compareAndSet(redis, code, loaded.version, prunedOnly))
-        ) {
-          const change = this.changeResult(prunedOnly, before);
-          this.notifyChange(code, change.room, change.lobbyChanged);
-        }
-        throw error;
-      }
-
-      if (outcome.deleteRoom) {
-        if (await this.compareAndSet(redis, code, loaded.version, null)) return outcome.result;
-        continue;
-      }
-      if (JSON.stringify(room) === originalJson) return outcome.result;
-      if (await this.compareAndSet(redis, code, loaded.version, room)) {
-        // 요청 결과가 null(호출자가 방송할 게 없음)인데 정리로 방이 바뀌었으면 여기서 알린다(리뷰 G3)
-        if (outcome.result === null) {
-          const change = this.changeResult(room, before);
-          this.notifyChange(code, change.room, change.lobbyChanged);
-        }
-        return outcome.result;
-      }
-    }
-    this.logger.warn(`방 변경 충돌 재시도 초과: code=${code}`);
-    throw new TetrisBattleError('ROOM_BUSY');
+  private mutateRoom<T>(redis: Redis, code: string, now: number, fn: (room: StoredRoom, before: StoredRoom) => RoomMutationOutcome<T>): Promise<T> {
+    return mutateGameRoom(this.mutationDeps, redis, code, now, fn);
   }
 
   /** 멤버십 검증만 하는 읽기 경로 (채팅·이모트) */
@@ -1467,11 +1409,7 @@ export class TetrisBattleRoomService {
             !live.has(p.socketId) &&
             now - (p.connectedAt ?? p.joinedAt) >= LIVENESS_MIN_CONNECTED_MS,
         );
-        for (const p of ghosts) {
-          p.socketId = null;
-          p.connected = false;
-          p.disconnectedAt = now;
-        }
+        for (const p of ghosts) markSeatDisconnected(p, now);
         ghostIds = ghosts.map((p) => p.playerId);
         return { result: ghosts.length > 0 ? this.changeResult(room, before) : null };
       });
@@ -1488,18 +1426,14 @@ export class TetrisBattleRoomService {
   }
 
   private notifyChange(code: string, room: RoomState | null, lobbyChanged: boolean): void {
-    try {
-      this.changeListener?.(code, room, lobbyChanged);
-    } catch (error) {
-      this.logger.warn(`방 변경 알림 실패: code=${code}, ${(error as Error).message}`);
-    }
+    notifyRoomChange(this.changeListener, this.logger, code, room, lobbyChanged);
   }
 
   // ==================== 내부: 방 규칙 (순수) ====================
 
   /** 멤버십 = 방 기록의 플레이어 중 대표 소켓이 이 소켓인 사람. 클라이언트가 보낸 playerId는 믿지 않는다 */
   private requireMember(room: StoredRoom, socketId: string): StoredPlayer {
-    const player = room.players.find((p) => p.socketId === socketId);
+    const player = findMemberBySocket(room, socketId);
     if (!player) throw new TetrisBattleError('NOT_IN_ROOM');
     return player;
   }
@@ -1508,21 +1442,7 @@ export class TetrisBattleRoomService {
    * WAITING·RESULT 방에서 유예가 지난 끊긴 플레이어를 뺀다(새 객체). PLAYING은 P2가 KO로 처리하므로 건드리지 않는다.
    */
   private pruneDisconnected(source: StoredRoom, now: number): StoredRoom {
-    const room: StoredRoom = { ...source, players: source.players.map((p) => ({ ...p })) };
-    if (room.status === 'PLAYING') return room;
-    const expired = room.players.filter(
-      (p) => !p.connected && p.disconnectedAt !== null && now - p.disconnectedAt >= DISCONNECT_GRACE_MS,
-    );
-    for (const p of expired) this.removePlayer(room, p.playerId);
-    return room;
-  }
-
-  /** 플레이어 제거 + 방장이었으면 이양: 연결된 사람 중 가장 먼저 들어온 사람, 없으면 가장 먼저 들어온 사람 */
-  private removePlayer(room: StoredRoom, playerId: string): void {
-    room.players = room.players.filter((p) => p.playerId !== playerId);
-    if (room.hostId !== playerId || room.players.length === 0) return;
-    const next = room.players.find((p) => p.connected) ?? room.players[0];
-    room.hostId = next.playerId;
+    return pruneDisconnectedSeats(source, now, DISCONNECT_GRACE_MS);
   }
 
   private newPlayer(

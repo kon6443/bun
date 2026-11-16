@@ -3,6 +3,19 @@ import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Max
 import { MATCH_ID_PATTERN } from './fortress.constants';
 import {
   CHAT_TEXT_MAX_LENGTH,
+  ChatPayload,
+  CreateRoomPayload,
+  EmotePayload,
+  JoinRoomPayload,
+  KickPlayerPayload,
+  LobbyChatPayload,
+  ResyncPayload,
+  RoomCodePayload,
+  SetReadyPayload,
+  SetTankPayload,
+  SetTeamPayload,
+  TurnSubmitPayload,
+  UpdateSettingsPayload,
   FORTRESS_EMOTE_IDS,
   FortressEmoteId,
   ROOM_CODE_ALPHABET,
@@ -45,7 +58,7 @@ const SEQ_MAX = 100_000;
 /** listRooms — 페이로드 없음 */
 export class ListRoomsDto {}
 
-export class CreateRoomDto {
+export class CreateRoomDto implements CreateRoomPayload {
   @Transform(normalizeName)
   @IsString()
   @MaxLength(NAME_PRECHECK_MAX)
@@ -85,7 +98,7 @@ export class CreateRoomDto {
   heartbeat?: boolean;
 }
 
-export class JoinRoomDto {
+export class JoinRoomDto implements JoinRoomPayload {
   @Transform(normalizeCode)
   @IsString()
   @Matches(ROOM_CODE_PATTERN)
@@ -117,25 +130,25 @@ export class JoinRoomDto {
   heartbeat?: boolean;
 }
 
-export class RoomCodeDto {
+export class RoomCodeDto implements RoomCodePayload {
   @Transform(normalizeCode)
   @IsString()
   @Matches(ROOM_CODE_PATTERN)
   code: string;
 }
 
-export class KickPlayerDto extends RoomCodeDto {
+export class KickPlayerDto extends RoomCodeDto implements KickPlayerPayload {
   @IsString()
   @Matches(/^p\d{1,6}$/)
   playerId: string;
 }
 
-export class SetReadyDto extends RoomCodeDto {
+export class SetReadyDto extends RoomCodeDto implements SetReadyPayload {
   @IsBoolean()
   ready: boolean;
 }
 
-export class ChatDto extends RoomCodeDto {
+export class ChatDto extends RoomCodeDto implements ChatPayload {
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Length(1, CHAT_TEXT_MAX_LENGTH)
@@ -143,7 +156,7 @@ export class ChatDto extends RoomCodeDto {
 }
 
 /** 로비 채팅 (D-016, 테트리스 LobbyChatDto와 같은 규칙) — 글자 규칙은 방 채팅과 같다. name은 게스트만 쓰고 형식·금칙어는 서비스가 본다(NAME_* code) */
-export class LobbyChatDto {
+export class LobbyChatDto implements LobbyChatPayload {
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Length(1, CHAT_TEXT_MAX_LENGTH)
@@ -156,7 +169,7 @@ export class LobbyChatDto {
   name?: string;
 }
 
-export class EmoteDto extends RoomCodeDto {
+export class EmoteDto extends RoomCodeDto implements EmotePayload {
   @IsIn(FORTRESS_EMOTE_IDS)
   emoteId: FortressEmoteId;
 }
@@ -165,7 +178,7 @@ export class StartMatchDto extends RoomCodeDto {}
 export class RematchDto extends RoomCodeDto {}
 
 /** 방장 설정 변경 — 빠진 필드는 그대로. team이면 maxPlayers는 서비스가 4로 고정 */
-export class UpdateSettingsDto extends RoomCodeDto {
+export class UpdateSettingsDto extends RoomCodeDto implements UpdateSettingsPayload {
   @IsOptional()
   @IsIn(ROOM_MODES)
   mode?: RoomMode;
@@ -181,13 +194,13 @@ export class UpdateSettingsDto extends RoomCodeDto {
   maxPlayers?: number;
 }
 
-export class SetTeamDto extends RoomCodeDto {
+export class SetTeamDto extends RoomCodeDto implements SetTeamPayload {
   @IsIn([0, 1])
   team: 0 | 1;
 }
 
 /** 0..2 (엔진 TANKS 인덱스) */
-export class SetTankDto extends RoomCodeDto {
+export class SetTankDto extends RoomCodeDto implements SetTankPayload {
   @IsInt()
   @Min(0)
   @Max(2)
@@ -195,7 +208,7 @@ export class SetTankDto extends RoomCodeDto {
 }
 
 /** 턴 제출 — seq = 받은 TurnInfo.seq. 방 코드는 페이로드에 없어 소켓이 들어간 방을 쓴다(권한은 서비스가 Redis로 다시 확인) */
-export class TurnSubmitDto {
+export class TurnSubmitDto implements TurnSubmitPayload {
   @IsString()
   @Matches(MATCH_ID_PATTERN)
   matchId: string;
@@ -226,7 +239,7 @@ export class TurnSubmitDto {
   weaponId: number;
 }
 
-export class ResyncDto {
+export class ResyncDto implements ResyncPayload {
   @IsString()
   @Matches(MATCH_ID_PATTERN)
   matchId: string;
