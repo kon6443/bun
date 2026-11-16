@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -55,11 +55,9 @@ import {
   canManageRole,
   ROLE_LABELS,
   hasManagementPermission,
-  MANAGEMENT_ROLES,
 } from '../../common/constants/role.constants';
 import { ActStatus, TaskStatus, TaskStatusMsg } from '../../common/enums/task-status.enum';
 import { initReadCursorAtLatest } from './chat-read-cursor';
-import { Inject } from '@nestjs/common';
 import {
   INotificationPort,
   NOTIFICATION_PORT,
@@ -68,12 +66,6 @@ import { formatDateRange } from '../../common/utils/date.utils';
 import { AuthUnauthorizedErrorResponseDto, AuthInvalidTokenErrorResponseDto } from '../auth/auth-error.dto';
 import { toPublicTask } from './team.mapper';
 import { TaskTagView, assertTeamTagIds, findTagsByTaskIds, replaceTaskTags } from './task-tags';
-
-// export type TeamMemberType = {
-//   teamId: number;
-//   teamName: string;
-//   crtdAt: Date;
-// };
 
 export type TeamType = {
   teamId: number;
@@ -803,6 +795,22 @@ export class TeamService {
   }
 
   /**
+   * 활성 멤버이면서 관리 역할(MASTER·MANAGER)인지 확인한다. 아니면 forbidden()이 만든 에러를 던진다.
+   * 에러 코드·메시지는 라우트마다 달라(TEAM_FORBIDDEN·TEAM_INVITE_FORBIDDEN) 호출자가 정한다.
+   */
+  async assertManagerAccess(teamId: number, userId: number, forbidden: () => Error): Promise<void> {
+    const [member] = await this.getTeamMembersBy({
+      teamIds: [teamId],
+      userIds: [userId],
+      actStatus: [ActStatus.ACTIVE],
+      userActStatus: [ActStatus.ACTIVE],
+    });
+    if (!member || !hasManagementPermission(member.role)) {
+      throw forbidden();
+    }
+  }
+
+  /**
    * 팀 멤버 권한 확인 (재사용 가능한 메서드)
    * @param teamId 팀 ID
    * @param userId 사용자 ID
@@ -1100,30 +1108,12 @@ export class TeamService {
     if (!teamId) {
       throw new TeamTaskBadRequestErrorResponseDto('팀 ID가 필요합니다.');
     }
-    // // 1. 팀 존재 여부 및 활성 상태 확인
-    // const team = await this.teamRepository.findOne({
-    //   where: { teamId, actStatus: ActStatus.ACTIVE },
-    // });
-
-    // if (!team) {
-    //   throw new TeamNotFoundErrorResponseDto();
-    // }
-
-    // 2. 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
-    // const teamMember = await this.teamMemberRepository.findOne({
-    //   where: { teamId, userId },
-    // });
-
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-      userActStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length || !MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
-      throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.');
-    }
+    // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용)
+    await this.assertManagerAccess(
+      teamId,
+      userId,
+      () => new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 생성할 수 있습니다.'),
+    );
 
     // 3. 만료시간 검증
     const endAt = createInviteDto.endAt;
@@ -1381,16 +1371,11 @@ export class TeamService {
       throw new TeamTaskBadRequestErrorResponseDto('팀 ID가 필요합니다.');
     }
     // 팀 멤버 권한 확인 (MASTER 또는 MANAGER만 허용, 활성화된 멤버만)
-    const teamMembers = await this.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-      userActStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMembers?.length || !MANAGEMENT_ROLES.includes(teamMembers[0].role as RoleKey)) {
-      throw new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.');
-    }
+    await this.assertManagerAccess(
+      teamId,
+      userId,
+      () => new TeamInviteForbiddenErrorResponseDto('팀 리더 또는 매니저만 초대 링크를 조회할 수 있습니다.'),
+    );
 
     // 3. 초대 링크 목록 조회
     const invites = await this.teamInvitationRepository.find({

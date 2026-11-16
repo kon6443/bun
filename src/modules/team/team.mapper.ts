@@ -1,5 +1,5 @@
 import type { TeamMemberType } from './team.service';
-import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants';
+import { hasManagementPermission } from '../../common/constants/role.constants';
 
 /**
  * 조회 API 응답용 매핑 — 내부 조회 결과에서 **공개 필드만** 골라낸다.
@@ -77,7 +77,7 @@ export function toLinkStatusForRole<T extends { isLinked: boolean }>(
   status: T,
   role: string,
 ): T | { isLinked: boolean } {
-  if (MANAGEMENT_ROLES.includes(role as RoleKey)) {
+  if (hasManagementPermission(role)) {
     return status;
   }
   return { isLinked: status.isLinked };
