@@ -5,6 +5,15 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
 import { ServerOptions } from 'socket.io';
 import { Gauge } from 'prom-client';
+import { toErrorMessage } from '../utils/error.utils';
+
+/**
+ * 소켓 메시지 1건의 최대 크기 (Socket.IO 기본 1MB → 100KB).
+ * 모든 게이트웨이의 클라이언트 입력은 수백 바이트 수준이다(가장 큰 것이 대전 lock의 판 base64).
+ * 기본값이면 인증된 소켓 하나가 1MB 페이로드를 보내 검증 전에 파싱·메모리를 쓰게 할 수 있다.
+ * 폴링 전송은 여러 패킷을 한 요청에 묶으므로 단건 상한보다 넉넉히 둔다.
+ */
+const SOCKET_MAX_PAYLOAD_BYTES = 100_000;
 
 /**
  * Redis 기반 Socket.IO 어댑터
@@ -72,12 +81,12 @@ export class RedisIoAdapter extends IoAdapter {
       await this.pubClient.ping();
       this.logger.log('Redis 연결 확인 완료 (PING → PONG)');
     } catch (error) {
-      this.logger.warn(`Redis 연결 실패 - HTTP는 정상 작동, 멀티 레플리카 비활성: ${(error as Error).message}`);
+      this.logger.warn(`Redis 연결 실패 - HTTP는 정상 작동, 멀티 레플리카 비활성: ${toErrorMessage(error)}`);
     }
   }
 
   createIOServer(port: number, options?: Partial<ServerOptions>) {
-    const server = super.createIOServer(port, options);
+    const server = super.createIOServer(port, { ...options, maxHttpBufferSize: SOCKET_MAX_PAYLOAD_BYTES });
     server.adapter(createAdapter(this.pubClient, this.subClient));
     this.logger.log('Redis adapter 적용 완료');
     return server;
@@ -98,7 +107,7 @@ export class RedisIoAdapter extends IoAdapter {
       await Promise.all([this.pubClient.quit(), this.subClient.quit()]);
       this.logger.log('Redis 연결 정리 완료');
     } catch (error) {
-      this.logger.error('Redis 연결 정리 실패:', (error as Error).message);
+      this.logger.error('Redis 연결 정리 실패:', toErrorMessage(error));
     }
   }
 }

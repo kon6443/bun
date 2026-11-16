@@ -60,6 +60,7 @@ import { EnterRoomResult, FortressRoomService, RoomChangeResult, SocketIdentity 
 import { FortressSkinService } from './fortress-skin.service';
 import { FortressSocket, FortressWsGuard } from './fortress-ws.guard';
 import { FortressWsExceptionFilter } from './fortress-ws-exception.filter';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 const ok = <T>(data: T): FortressAck<T> => ({ ok: true, data });
 const EMPTY: EmptyAckData = {};
@@ -147,7 +148,7 @@ export class FortressGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
       if (change) this.broadcastChange(current.code, change.room, change.lobbyChanged);
     } catch (error) {
       // 실패하면 이 플레이어는 connected=true로 남는다 — 생존 확인이 정리한다
-      this.logger.warn(`끊김 처리 실패: code=${current.code}, socket=${client.id}, ${(error as Error).message}`);
+      this.logger.warn(`끊김 처리 실패: code=${current.code}, socket=${client.id}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -542,7 +543,7 @@ export class FortressGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
       const rooms = await this.roomService.listRooms(undefined, { reconcile: false });
       this.server.to(LOBBY_ROOM).emit(FortressServerEvents.ROOMS_CHANGED, { rooms });
     } catch (error) {
-      this.logger.warn(`로비 목록 브로드캐스트 실패: ${(error as Error).message}`);
+      this.logger.warn(`로비 목록 브로드캐스트 실패: ${toErrorMessage(error)}`);
     }
   }
 

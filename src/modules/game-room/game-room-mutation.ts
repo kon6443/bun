@@ -1,6 +1,7 @@
 import type { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { GameRoomRecord, GameRoomStore } from './game-room.store';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /** 변경 함수의 결과 — deleteRoom이면 방을 지운다 */
 export interface RoomMutationOutcome<T> {
@@ -105,7 +106,7 @@ export function notifyRoomChange<TState>(
   try {
     listener?.(code, room, lobbyChanged);
   } catch (error) {
-    logger.warn(`방 변경 알림 실패: code=${code}, ${(error as Error).message}`);
+    logger.warn(`방 변경 알림 실패: code=${code}, ${toErrorMessage(error)}`);
   }
 }
 

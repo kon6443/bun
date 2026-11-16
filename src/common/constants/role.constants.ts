@@ -98,6 +98,7 @@ export const MANAGEMENT_ROLES: RoleKey[] = ['MASTER', 'MANAGER'];
 /**
  * 역할이 관리 권한을 가지는지 확인
  */
-export function hasManagementPermission(role: RoleKey): boolean {
-  return MANAGEMENT_ROLES.includes(role);
+export function hasManagementPermission(role: string): boolean {
+  // DB 컬럼은 string이다 — 단언 없이 받도록 string으로 받고, 목록 비교는 대소문자를 그대로 본다
+  return (MANAGEMENT_ROLES as readonly string[]).includes(role);
 }

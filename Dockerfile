@@ -40,7 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnsl2 \
     libstdc++6 \
     libgcc-s1 \
-    unzip \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

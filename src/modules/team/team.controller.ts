@@ -84,7 +84,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../entities/User';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { MANAGEMENT_ROLES, RoleKey } from '../../common/constants/role.constants';
 import { TelegramService } from '../notification/telegram.service';
 import { DiscordService } from '../notification/discord.service';
 import { getDisplayName } from '../../common/utils/user.utils';
@@ -108,16 +107,11 @@ export class TeamController {
    * MASTER/MANAGER 권한 체크 공통 메서드
    */
   private async requireManagerAccess(teamId: number, userId: number, errorMessage?: string): Promise<void> {
-    const [teamMember] = await this.teamService.getTeamMembersBy({
-      teamIds: [teamId],
-      userIds: [userId],
-      actStatus: [ActStatus.ACTIVE],
-      userActStatus: [ActStatus.ACTIVE],
-    });
-
-    if (!teamMember || !MANAGEMENT_ROLES.includes(teamMember?.role as RoleKey)) {
-      throw new TeamForbiddenErrorResponseDto(errorMessage || '팀 리더 또는 매니저만 이 작업을 할 수 있습니다.');
-    }
+    await this.teamService.assertManagerAccess(
+      teamId,
+      userId,
+      () => new TeamForbiddenErrorResponseDto(errorMessage || '팀 리더 또는 매니저만 이 작업을 할 수 있습니다.'),
+    );
   }
 
   @UseGuards(JwtAuthGuard)

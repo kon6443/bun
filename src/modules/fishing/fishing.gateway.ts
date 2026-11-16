@@ -29,6 +29,7 @@ import {
   LeftMapPayload,
 } from './fishing.events';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
+import { consumeFishingRate, FishingRateAction } from './fishing-rate-limit';
 
 /** 소켓에서 유저 정보 추출 (인증 유저 또는 게스트) */
 function getClientInfo(client: FishingAuthSocket): { userId: number; userName: string } | null {
@@ -69,6 +70,13 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   @WebSocketServer()
   server: Server;
 
+  /**
+   * 소켓별 맵 소속 변경(입장·퇴장·연결 해제) 직렬화 큐 — Nest는 같은 소켓의 핸들러도 동시에 돌린다.
+   * 퇴장 직후 재입장·연달은 맵 이동이 겹치면 늦게 끝난 쪽이 방금 한 등록·room 참가를 지우거나 유령을 남긴다
+   * (tetris-battle.gateway의 socketQueues와 같은 방식, 소켓이 사라지면 함께 사라진다)
+   */
+  private readonly membershipQueues = new WeakMap<Socket, Promise<void>>();
+
   constructor(private readonly fishingOnlineService: FishingOnlineService) {}
 
   // ===== 라이프사이클 훅 =====
@@ -83,7 +91,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   async handleDisconnect(client: Socket): Promise<void> {
     this.logger.log(`[Fishing] 클라이언트 연결 해제: ${client.id}`);
-    await this.removeUserFromOnline(client.id);
+    await this.serializeMembership(client, () => this.removeUserFromOnline(client.id));
   }
 
   // ===== 맵 Room 관리 =====
@@ -98,58 +106,71 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @ConnectedSocket() client: FishingAuthSocket,
     @MessageBody() dto: JoinMapDto,
   ): Promise<JoinedMapPayload> {
-    const { mapId } = dto;
-    const info = getClientInfo(client);
+    return this.serializeMembership(client, async () => {
+      const { mapId } = dto;
+      // 가드(DB 조회)를 기다리는 사이 끊긴 소켓 — 연결 해제 정리가 이미 큐 앞에서 끝났을 수 있다.
+      // 여기서 등록하면 죽은 소켓이 TTL까지 온라인으로 남는다
+      if (client.disconnected) return { mapId, room: this.getRoomName(mapId) };
+      const info = getClientInfo(client);
 
-    this.logger.debug(`[Fishing] 맵 참가 요청: mapId=${mapId}, userId=${info?.userId}, socketId=${client.id}`);
+      this.logger.debug(`[Fishing] 맵 참가 요청: mapId=${mapId}, userId=${info?.userId}, socketId=${client.id}`);
 
-    const roomName = this.getRoomName(mapId);
-    await client.join(roomName);
+      const roomName = this.getRoomName(mapId);
 
-    // mapId를 소켓에 캐싱 (move 등 고빈도 이벤트에서 Redis 조회 생략용)
-    client._fishingMapId = mapId;
-
-    if (info) {
-      const { userId, userName } = info;
-
-      const { wasAlreadyOnline } = await this.fishingOnlineService.addUserToOnline(
-        mapId,
-        userId,
-        userName,
-        client.id,
-      );
-
-      const onlineUsers = await this.fishingOnlineService.getOnlineUsersForMap(mapId);
-
-      // 첫 번째 연결일 때만 입장 알림
-      if (!wasAlreadyOnline) {
-        const userInfo = onlineUsers.find((u) => u.userId === userId);
-        const payload: FishingUserJoinedPayload = {
-          userId,
-          userName,
-          connectionCount: userInfo?.connectionCount ?? 1,
-          totalOnlineCount: onlineUsers.length,
-          position: userInfo?.position,
-        };
-        client.to(roomName).emit(FishingSocketEvents.USER_JOINED, payload);
+      // 다른 맵에 있던 소켓이면 먼저 떠난다 — 아니면 이전 맵 room 이벤트를 계속 받고, 소켓 매핑이 새 맵으로 덮여
+      // 이전 맵의 온라인·위치·상태가 TTL까지 유령으로 남는다
+      const previousMapId = client._fishingMapId;
+      if (previousMapId && previousMapId !== mapId) {
+        await this.leaveMap(client, previousMapId);
       }
 
-      // 본인에게 현재 온라인 유저 목록 전송
-      const onlineUsersPayload: FishingOnlineUsersPayload = {
-        mapId,
-        users: onlineUsers,
-        totalCount: onlineUsers.length,
-      };
-      client.emit(FishingSocketEvents.ONLINE_USERS, onlineUsersPayload);
+      await client.join(roomName);
 
-      // 본인에게 현재 모든 플레이어 위치 전송
-      const positions = await this.fishingOnlineService.getAllPositions(mapId);
-      client.emit(FishingSocketEvents.PLAYER_POSITIONS, { positions });
-    }
+      // mapId를 소켓에 캐싱 (move 등 고빈도 이벤트에서 Redis 조회 생략용)
+      client._fishingMapId = mapId;
 
-    this.logger.log(`[Fishing] 맵 참가 완료: mapId=${mapId}, userId=${info?.userId}, room=${roomName}`);
+      if (info) {
+        const { userId, userName } = info;
 
-    return { mapId, room: roomName };
+        const { wasAlreadyOnline } = await this.fishingOnlineService.addUserToOnline(
+          mapId,
+          userId,
+          userName,
+          client.id,
+        );
+
+        const onlineUsers = await this.fishingOnlineService.getOnlineUsersForMap(mapId);
+
+        // 첫 번째 연결일 때만 입장 알림
+        if (!wasAlreadyOnline) {
+          const userInfo = onlineUsers.find((u) => u.userId === userId);
+          const payload: FishingUserJoinedPayload = {
+            userId,
+            userName,
+            connectionCount: userInfo?.connectionCount ?? 1,
+            totalOnlineCount: onlineUsers.length,
+            position: userInfo?.position,
+          };
+          client.to(roomName).emit(FishingSocketEvents.USER_JOINED, payload);
+        }
+
+        // 본인에게 현재 온라인 유저 목록 전송
+        const onlineUsersPayload: FishingOnlineUsersPayload = {
+          mapId,
+          users: onlineUsers,
+          totalCount: onlineUsers.length,
+        };
+        client.emit(FishingSocketEvents.ONLINE_USERS, onlineUsersPayload);
+
+        // 본인에게 현재 모든 플레이어 위치 전송
+        const positions = await this.fishingOnlineService.getAllPositions(mapId);
+        client.emit(FishingSocketEvents.PLAYER_POSITIONS, { positions });
+      }
+
+      this.logger.log(`[Fishing] 맵 참가 완료: mapId=${mapId}, userId=${info?.userId}, room=${roomName}`);
+
+      return { mapId, room: roomName };
+    });
   }
 
   /**
@@ -163,21 +184,8 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @MessageBody() dto: LeaveMapDto,
   ): Promise<LeftMapPayload> {
     const { mapId } = dto;
-    const roomName = this.getRoomName(mapId);
-
-    const info = getClientInfo(client);
-    if (info && (await this.fishingOnlineService.isSocketRegistered(client.id))) {
-      const result = await this.fishingOnlineService.removeSocket(client.id);
-      if (result?.isFullyOffline) {
-        await this.broadcastUserLeftIfOffline(mapId, info.userId, result.userName);
-      }
-    }
-
-    await client.leave(roomName);
-
-    this.logger.log(`[Fishing] 맵 퇴장: mapId=${mapId}, socketId=${client.id}`);
-
-    return { mapId, room: roomName };
+    await this.serializeMembership(client, () => this.leaveMap(client, mapId));
+    return { mapId, room: this.getRoomName(mapId) };
   }
 
   // ===== 플레이어 이동 =====
@@ -196,6 +204,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const info = getClientInfo(client);
     const mapId = client._fishingMapId;
     if (!info || !mapId) return;
+    if (!this.allowEvent(client, 'move')) return;
 
     const { userId, userName } = info;
 
@@ -231,6 +240,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const info = getClientInfo(client);
     const mapId = client._fishingMapId;
     if (!info || !mapId) return;
+    if (!this.allowEvent(client, 'state')) return;
 
     const { userId, userName } = info;
 
@@ -263,6 +273,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const info = getClientInfo(client);
     const mapId = client._fishingMapId;
     if (!info || !mapId) return;
+    if (!this.allowEvent(client, 'chat')) return;
 
     const { userId, userName } = info;
     const roomName = this.getRoomName(mapId);
@@ -293,6 +304,7 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const info = getClientInfo(client);
     const mapId = client._fishingMapId;
     if (!info || !mapId) return;
+    if (!this.allowEvent(client, 'catch')) return;
 
     const { userId, userName } = info;
     const roomName = this.getRoomName(mapId);
@@ -315,6 +327,47 @@ export class FishingGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   private getRoomName(mapId: string): string {
     return `fishing-map-${mapId}`;
+  }
+
+  private serializeMembership<T>(client: Socket, task: () => Promise<T>): Promise<T> {
+    const previous = this.membershipQueues.get(client) ?? Promise.resolve();
+    const run = previous.then(task);
+    this.membershipQueues.set(
+      client,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  /** 소켓 단위 빈도 제한 — 넘으면 이벤트를 조용히 버린다(한도는 정상 입력의 2배 이상, fishing-rate-limit.ts) */
+  private allowEvent(client: FishingAuthSocket, action: FishingRateAction): boolean {
+    client._fishingRateWindows ??= {};
+    if (consumeFishingRate(client._fishingRateWindows, action, Date.now())) return true;
+    this.logger.debug(`[Fishing] 빈도 제한 초과로 무시: action=${action}, socketId=${client.id}`);
+    return false;
+  }
+
+  /**
+   * 맵 퇴장 — 온라인 등록 해제 + 마지막 연결이면 퇴장 알림 + room 이탈 (leaveMap 이벤트·다른 맵 입장 공용).
+   * 호출자가 serializeMembership 안에서 부른다
+   */
+  private async leaveMap(client: FishingAuthSocket, mapId: string): Promise<void> {
+    // 캐시를 먼저 비운다 — 정리를 기다리는 사이 들어온 이동·상태가 지운 위치를 다시 쓰지 않게(큐 밖 고빈도 이벤트는 캐시만 본다)
+    if (client._fishingMapId === mapId) client._fishingMapId = undefined;
+    const info = getClientInfo(client);
+    if (info && (await this.fishingOnlineService.isSocketRegistered(client.id))) {
+      const result = await this.fishingOnlineService.removeSocket(client.id);
+      if (result?.isFullyOffline) {
+        await this.broadcastUserLeftIfOffline(result.mapId, info.userId, result.userName);
+      }
+    }
+
+    await client.leave(this.getRoomName(mapId));
+
+    this.logger.log(`[Fishing] 맵 퇴장: mapId=${mapId}, socketId=${client.id}`);
   }
 
   /**

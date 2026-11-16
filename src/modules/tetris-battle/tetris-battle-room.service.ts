@@ -62,6 +62,7 @@ import {
   TetrisBattleEmoteId,
 } from './tetris-battle.events';
 import { type TetrisBoardSkins, defaultSkinSet, storedBoardSkins, toBoardSkins } from '../users/skin-catalog';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 
 /**
@@ -345,7 +346,7 @@ export class TetrisBattleRoomService {
       await this.mutateRoom<null>(redis, code, now, () => ({ result: null }));
     } catch (error) {
       if (error instanceof TetrisBattleError && error.code === 'ROOM_NOT_FOUND') return;
-      this.logger.warn(`유예 만료 정리 실패 — 다음 요청이 정리: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`유예 만료 정리 실패 — 다음 요청이 정리: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -395,7 +396,7 @@ export class TetrisBattleRoomService {
       await this.rooms.writeLobbySummary(redis, summary, LOBBY_COUNTS_CACHE_MS);
       return summary;
     } catch (error) {
-      this.logger.warn(`로비 요약 조회 실패 — 503: ${(error as Error).message}`);
+      this.logger.warn(`로비 요약 조회 실패 — 503: ${toErrorMessage(error)}`);
       return null;
     }
   }
@@ -496,7 +497,7 @@ export class TetrisBattleRoomService {
       const recovered = await this.recoverMatch(input.code, entered.playerId, who.socketId, input.lastGarbageId ?? 0, now);
       return recovered ? { ...entered, ...recovered } : entered;
     } catch (error) {
-      this.logger.warn(`재연결 복구 실패 — 복구 없이 입장: code=${input.code}, player=${entered.playerId}, ${(error as Error).message}`);
+      this.logger.warn(`재연결 복구 실패 — 복구 없이 입장: code=${input.code}, player=${entered.playerId}, ${toErrorMessage(error)}`);
       return entered;
     }
   }
@@ -675,9 +676,9 @@ export class TetrisBattleRoomService {
     try {
       ko = await this.matches.knockOut(redis, target.matchId, target.playerIds, target.playerId, 'leave', null, now);
     } catch (error) {
-      this.logger.warn(`경기 중 이탈 KO 실패 — 유예 뒤 정리로 회수: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`경기 중 이탈 KO 실패 — 유예 뒤 정리로 회수: code=${code}, ${toErrorMessage(error)}`);
       await this.matches.setDisconnectedAt(redis, target.matchId, target.playerId, now).catch((e: unknown) => {
-        this.logger.warn(`이탈 끊김 기록도 실패: code=${code}, ${(e as Error).message}`);
+        this.logger.warn(`이탈 끊김 기록도 실패: code=${code}, ${toErrorMessage(e)}`);
       });
       return change;
     }
@@ -1023,7 +1024,7 @@ export class TetrisBattleRoomService {
       return change;
     } catch (error) {
       if (!(error instanceof TetrisBattleError && error.code === 'ROOM_NOT_FOUND')) {
-        this.logger.warn(`매치 종료 반영 실패 — 잠시 뒤 다시 시도: code=${code}, ${(error as Error).message}`);
+        this.logger.warn(`매치 종료 반영 실패 — 잠시 뒤 다시 시도: code=${code}, ${toErrorMessage(error)}`);
         // 방 활동이 없으면 결과 화면이 오지 않으므로 직접 한 번 더 깨운다(tetris-audit BE-05). 그래도 실패하면 생존 확인·다음 lock이 회수
         if (attempt < FINISH_RETRY_MAX_ATTEMPTS) {
           this.scheduleWake(() => this.repairEndedMatchSafely(code, attempt + 1), FINISH_RETRY_DELAY_MS);
@@ -1039,7 +1040,7 @@ export class TetrisBattleRoomService {
     try {
       await this.repairEndedMatch(redis, code, Date.now(), attempt);
     } catch (error) {
-      this.logger.warn(`매치 종료 재반영 실패: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`매치 종료 재반영 실패: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -1191,7 +1192,7 @@ export class TetrisBattleRoomService {
     try {
       this.matchFinishedListener?.(matchId);
     } catch (error) {
-      this.logger.warn(`매치 종료 알림 실패: match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`매치 종료 알림 실패: match=${matchId}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -1204,7 +1205,7 @@ export class TetrisBattleRoomService {
       try {
         this.matchListener?.(code, match);
       } catch (error) {
-        this.logger.warn(`매치 이벤트 알림 실패: code=${code}, ${(error as Error).message}`);
+        this.logger.warn(`매치 이벤트 알림 실패: code=${code}, ${toErrorMessage(error)}`);
       }
     }
     if (roomChange) this.notifyChange(code, roomChange.room, roomChange.lobbyChanged);
@@ -1245,7 +1246,7 @@ export class TetrisBattleRoomService {
     try {
       await touchHeartbeat(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS);
     } catch (error) {
-      this.logger.warn(`하트비트 기록 실패: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`하트비트 기록 실패: code=${code}, ${toErrorMessage(error)}`);
       return;
     }
     void this.reconcileHeartbeats(redis, code, now);
@@ -1287,11 +1288,11 @@ export class TetrisBattleRoomService {
       this.scheduleWake(() => this.sweepExpired(code), DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
       this.notifyChange(code, change.room, change.lobbyChanged);
       await this.reconcileMatch(redis, code, ghostIds, now).catch((error: unknown) => {
-        this.logger.warn(`하트비트 끊김의 매치 반영 실패 — 깨우기가 회수: code=${code}, ${(error as Error).message}`);
+        this.logger.warn(`하트비트 끊김의 매치 반영 실패 — 깨우기가 회수: code=${code}, ${toErrorMessage(error)}`);
       });
     } catch (error) {
       if (error instanceof TetrisBattleError && error.code === 'ROOM_NOT_FOUND') return;
-      this.logger.warn(`하트비트 판정 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`하트비트 판정 실패 — 건너뜀: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -1421,7 +1422,7 @@ export class TetrisBattleRoomService {
       await this.reconcileMatch(redis, code, ghostIds, now);
     } catch (error) {
       if (error instanceof TetrisBattleError && error.code === 'ROOM_NOT_FOUND') return;
-      this.logger.warn(`생존 확인 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`생존 확인 실패 — 건너뜀: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
