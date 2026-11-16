@@ -33,6 +33,8 @@ describe('FishingOnlineService', () => {
     hlen: jest.Mock;
     exists: jest.Mock;
     pipeline: jest.Mock;
+    eval: jest.Mock;
+    status: string;
   };
   let pipeline: Record<string, jest.Mock>;
   /** pipeline() 호출마다 새 객체를 주는 대신, 호출 순서별로 결과를 다르게 주기 위한 큐 */
@@ -64,6 +66,8 @@ describe('FishingOnlineService', () => {
       hlen: jest.fn().mockResolvedValue(0),
       exists: jest.fn().mockResolvedValue(0),
       pipeline: jest.fn(() => pipeline),
+      eval: jest.fn().mockResolvedValue(1),
+      status: 'ready',
     };
 
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
@@ -79,46 +83,40 @@ describe('FishingOnlineService', () => {
     it.each([
       ['기존 소켓이 없으면', 0, false],
       ['기존 소켓이 있으면', 2, true],
-    ])('%s wasAlreadyOnline=%s여야 함', async (_desc, existing, expected) => {
-      redis.scard.mockResolvedValue(existing);
+    ])('%s(Lua가 돌려준 등록 전 소켓 수) wasAlreadyOnline=%s여야 함', async (_desc, before, expected) => {
+      redis.eval.mockResolvedValue(before);
 
       await expect(
         service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID),
       ).resolves.toEqual({ wasAlreadyOnline: expected });
     });
 
-    it('판정은 소켓을 추가하기 전의 개수로 해야 함', async () => {
-      await service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID);
+    it('fishing: 프리픽스 키에 Lua 한 번으로 기록하고 TTL을 걸어야 함 (팀 프레즌스와 분리)', async () => {
+      redis.eval.mockResolvedValue(0);
 
-      // 추가 후에 세면 항상 1 이상이 되어 첫 입장 알림이 영영 안 나간다
-      expect(redis.scard.mock.invocationCallOrder[0]).toBeLessThan(
-        pipeline.sadd.mock.invocationCallOrder[0],
-      );
-    });
-
-    it('fishing: 프리픽스 키에만 기록해야 함 (팀 프레즌스와 분리)', async () => {
       await service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID);
 
       // 프리픽스가 겹치면 팀 온라인 목록과 낚시 맵 목록이 서로를 덮어쓴다
-      expect(pipeline.hset).toHaveBeenCalledWith(SOCKET_KEY, {
-        mapId: MAP_ID,
-        userId: String(USER_ID),
-        userName: '낚시왕',
-      });
-      expect(pipeline.sadd).toHaveBeenCalledWith(USER_SOCKETS_KEY, SOCKET_ID);
-      expect(pipeline.hset).toHaveBeenCalledWith(ONLINE_KEY, String(USER_ID), '낚시왕');
-    });
-
-    it('모든 키에 TTL을 걸어야 함', async () => {
-      await service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID);
-
-      expect(pipeline.expire).toHaveBeenCalledWith(SOCKET_KEY, 3600);
-      expect(pipeline.expire).toHaveBeenCalledWith(USER_SOCKETS_KEY, 3600);
-      expect(pipeline.expire).toHaveBeenCalledWith(ONLINE_KEY, 7200);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        3,
+        SOCKET_KEY,
+        USER_SOCKETS_KEY,
+        ONLINE_KEY,
+        SOCKET_ID,
+        String(USER_ID),
+        '낚시왕',
+        '3600',
+        '7200',
+        'mapId',
+        MAP_ID,
+      );
+      expect(redis.scard).not.toHaveBeenCalled();
+      expect(pipeline.exec).not.toHaveBeenCalled();
     });
 
     it('Redis 오류는 삼키고 첫 입장으로 취급해야 함', async () => {
-      redis.scard.mockRejectedValue(new Error('ECONNREFUSED'));
+      redis.eval.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(
         service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID),
@@ -136,9 +134,31 @@ describe('FishingOnlineService', () => {
       expect(pipeline.exec).not.toHaveBeenCalled();
     });
 
-    it('마지막 연결이면 위치·낚시상태까지 함께 지워야 함', async () => {
+    it('매핑·소켓 집합·맵 해시 3종(온라인·위치·상태)을 Lua 한 번으로 정리해야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(0);
+
+      await service.removeSocket(SOCKET_ID);
+
+      // 위치를 남기면 접속하지 않은 유령 캐릭터가 맵에 계속 서 있게 된다 — 맵 해시 3종이 모두 KEYS에 있어야 한다
+      expect(redis.eval).toHaveBeenCalledTimes(1);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        5,
+        `fishing:socket:${SOCKET_ID}`,
+        USER_SOCKETS_KEY,
+        ONLINE_KEY,
+        POSITIONS_KEY,
+        STATES_KEY,
+        SOCKET_ID,
+        String(USER_ID),
+      );
+      expect(pipeline.exec).not.toHaveBeenCalled();
+      expect(redis.scard).not.toHaveBeenCalled();
+    });
+
+    it('Lua가 1을 돌려주면 완전히 오프라인이어야 함', async () => {
+      redis.hgetall.mockResolvedValue(mapping);
+      redis.eval.mockResolvedValue(1);
 
       await expect(service.removeSocket(SOCKET_ID)).resolves.toEqual({
         mapId: MAP_ID,
@@ -146,26 +166,19 @@ describe('FishingOnlineService', () => {
         userName: '낚시왕',
         isFullyOffline: true,
       });
-      // 위치를 남기면 접속하지 않은 유령 캐릭터가 맵에 계속 서 있게 된다
-      expect(pipeline.hdel).toHaveBeenCalledWith(ONLINE_KEY, String(USER_ID));
-      expect(pipeline.hdel).toHaveBeenCalledWith(POSITIONS_KEY, String(USER_ID));
-      expect(pipeline.hdel).toHaveBeenCalledWith(STATES_KEY, String(USER_ID));
-      expect(pipeline.del).toHaveBeenCalledWith(USER_SOCKETS_KEY);
     });
 
-    it('다른 탭이 남아 있으면 위치를 지우지 않아야 함', async () => {
+    it('다른 탭이 남아 있으면(Lua 0) 오프라인이 아니어야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(1);
+      redis.eval.mockResolvedValue(0);
 
       await expect(service.removeSocket(SOCKET_ID)).resolves.toMatchObject({
         isFullyOffline: false,
       });
-      expect(pipeline.hdel).not.toHaveBeenCalled();
     });
 
     it('mapId는 문자열, userId는 숫자로 돌려줘야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(0);
 
       const result = await service.removeSocket(SOCKET_ID);
 
@@ -365,6 +378,27 @@ describe('FishingOnlineService', () => {
       await expect(run()).resolves.toBeUndefined();
       expect(Logger.prototype.error).toHaveBeenCalled();
     });
+
+    it.each([
+      ['updatePosition', () => service.updatePosition(MAP_ID, USER_ID, POSITION)],
+      ['updateFishingState', () => service.updateFishingState(MAP_ID, USER_ID, 'idle')],
+    ])('%s는 exec() 거부도 로그로 받아야 함 (처리되지 않은 rejection으로 새지 않게)', async (_name, run) => {
+      pipeline.exec.mockReturnValue(Promise.reject(new Error('Connection is closed.')));
+
+      await expect(run()).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining('Connection is closed.'));
+    });
+
+    it.each([
+      ['updatePosition', () => service.updatePosition(MAP_ID, USER_ID, POSITION)],
+      ['updateFishingState', () => service.updateFishingState(MAP_ID, USER_ID, 'idle')],
+    ])('%s는 Redis가 ready가 아니면 버려야 함 (끊긴 동안 오프라인 큐에 쌓이지 않게)', async (_name, run) => {
+      redis.status = 'reconnecting';
+
+      await expect(run()).resolves.toBeUndefined();
+      expect(redis.pipeline).not.toHaveBeenCalled();
+    });
   });
 
   describe('단순 조회', () => {
@@ -422,6 +456,35 @@ describe('FishingOnlineService', () => {
 
       await expect(noRedis.getOnlineUsersCount(MAP_ID)).resolves.toBe(0);
       await expect(noRedis.getAllPositions(MAP_ID)).resolves.toEqual({});
+    });
+  });
+  describe('Redis가 ready가 아닐 때', () => {
+    beforeEach(() => {
+      redis.status = 'reconnecting';
+    });
+
+    it('명령을 보내지 않고 각 메서드의 실패 기본값을 돌려줘야 함', async () => {
+      await expect(service.addUserToOnline(MAP_ID, USER_ID, '낚시왕', SOCKET_ID)).resolves.toEqual({
+        wasAlreadyOnline: false,
+      });
+      await expect(service.getSocketMapping(SOCKET_ID)).resolves.toBeNull();
+      await expect(service.getOnlineUsersForMap(MAP_ID)).resolves.toEqual([]);
+      await expect(service.getOnlineUsersCount(MAP_ID)).resolves.toBe(0);
+      await expect(service.getAllPositions(MAP_ID)).resolves.toEqual({});
+
+      for (const fn of [redis.scard, redis.hgetall, redis.hlen, redis.exists, redis.eval, redis.pipeline]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+    });
+
+    // 정리를 버리면 맵에 유령 캐릭터가 남는다 — 끊긴 동안은 오프라인 큐에 맡겨 재연결 뒤에 적용되게 한다
+    it('정리(isSocketRegistered·removeSocket)는 그대로 명령을 보내야 함', async () => {
+      redis.exists.mockResolvedValue(1);
+      redis.hgetall.mockResolvedValue({ mapId: MAP_ID, userId: String(USER_ID), userName: '낚시왕' });
+
+      await expect(service.isSocketRegistered(SOCKET_ID)).resolves.toBe(true);
+      await expect(service.removeSocket(SOCKET_ID)).resolves.toMatchObject({ isFullyOffline: true });
+      expect(redis.eval).toHaveBeenCalledTimes(1);
     });
   });
 });

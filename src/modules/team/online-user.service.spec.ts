@@ -36,6 +36,7 @@ describe('OnlineUserService', () => {
     pipeline: jest.Mock;
     smembers: jest.Mock;
     eval: jest.Mock;
+    status: string;
   };
   let pipeline: Record<string, jest.Mock>;
   let gauge: { set: jest.Mock; remove: jest.Mock };
@@ -85,6 +86,7 @@ describe('OnlineUserService', () => {
       pipeline: jest.fn(() => pipeline),
       smembers: jest.fn().mockResolvedValue([]),
       eval: jest.fn().mockResolvedValue(1),
+      status: 'ready',
     };
     gauge = { set: jest.fn(), remove: jest.fn() };
 
@@ -110,53 +112,42 @@ describe('OnlineUserService', () => {
       ['기존 소켓이 없으면', 0, false],
       ['기존 소켓이 1개면', 1, true],
       ['기존 소켓이 여러 개면', 3, true],
-    ])('%s wasAlreadyOnline=%s여야 함', async (_desc, existing, expected) => {
-      redis.scard.mockResolvedValue(existing);
+    ])('%s(Lua가 돌려준 등록 전 소켓 수) wasAlreadyOnline=%s여야 함', async (_desc, before, expected) => {
+      redis.eval.mockResolvedValue(before);
 
       await expect(
         service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID),
       ).resolves.toEqual({ wasAlreadyOnline: expected });
     });
 
-    it('판정은 소켓을 추가하기 전의 개수로 해야 함', async () => {
-      redis.scard.mockResolvedValue(0);
+    it('소켓 수 확인과 세 키 기록·TTL을 Lua 한 번으로 해야 함 (사이에 다른 탭 제거가 끼지 않게)', async () => {
+      redis.eval.mockResolvedValue(0);
 
       await service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID);
 
-      // 추가 후에 세면 항상 1 이상이 되어 첫 입장 알림이 영영 안 나간다
-      expect(redis.scard).toHaveBeenCalledWith(USER_SOCKETS_KEY);
-      expect(redis.scard.mock.invocationCallOrder[0]).toBeLessThan(
-        pipeline.sadd.mock.invocationCallOrder[0],
+      // KEYS: 소켓 → 유저 역방향 매핑(disconnect 때 유일한 단서) · 유저별 소켓 목록(다중 탭 카운트) · 팀 온라인 해시
+      // ARGV: TTL이 없으면 서버가 비정상 종료됐을 때 유령 접속자가 영구히 남는다(매핑·목록 1시간, 팀 해시 2시간)
+      expect(redis.eval).toHaveBeenCalledTimes(1);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        3,
+        SOCKET_KEY,
+        USER_SOCKETS_KEY,
+        TEAM_ONLINE_KEY,
+        SOCKET_ID,
+        String(USER_ID),
+        '홍길동',
+        '3600',
+        '7200',
+        'teamId',
+        String(TEAM_ID),
       );
-    });
-
-    it('세 종류의 키를 한 파이프라인으로 기록해야 함', async () => {
-      await service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID);
-
-      // 소켓 → 유저 역방향 매핑 (disconnect 때 유일한 단서)
-      expect(pipeline.hset).toHaveBeenCalledWith(SOCKET_KEY, {
-        teamId: String(TEAM_ID),
-        userId: String(USER_ID),
-        userName: '홍길동',
-      });
-      // 유저별 소켓 목록 (다중 탭 카운트)
-      expect(pipeline.sadd).toHaveBeenCalledWith(USER_SOCKETS_KEY, SOCKET_ID);
-      // 팀 온라인 해시 (목록 조회용)
-      expect(pipeline.hset).toHaveBeenCalledWith(TEAM_ONLINE_KEY, String(USER_ID), '홍길동');
-      expect(pipeline.exec).toHaveBeenCalledTimes(1);
-    });
-
-    it('모든 키에 TTL을 걸어야 함 (고아 데이터 자동 정리)', async () => {
-      await service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID);
-
-      // TTL이 없으면 서버가 비정상 종료됐을 때 유령 접속자가 영구히 남는다
-      expect(pipeline.expire).toHaveBeenCalledWith(SOCKET_KEY, 3600);
-      expect(pipeline.expire).toHaveBeenCalledWith(USER_SOCKETS_KEY, 3600);
-      expect(pipeline.expire).toHaveBeenCalledWith(TEAM_ONLINE_KEY, 7200);
+      expect(redis.scard).not.toHaveBeenCalled();
+      expect(redis.pipeline).not.toHaveBeenCalled();
     });
 
     it('Redis 오류는 삼키고 첫 입장으로 취급해야 함', async () => {
-      redis.scard.mockRejectedValue(new Error('ECONNREFUSED'));
+      redis.eval.mockRejectedValue(new Error('ECONNREFUSED'));
 
       // 예외가 올라가면 joinTeam 전체가 실패해 팀 입장 자체가 막힌다
       await expect(
@@ -188,19 +179,31 @@ describe('OnlineUserService', () => {
       expect(pipeline.exec).not.toHaveBeenCalled();
     });
 
-    it('소켓 매핑과 유저 소켓 목록에서 함께 제거해야 함', async () => {
+    it('매핑·소켓 집합·팀 온라인 해시를 Lua 한 번으로 정리해야 함 (사이에 새 탭 등록이 끼지 않게)', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(1);
 
       await service.removeSocket(SOCKET_ID);
 
-      expect(pipeline.del).toHaveBeenCalledWith(SOCKET_KEY);
-      expect(pipeline.srem).toHaveBeenCalledWith(USER_SOCKETS_KEY, SOCKET_ID);
+      expect(redis.eval).toHaveBeenCalledTimes(1);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        3,
+        SOCKET_KEY,
+        USER_SOCKETS_KEY,
+        TEAM_ONLINE_KEY,
+        SOCKET_ID,
+        String(USER_ID),
+      );
+      // 나눠 보내는 명령이 남아 있으면 원자성이 깨진다
+      expect(pipeline.exec).not.toHaveBeenCalled();
+      expect(redis.scard).not.toHaveBeenCalled();
+      expect(redis.hdel).not.toHaveBeenCalled();
+      expect(redis.del).not.toHaveBeenCalled();
     });
 
-    it('남은 소켓이 없으면 온라인 목록에서도 지워야 함', async () => {
+    it('Lua가 1을 돌려주면 완전히 오프라인이어야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(0);
+      redis.eval.mockResolvedValue(1);
 
       await expect(service.removeSocket(SOCKET_ID)).resolves.toEqual({
         teamId: TEAM_ID,
@@ -208,25 +211,19 @@ describe('OnlineUserService', () => {
         userName: '홍길동',
         isFullyOffline: true,
       });
-      expect(redis.hdel).toHaveBeenCalledWith(TEAM_ONLINE_KEY, String(USER_ID));
-      expect(redis.del).toHaveBeenCalledWith(USER_SOCKETS_KEY);
     });
 
-    it('다른 탭이 남아 있으면 온라인 목록을 건드리지 않아야 함', async () => {
+    it('다른 탭이 남아 있으면(Lua 0) 오프라인이 아니어야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(2);
+      redis.eval.mockResolvedValue(0);
 
       await expect(service.removeSocket(SOCKET_ID)).resolves.toMatchObject({
         isFullyOffline: false,
       });
-      // 지워버리면 아직 접속 중인 탭이 있는데도 오프라인으로 표시된다
-      expect(redis.hdel).not.toHaveBeenCalled();
-      expect(redis.del).not.toHaveBeenCalled();
     });
 
     it('문자열로 저장된 ID를 숫자로 되돌려야 함', async () => {
       redis.hgetall.mockResolvedValue(mapping);
-      redis.scard.mockResolvedValue(0);
 
       const result = await service.removeSocket(SOCKET_ID);
 
@@ -537,6 +534,38 @@ describe('OnlineUserService', () => {
         leader.onModuleDestroy();
         leader.onModuleDestroy();
       }).not.toThrow();
+    });
+  });
+  // 어댑터 클라이언트는 maxRetriesPerRequest: null이라 끊긴 동안 명령이 무한 대기한다 — ready가 아니면 묻지 않는다
+  describe('Redis가 ready가 아닐 때', () => {
+    beforeEach(() => {
+      redis.status = 'reconnecting';
+    });
+
+    it('명령을 보내지 않고 각 메서드의 실패 기본값을 돌려줘야 함', async () => {
+      await expect(service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID)).resolves.toEqual({
+        wasAlreadyOnline: false,
+      });
+      await expect(service.updateUserName(TEAM_ID, USER_ID, '새이름')).resolves.toBeUndefined();
+      await expect(service.getUserOnlineInfo(TEAM_ID, USER_ID)).resolves.toBeNull();
+      await expect(service.getOnlineUsersForTeam(TEAM_ID)).resolves.toEqual([]);
+      await expect(service.getOnlineUsersCount(TEAM_ID)).resolves.toBe(0);
+      await expect(service.getSocketUserMapping(SOCKET_ID)).resolves.toBeNull();
+
+      for (const fn of [redis.scard, redis.hget, redis.hgetall, redis.hlen, redis.exists, redis.smembers, redis.eval, redis.pipeline]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+    });
+
+    // 정리를 버리면 닫힌 탭이 온라인으로 남고, 죽은 socketId 때문에 이후 마지막 탭 판정이 영영 안 된다 —
+    // 끊긴 동안은 오프라인 큐에 맡겨 재연결 뒤에 적용되게 한다
+    it('정리(isSocketRegistered·removeSocket)는 그대로 명령을 보내야 함', async () => {
+      redis.exists.mockResolvedValue(1);
+      redis.hgetall.mockResolvedValue({ teamId: String(TEAM_ID), userId: String(USER_ID), userName: '홍길동' });
+
+      await expect(service.isSocketRegistered(SOCKET_ID)).resolves.toBe(true);
+      await expect(service.removeSocket(SOCKET_ID)).resolves.toMatchObject({ isFullyOffline: true });
+      expect(redis.eval).toHaveBeenCalledTimes(1);
     });
   });
 });
