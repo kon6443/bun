@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-11-13 — 포매터를 디렉토리 glob으로 돌려 무관한 파일 서식이 diff에 섞임
+
+- **실패 양상**: 리팩토링 중 새 파일 몇 개를 정리하려고 `prettier --write src/modules/game-room/*.ts`를 돌렸다. 손대지 않은 기존 파일 10개(keys·rate-limit·secrets·text·store와 각 spec)의 서식(줄바꿈·화살표 괄호)까지 바뀌어 리팩토링 diff에 섞였다.
+- **탐지 신호**: 수정하지 않은 파일이 `git status`에 ` M`으로 나온다. `git diff -w`로 보면 의미 변화가 없다.
+- **근본 원인**: 레포 `.prettierrc`(`arrowParens: avoid`·`printWidth 110`)와 기존 코드 서식이 다르다(lint는 prettier 규칙을 강제하지 않는다). 그래서 포매터를 돌리면 기존 파일도 바뀐다.
+- **예방 규칙**: 포매터·`eslint --fix`는 **이번에 만들거나 고친 파일 경로만** 넘긴다(glob·디렉토리 금지). 돌린 뒤 `git status`에서 예상 밖 파일이 없는지 확인한다.
+
 ## 2026-10-31 — 다른 세션이 실서버 E2E를 도는 동안 같은 worktree에서 watch dev 서버를 띄운 채 백엔드 편집을 시작했다
 
 - **실패 양상**: 프론트 세션이 로컬 백엔드 3500에 붙여 F5 실서버 E2E(Playwright 다중 탭)를 도는 중에, 메인이 같은 worktree에서 F7 서브에이전트에 백엔드 편집을 맡겼다. `nest start --watch`가 파일 변경마다 재시작해 E2E 한 판이 `ws ERR_CONNECTION_REFUSED`로 끊겼다. 이전 세션에서 띄운 watch 프로세스도 하나 더 살아 있었다.
