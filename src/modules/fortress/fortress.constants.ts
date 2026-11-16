@@ -61,6 +61,8 @@ export const LAZY_SAVE_WAIT_MAX_MS = 2_000;
 
 /** 결과 조회 REST 스로틀 — 테트리스 대전 결과 조회와 같은 값 */
 export const THROTTLE_FORTRESS_RESULT_READ = { short: { ttl: 1000, limit: 3 }, long: { ttl: 60000, limit: 60 } };
+/** AI전 기록 업로드(D-027) — 경기 하나 끝날 때 1번이라 넉넉하되, 저장(DB 3테이블)과 재시뮬레이션 비용을 막는다: 초당 1회 / 분당 6회 */
+export const THROTTLE_FORTRESS_SOLO_UPLOAD = { short: { ttl: 1000, limit: 1 }, long: { ttl: 60000, limit: 6 } };
 /** 최근 경기 목록 개수 */
 export const MATCH_LIST_DEFAULT_LIMIT = 10;
 export const MATCH_LIST_MAX_LIMIT = 20;
@@ -110,9 +112,9 @@ export const PASSWORD_FAILURE_LIMIT_IP = { maxFailures: 20, windowSec: 60 };
 /** playerToken: 24바이트 난수 base64url. Redis에는 sha256 해시만 둔다 */
 export const PLAYER_TOKEN_BYTES = 24;
 
-/** 매치 id 형식 — 서버가 발급한 12바이트 base64url */
+/** 매치 id 형식 — 서버가 발급한 12바이트 base64url(패딩 없음) = 정확히 16자. 바이트 수를 바꾸면 패턴 길이도 따라 바뀐다 */
 export const MATCH_ID_BYTES = 12;
-export const MATCH_ID_PATTERN = /^[A-Za-z0-9_-]{16}$/;
+export const MATCH_ID_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${Math.ceil((MATCH_ID_BYTES * 4) / 3)}}$`);
 
 /** 고정 윈도 빈도 제한 (Redis INCR + EXPIRE NX) — 방·로비는 테트리스 대전과 같은 값 */
 export const FORTRESS_RATE_LIMITS = {

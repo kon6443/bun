@@ -3,7 +3,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, MoreThanOrEqual, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { GAME_TYPES, GameScore, GameType } from '../../entities/GameScore';
 import { GameReplay } from '../../entities/GameReplay';
 import { GameReplayViewStat } from '../../entities/GameReplayViewStat';
@@ -22,6 +22,7 @@ import {
   GAME_WATCH_DAILY_CAP_MULTIPLIER,
 } from '../../common/constants/app.constants';
 import { toErrorDetail } from '../../common/utils/error.utils';
+import { isForeignKeyViolation, isUniqueViolation } from '../../common/utils/oracle-error.utils';
 import { ApiValidationErrorResponseDto } from '../../common/dto/api-error.dto';
 import { GameSession, GameSessionService } from './game-session.service';
 import { GameViewService } from './game-view.service';
@@ -105,13 +106,6 @@ const REPLAY_RESERVED_KEYS = ['frames', 'inputs'] as const;
 /** 503 GAME_VERIFY_BUSY — 원인과 다시 낼 때까지 기다릴 시간을 details에 싣는다(컨트롤러가 Retry-After로도 보낸다, games-polish BD-04·BD-14) */
 const verifyBusy = (reason: string, retryAfterSeconds: number) =>
   new GameVerifyBusyErrorResponseDto({ details: { reason, retryAfterSeconds } });
-
-/** Oracle 에러 번호 — 메시지가 아니라 드라이버 에러 번호로 판정한다. QueryFailedError가 아니면 undefined */
-const oraErrorNum = (error: unknown): number | undefined =>
-  error instanceof QueryFailedError ? (error.driverError as { errorNum?: number } | undefined)?.errorNum : undefined;
-
-/** Oracle 유니크 위반(ORA-00001) */
-const isUniqueViolation = (error: unknown): boolean => oraErrorNum(error) === 1;
 
 /**
  * 같은 리플레이 판정용 해시(D-003) — 게임·보드·seed·params·frames·inputs.
@@ -750,7 +744,7 @@ export class GamesService {
       await this.viewStatRepository.insert({ scoreId, statDate, gameType, ...NO_STATS, [column]: amount });
     } catch (error) {
       // 확인과 저장 사이에 기록이 지워졌다(FK 위반, ORA-02291) — 없는 기록과 같게 404
-      if (oraErrorNum(error) === 2291) throw new GameScoreNotFoundErrorResponseDto();
+      if (isForeignKeyViolation(error)) throw new GameScoreNotFoundErrorResponseDto();
       if (!isUniqueViolation(error)) throw error;
       await this.viewStatRepository.increment({ scoreId, statDate }, column, amount);
     }

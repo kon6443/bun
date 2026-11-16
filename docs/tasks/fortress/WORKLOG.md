@@ -748,3 +748,99 @@
   - DB에 마이그레이션 073·074가 적용됐다.
   - develop → main 배포를 진행 중이다(백엔드 먼저).
   - 포트리스 PR 때 develop을 반영한 뒤 확인할 것: app.module.ts, 마이그레이션 순서(D-026)
+
+## 2026-11-12 배포 (사용자 "테스트완료 배포해", 범위: 포트리스 + 사이트 홈)
+
+- 백엔드 커밋 5개
+  - 30637ca entities·마이그레이션
+  - 6f1637e fortress 모듈
+  - 9a89b48 E2E
+  - bc9384a docs(fortress)
+  - 48f197e docs(site-home)
+  - 그 뒤 origin/develop merge(8e8afd0, 충돌 없음)
+  - 세션 handoff 스냅샷 10개는 gitignore된 docs/handoff로 옮겼다(커밋 제외).
+- `pnpm ci:all`(sandbox 밖): EXIT 0
+  - lint 0 errors / 경고 6(기준선과 같음)
+  - 단위 2184/2184(97 스위트), E2E 337 통과·63 skip, build 통과
+- PR #329 → develop(GitHub checks lint·check·e2e pass, 머지 de30dc7) → release PR #330 → main 머지
+  - Deploy NestJS to Docker Swarm run 43187325140 success
+- 운영 확인
+  - GET /api/v1/fortress/matches?limit=1 → 200
+  - GET /fortress/skins/me(비로그인) → 401
+- 마이그레이션 3개는 운영 DB에 이미 테이블이 있다(로컬 경기 저장으로 확인). 추가 실행은 없다.
+- 프론트: 사이트 홈 next-bun #407(develop 대상). 포트리스 프론트 PR은 준비 중이다.
+- 프론트 배포
+  - next-bun #407(사이트 홈) → develop 머지(프론트 세션)
+  - #408(포트리스) → develop 머지(메인), CI verify·verify-sim pass
+  - release #409 → main 머지(메인). Deploy Next to Docker Swarm run 43190758169 success
+- 운영 확인 (메인 Playwright, 390·1280)
+  - /, /games, /games/fortress, /games/fortress/play → 200
+  - 홈에 테트리스·포트리스·디펜스 카드
+  - AI 대전 진입 시 vivid 화면과 조작 안내가 뜬다.
+  - 콘솔·페이지 오류 0
+  - 캡처: 메인 scratchpad prod/
+- 미검증 (운영)
+  - 온라인 대전 소켓 로비, 로그인 사용자 포인트·스킨
+  - 실기기 소리·진동
+
+## 2026-11-13 D-027 백엔드 리팩토링 전수조사 (조사만, 수정 없음)
+
+- 방법: 조사 서브에이전트가 src/modules/fortress/**(engine 제외)·game-room·users 공용 변경·Entity·test/fortress-*를 tetris-battle과 대조. 메인이 핵심 판정을 grep으로 재확인.
+- 메인 재확인
+  - TURN_AIM_MS·TURN_PLAYBACK_MAX_SECONDS·TURN_SLACK_MS: fortress-match.rules.ts 밖 사용 0 (src·test grep).
+  - Oracle errorNum 판정 중복: fortress-result.service.ts·games.service.ts·tetris-battle-result.service.ts·team/task-tags.ts·team/chat-read-cursor.ts·users/user-skin.service.ts (6파일).
+  - 하트비트(heartbeat·presencePing): fortress spec·e2e 언급 0 → 테스트 공백 확정.
+  - 스위퍼 TASK_SLOT 가드(fortress-match.service.ts:125-130): ENV 화이트리스트 없이 TASK_SLOT==='1'만 보는 것은 주석상 의도(CAS 멱등, LOCAL은 로컬 타이머만). 결함 아님, 통일은 선택.
+- 결론(우선순위)
+  1. 테스트 공백 보강 — recordHeartbeat·reconcileHeartbeats·reconcileLiveness·markGhosts, kickPlayer 성공 경로, listRooms·prepareEmote (높)
+  2. fortress-room.service.ts 내부 반복 헬퍼(빈도 제한 7회·NOT_HOST 4회·WAITING 검사 5회·ROOM_NOT_FOUND 삼키기 5회·유예 wake 3회) + 순수 규칙 fortress-room.rules.ts 분리 (중, 행동 변경 없음)
+  3. Oracle 에러 유틸 common 추출 (중, 다른 모듈 touch → 별도 PR)
+  4. 소소: 미사용 export, FortressModule exports, 커서 함수의 tetris-battle 서비스 의존, MATCH_ID 패턴-바이트 연동 (낮)
+  5. 방 코어 공용화 F3c (D-014, 테트리스 동시 영향, 별도 PR, 낮~중)
+- 불필요 판정: gateway·match.service·events.ts 분리, engine 사본 운영(manifest spec이 엄격), 인메모리 상태·트랜잭션·에러 정의·Guard·날짜·Redis TTL 규약 위반 없음.
+
+## 2026-11-13 D-027 백엔드 리팩토링 적용 (사용자 "모두 적용", 브랜치 refactor-onam-fortress, 미커밋)
+
+- 기준: origin/develop 96f7d14 (sandbox에서 fetch 실패 — 로컬 ref 기준. PR 전 fetch로 최신 확인 필요)
+- 적용
+  1. 테스트 공백: fortress-room.service.presence.spec.ts(하트비트 5·생존 확인 3·kick 4·listRooms 1·prepareEmote 1·finishMatch 재시도 1), fortress.gateway.spec.ts(+6: kick 2·setReady/setTank/rematch·chat/emote·heartbeat 2). 방어 제거 변이 3개로 4건 실패 확인 후 원복.
+  2. 방 서비스 정리: fortress-room.rules.ts(저장 모양·순수 규칙) 분리, 반복 헬퍼(limitOrThrow·assertHost·assertWaiting·isRoomGone·scheduleGraceSweep). 1238 → 약 1000줄.
+  3. Oracle 에러 판정 공용화: src/common/utils/oracle-error.utils.ts. 6파일(fortress-result·games·tetris-battle-result·team/task-tags·team/chat-read-cursor(+team-chat·team-tag 호출처)·users/user-skin) 이관. user-skin은 메시지 정규식 → errorNum 판정으로 바뀜(spec의 가짜 에러에 errorNum 추가).
+  4. 소소: 미사용 export 제거(TURN_AIM_MS·TURN_PLAYBACK_MAX_SECONDS·TURN_SLACK_MS·SlotTally·FinalAward·StoredMatchSlot), FortressModule exports 제거(main.ts app.get은 export 불필요), 경기 목록 커서 → game-room/game-match-cursor.ts(테트리스는 같은 이름으로 위임), MATCH_ID_PATTERN을 MATCH_ID_BYTES에서 유도, 게이트웨이 DTO에 계약 payload `implements`(events.ts는 프론트 사본 대상이라 무수정).
+  5. F3c(D-014) 공용 코어: game-room.rules.ts(자리 규칙), game-room-mutation.ts(mutateGameRoom CAS·notifyRoomChange·defaultWakeScheduler·socketClientIp), game-lobby-chat.ts(로비 채팅), game-room-socket.ts(WS 로그인 판정·WS 예외 처리). 포트리스·테트리스 둘 다 이 코어를 쓴다.
+     - 공용화하지 않은 것(근거): 입장 4갈래(commitJoin)·하트비트/생존 판정 후 경기 연동·kick·sweepExpired — 테트리스는 보드 스킨·previousMatch 토큰 갱신·connectedAt 옛 기록 폴백·KO, 포트리스는 팀·탱크·resign으로 경기 연동이 달라 훅 설계가 커진다. 남은 차이는 각 서비스에 둔다.
+     - #9 스위퍼 TASK_SLOT 가드: 주석상 의도(CAS 멱등, LOCAL은 로컬 타이머만) — 변경 없음.
+- D-014 게이트: 테트리스 spec·E2E 무수정 통과(git status에 tetris spec 변경 없음).
+- 검증: pnpm ci:core EXIT 0(lint 0 에러·경고 6 기준선, 단위 103 suites 2231/2231, build OK). pnpm ci:all(sandbox 밖) EXIT 0 — E2E 337 통과/63 건너뜀(기준선과 같음).
+- 실수 1건: prettier --write를 game-room/*.ts 전체에 돌려 무관한 기존 파일 10개 서식이 바뀜 → 서식만 바뀐 것 확인 후 그 파일들만 HEAD로 되돌림.
+- 미검증: 실서버 다중 레플리카 동작(코드 경로는 단위·E2E로만).
+
+## 2026-11-13 D-027 AI전 공유 업로드 — 백엔드 (미커밋, 브랜치 refactor-onam-fortress)
+
+- 프론트 조사(next-bun-ec 보고): 로컬 AI전 다시보기는 이미 있다(FortressPrototype.tsx:146). 기록은 FortressMatch.tsx:138·367·469, AI 수도 같은 Action으로 기록, 서버 재시뮬레이션은 config+actions만 있으면 된다(engine/replay.ts:15). 크기 2인 25수 1.5KB ~ 이론 최대 480수 약 29KB.
+- 추가 파일: migrations/1793404803000-AddFortressMatchesSource.ts(파일만 — 실행은 사용자), src/modules/fortress/fortress-solo.{dto,service,controller}.ts + spec, 에러 2종(fortress-error.dto.ts), THROTTLE_FORTRESS_SOLO_UPLOAD.
+- 변경: FortressMatch.source(Entity), 온라인 저장 toRecord에 source 'online', getMatch 응답 source, listMatches where에 source 'online'.
+- E2E가 잡은 결함 1건: actions에 `@IsObject({ each: true })`를 걸었더니 정상 요청이 422(전역 암묵 변환과 충돌). 행동 판정은 서비스가 엔진 Action 모양으로 옮기며 하므로 그 데코레이터를 뺐다(모르는 kind → 422 ACTION).
+- 검증: 서비스 spec 13(골든 경기 성공·팀전·스킨·거부 사유 8종 저장 없음), result spec +2(목록 online 필터), E2E +13(201·409·422 사유·VALIDATION_ERROR 9종). pnpm ci:all(sandbox 밖) EXIT 0 — 단위 104 suites 2245, E2E 349 통과/63 건너뜀.
+- 게이트
+  - 머지 전 차단: 마이그레이션 …803000 실행(사용자). Entity에 SOURCE가 있어 미실행 상태로 배포하면 FORTRESS_MATCHES 조회·저장이 ORA-00904.
+  - 미검증: 실제 DB에 solo 저장(마이그레이션 뒤 메인이 로컬에서 1건 확인 예정), 프론트 업로드 UI(구현 대기).
+
+## 2026-11-16 — AI전 공유 업로드 프론트 완료 · 메인 최종 확인
+
+- 프론트(next-bun-ec, feat-onam-fortress-replay-home, 미커밋): 리팩토링 #1~#20·classic 삭제 + 기록 공유 UI 완료. 최종 ci:core EXIT 0(테스트 2447), 리뷰어 2명 확정 0. 결과 화면 머리 "N턴"을 행동 수 → 엔진 final.turn.no(서버 turns와 같은 값)로 맞춤(메인 지시)
+- 메인 Playwright(로컬 front 3000 → back 3500, 1280·390): AI 상 vs AI 상 경기를 끝까지 돌려 결과 화면 [다시 보기 | 기록 공유] + 포트리스 홈 확인, 콘솔 에러 0. 업로드 요청은 route로 가로채 201을 돌려줌(DB 기록 0) → 공유 메뉴 열림, 업로드 1회
+- 가로챈 실제 프론트 본문 2건을 dist의 전역 ValidationPipe + FortressSoloService(트랜잭션 mock)에 그대로 통과시킴: 둘 다 통과, 저장될 turns 8·26 / 이름 "P1 (AI 상)" / HP·피해가 결과 화면 표시와 일치
+- 기존 온라인 경기 기록 보기(/games/fortress/battle/matches/WQdOdZHQtWqAXqWg, 읽기 전용) 1280·390 정상, 콘솔 에러 0
+- 미검증: 실제 업로드 → 운영 DB 저장(사용자 승인 대기), 로그인 계정 스킨 반영, 같은 origin 만료 쿠키 401 안내
+- 실제 업로드(사용자 실행, 2026-11-16): 201 matchId 1xuApZ_Y4_RhypHj. GET 결과 source solo·turns 24·이름 P1 / P2 (AI 중)·USER_ID null, GET replay 정상, 최근 목록(7건)에 없음, db:select로 경기 1·참가자 2·리플레이 1행 확인. 브라우저 기록 보기·다시 보기 재생 정상(콘솔 에러 0)
+- 관찰(후속 후보): 리플레이 재생 카운터는 "턴 3 / 25"(행동 수), 기록 머리는 "24턴"(엔진 turn.no) — 온라인 리플레이도 같은 표기라 기존 동작
+
+## 2026-11-16 — 턴 수 "진행한 턴"으로 통일 (D-027 보충 3)
+
+- 백엔드: `storedPlayedTurns(turns, playerCount)`(fortress-points.rules.ts)로 결과 API(상세·목록) turns를 진행한 턴으로 변환, DB TURNS는 turn.no 그대로. ci:all EXIT 0(unit 2252, E2E 350). 매핑 되돌리면 spec 2개 실패 확인
+- 로컬 실측 GET: 1xuApZ_Y4_RhypHj 24→25, WQdOdZHQtWqAXqWg 0→1, 목록 11→12·3→4·4→5·8→9, 상한 60·120 그대로
+- 프론트: matchTurns 하나로 결과 머리·공유 문구·리플레이 진행 표시 통일, aria-label "이전 수/다음 수". ci:core EXIT 0(2455), 리뷰 2명 0
+- 메인 Playwright(390, GET만 허용): 솔로 머리 "25턴", 진행 0/25→…→24/25→"끝 · 25 / 25턴" · 온라인 기권 머리 "1턴"→"끝 · 1 / 1턴", 콘솔 에러 0
+- 배포 조건: API turns 의미 변경 — 프론트·백엔드 같은 배포
+- 백엔드 리뷰(review-flow + Opus 병행): 둘 다 확정 결함 0. 개선 제안(후속, 결함 아님) — ① 저장 행 상한을 현재 MAX_ROUNDS로 재구성하므로 엔진 상한이 바뀌면 버전별 분기 필요(`MAX_ROUNDS` 고정 단정 테스트 후보) ② 서비스 spec이 +1 분기만 고정(상한 분기는 rules spec이 고정) ③ `FortressMatch.ts` TURNS 주석에 "API는 storedPlayedTurns로 변환" 보강

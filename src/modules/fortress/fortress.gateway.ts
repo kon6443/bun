@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server } from 'socket.io';
 import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
+import { socketClientIp } from '../game-room/game-room-mutation';
 import {
   HEARTBEAT_MIN_INTERVAL_MS,
   LIVENESS_PROBE_TIMEOUT_MS,
@@ -545,11 +546,8 @@ export class FortressGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
     }
   }
 
-  /** 빈도 제한용 IP — X-Forwarded-For의 **마지막** 값(main.ts `trust proxy 1`과 같은 기준, 첫 값은 위조 가능) */
+  /** 빈도 제한용 IP — X-Forwarded-For의 마지막 값(공용 socketClientIp) */
   private clientIp(client: FortressSocket): string {
-    const xff = client.handshake.headers['x-forwarded-for'];
-    const raw = Array.isArray(xff) ? xff[xff.length - 1] : xff;
-    const last = raw?.split(',').pop()?.trim();
-    return last || client.handshake.address || 'unknown';
+    return socketClientIp(client.handshake);
   }
 }

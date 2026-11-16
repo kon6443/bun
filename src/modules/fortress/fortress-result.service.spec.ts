@@ -8,7 +8,7 @@ import { FortressMatch } from '../../entities/FortressMatch';
 import { FortressPlayer } from '../../entities/FortressPlayer';
 import { FortressReplay } from '../../entities/FortressReplay';
 import { User } from '../../entities/User';
-import { encodeMatchCursor } from '../tetris-battle/tetris-battle-browse.service';
+import { encodeGameMatchCursor } from '../game-room/game-match-cursor';
 import { type MatchConfig, ENGINE_VERSION } from './engine';
 import { FortressMatchService } from './fortress-match.service';
 import { FortressMatchStore } from './fortress-match.store';
@@ -46,6 +46,7 @@ const matchRow = (over: Partial<FortressMatch> = {}): FortressMatch => ({
   mapId: 'canyon',
   seed: 12345,
   engineVersion: ENGINE_VERSION,
+  source: 'online',
   playerCount: 2,
   turns: 0,
   resultKind: 'win',
@@ -353,7 +354,8 @@ describe('FortressResultService', () => {
       const dto = await service.getMatch(MATCH_ID);
       expect(matchRepository.findOne).toHaveBeenCalledWith({ where: { matchId: MATCH_ID, isHidden: 0 } });
       expect(playerRepository.find).toHaveBeenCalledWith({ where: { matchId: MATCH_ID }, order: { place: 'ASC', slot: 'ASC' } });
-      expect(dto).toMatchObject({ matchId: MATCH_ID, mode: 'team', result: { kind: 'win', team: 1 }, startedAt: new Date(T0) });
+      // turns는 진행한 턴 — DB TURNS(turn.no) 0에 승패를 낸 턴을 더한다(D-027 보충 3)
+      expect(dto).toMatchObject({ matchId: MATCH_ID, mode: 'team', turns: 1, result: { kind: 'win', team: 1 }, startedAt: new Date(T0) });
       expect(dto.players[0]).toEqual({ playerId: 'p2', name: 'b', slot: 1, team: 1, tankId: 0, hp: 50, damage: 120, kos: 1, place: 1 });
       expect(transaction).not.toHaveBeenCalled();
     });
@@ -566,14 +568,23 @@ describe('FortressResultService', () => {
         { matchId: b.matchId, playerId: 'p1', slot: 0, name: 'z', userId: null, team: 0, tankId: 0, hp: 9, damage: 0, kos: 0, place: 1 },
       ]);
       const page = await service.listMatches({ limit: 2 });
-      expect(matchRepository.find).toHaveBeenCalledWith(expect.objectContaining({ take: 3, order: { crtdAt: 'DESC', matchId: 'DESC' } }));
+      expect(matchRepository.find).toHaveBeenCalledWith(expect.objectContaining({ take: 3, where: [{ isHidden: 0, source: 'online' }], order: { crtdAt: 'DESC', matchId: 'DESC' } }));
       expect(page.items.map((i) => i.matchId)).toEqual([a.matchId, b.matchId]);
       expect(page.items[0].players).toEqual([
         { name: 'x', slot: 0, team: null, place: 1 },
         { name: 'y', slot: 1, team: null, place: 2 },
       ]);
-      expect(page.items[1]).toMatchObject({ mode: 'team', result: { kind: 'draw', team: null } });
-      expect(page.nextCursor).toBe(encodeMatchCursor({ t: b.crtdAt.getTime(), id: b.matchId }));
+      expect(page.items[1]).toMatchObject({ mode: 'team', turns: 1, result: { kind: 'draw', team: null } });
+      expect(page.nextCursor).toBe(encodeGameMatchCursor({ t: b.crtdAt.getTime(), id: b.matchId }));
+    });
+
+    it('업로드한 AI전(source solo)은 커서 페이지에서도 빠진다 — 두 조건 모두 online', async () => {
+      const service = newService();
+      matchRepository.find.mockResolvedValue([]);
+      await service.listMatches({ cursor: encodeGameMatchCursor({ t: 1_000, id: 'AAAAAAAAAAAAAAA1' }) });
+      const where = (matchRepository.find.mock.calls[0][0] as { where: Record<string, unknown>[] }).where;
+      expect(where).toHaveLength(2);
+      expect(where.every((w) => w.source === 'online' && w.isHidden === 0)).toBe(true);
     });
 
     it('빈 목록 · 마지막 페이지는 nextCursor null · 잘못된 cursor는 422 VALIDATION_ERROR', async () => {

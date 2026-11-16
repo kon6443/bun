@@ -5,6 +5,7 @@ import { FortressMatchService, MatchBroadcast } from './fortress-match.service';
 import { DISCONNECT_GRACE_MS, FORTRESS_RATE_LIMITS, MATCH_DISCONNECT_GRACE_MS, MATCH_START_DELAY_MS } from './fortress.constants';
 import { RoomSettings, TurnResolvedPayload } from './fortress.events';
 import { FortressRoomService, SocketIdentity } from './fortress-room.service';
+import { toRoomState } from './fortress-room.rules';
 import { DEADLINES_KEY, LOBBY_KEY, codeOf, createRedisMock, expectCode, matchKey } from './__spec__/redis-mock';
 
 const T0 = 1_800_000_000_000;
@@ -540,7 +541,7 @@ describe('FortressRoomService', () => {
       const { room } = await create();
       const stored = mock.readRoom(room.code)!;
       delete stored.players[0].skin;
-      expect(service.toRoomState(stored).players[0].extra.skin).toEqual({ id: 'default', level: 1 });
+      expect(toRoomState(stored).players[0].extra.skin).toEqual({ id: 'default', level: 1 });
     });
   });
 
