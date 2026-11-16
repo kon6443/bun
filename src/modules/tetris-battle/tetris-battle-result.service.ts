@@ -5,7 +5,8 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import type { Redis } from 'ioredis';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { isForeignKeyViolation } from '../../common/utils/oracle-error.utils';
 import { toErrorDetail } from '../../common/utils/error.utils';
 import { TetrisBattleMatch } from '../../entities/TetrisBattleMatch';
 import { TetrisBattlePlayer, TetrisBattleVerdict } from '../../entities/TetrisBattlePlayer';
@@ -75,10 +76,6 @@ const garbageSenders = (garbage: readonly number[], log: readonly { id: number; 
   return senders;
 };
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
-
-/** Oracle FK 위반(ORA-02291) — 메시지 문자열이 아니라 드라이버 에러 번호로 판정한다(tetris-audit BE-13) */
-const isForeignKeyViolation = (error: unknown): boolean =>
-  error instanceof QueryFailedError && (error.driverError as { errorNum?: number } | undefined)?.errorNum === 2291;
 
 
 /**

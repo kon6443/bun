@@ -12,7 +12,7 @@ import {
   TeamTagNotFoundErrorResponseDto,
   TeamTagOrderConflictErrorResponseDto,
 } from './team-error.dto';
-import { isUniqueConstraintError } from './chat-read-cursor';
+import { isUniqueViolation } from '../../common/utils/oracle-error.utils';
 
 /** 팀 태그 응답 형태 (TeamTagDto) */
 export type TeamTagView = {
@@ -221,7 +221,7 @@ export class TeamTagService {
     try {
       return await this.teamTagRepository.save(tag);
     } catch (error) {
-      if (isUniqueConstraintError(error)) {
+      if (isUniqueViolation(error)) {
         throw new TeamTagDuplicateErrorResponseDto();
       }
       throw error;

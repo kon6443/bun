@@ -11,11 +11,35 @@ import {
   playerTokenMatches,
   verifyRoomPassword,
 } from '../game-room/game-room-secrets';
-import { chatTextAllowed, checkPlayerName, checkRoomName } from '../game-room/game-room-text';
+import { chatTextAllowed } from '../game-room/game-room-text';
 import { GameRoomStore } from '../game-room/game-room.store';
+import { RoomMutationDeps, RoomMutationOutcome, defaultWakeScheduler, mutateGameRoom, notifyRoomChange } from '../game-room/game-room-mutation';
+import { isInPlayingMatch, markSeatDisconnected, removeSeat } from '../game-room/game-room.rules';
 import { ENGINE_VERSION, MAP_IDS, type MapId, type MatchConfig, SEED_MAX, TANKS } from './engine';
 import { FortressMatchService, TurnSubmitInput } from './fortress-match.service';
-import { defaultTankSkin, storedTankSkin } from './fortress-skins';
+import {
+  ClientTraits,
+  EnterRoomResult,
+  RoomChangeResult,
+  SocketIdentity,
+  StoredMatchRef,
+  StoredPlayer,
+  StoredRoom,
+  assertCanStart,
+  assertHost,
+  assertPlayerName,
+  assertRoomName,
+  assertWaiting,
+  changeResult,
+  enterResult,
+  lineupOf,
+  newPlayer,
+  pruneDisconnected,
+  requireMember,
+  toRoomState,
+  toSummary,
+} from './fortress-room.rules';
+import { storedTankSkin } from './fortress-skins';
 import {
   DISCONNECT_GRACE_MS,
   FINISH_RETRY_DELAY_MS,
@@ -47,17 +71,13 @@ import {
   ChatMessagePayload,
   EmoteReceivedPayload,
   FortressEmoteId,
-  FortressTankSkin,
   MatchSnapshot,
   MatchStartingPayload,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   ROOM_MAX_PLAYERS,
-  ROOM_MIN_PLAYERS,
-  ROOM_NAME_MAX_LENGTH,
   RoomMapId,
   RoomMode,
-  RoomPlayer,
   RoomSettings,
   RoomState,
   RoomStatus,
@@ -72,109 +92,22 @@ import {
  */
 const KEYS = FORTRESS_ROOM_KEYS;
 
-/** Redis에 저장하는 플레이어 — 토큰은 해시만, socketId는 멤버십 판정 기준 (테트리스 StoredPlayer + 팀·탱크) */
-export interface StoredPlayer {
-  playerId: string;
-  name: string;
-  ready: boolean;
-  connected: boolean;
-  /** 로그인 유저면 userId, 게스트면 null */
-  userId: number | null;
-  /** sha256(playerToken) hex */
-  tokenHash: string;
-  /** team 모드 0|1, ffa는 null */
-  team: 0 | 1 | null;
-  /** 0..2 (엔진 TANKS 인덱스) */
-  tankId: number;
-  /**
-   * 탱크 스킨(F7) — 입장·자리 넘겨받기 때 계정 장착(게스트 default). 클라이언트 값은 받지 않는다.
-   * 이 필드가 없던 시절(F7 배포 전)에 저장된 방은 undefined = default
-   */
-  skin?: FortressTankSkin;
-  /** 지금 이 플레이어를 대표하는 소켓. 끊기면 null */
-  socketId: string | null;
-  /** 대표 소켓을 연 탭의 식별자 — 경기 중 같은 탭의 재연결만 연결된 자리를 넘겨받게 한다(테트리스 tetris-audit D-007과 같은 규칙) */
-  tabId: string | null;
-  /** 하트비트(presencePing 응답)를 보내는 클라이언트인지 */
-  heartbeat: boolean;
-  joinedAt: number;
-  connectedAt: number;
-  disconnectedAt: number | null;
-}
-
-export interface StoredMatchRef {
-  matchId: string;
-  /** 참가자 playerId (slot 순 = 입장 순서) */
-  playerIds: string[];
-}
-
-export interface StoredRoom extends RoomSettings {
-  code: string;
-  name: string;
-  /** `scrypt$<salt b64>$<key b64>` 또는 null(공개 방) */
-  passwordHash: string | null;
-  hostId: string;
-  status: RoomStatus;
-  createdAt: number;
-  /** 다음 playerId 번호 — 방 수명 동안 playerId를 재사용하지 않는다 */
-  nextPlayerSeq: number;
-  /** 입장 순서 */
-  players: StoredPlayer[];
-  /** 진행 중(PLAYING)이거나 직전(RESULT) 경기. 경기 상태 자체는 경기 키(fortress-match.store.ts) */
-  match: StoredMatchRef | null;
-}
-
-/** 요청한 소켓의 신원 — 게이트웨이가 소켓에서 꺼내 넘긴다(클라이언트 페이로드에서 받지 않는다) */
-export interface SocketIdentity {
-  socketId: string;
-  userId: number | null;
-  /** 빈도 제한·비밀번호 잠금용 IP */
-  ip: string;
-  /**
-   * 입장(create·join)에서만 — 게이트웨이가 계정 장착에서 읽은 탱크 스킨(F7). 조회 실패면 없다:
-   * 새 자리는 default, 기존 자리는 이전 값 유지(기본값으로 덮지 않게 — 테트리스 enterIdentity와 같은 규칙)
-   */
-  skin?: FortressTankSkin;
-}
-
-/** 입장 요청에 실려 오는 클라이언트 특성 */
-export interface ClientTraits {
-  tabId?: string;
-  heartbeat?: boolean;
-}
-
-export interface RoomChangeResult {
-  /** 변경 후 방 상태. 방이 삭제됐으면 null */
-  room: RoomState | null;
-  lobbyChanged: boolean;
-}
-
-export interface EnterRoomResult extends RoomChangeResult {
-  room: RoomState;
-  playerId: string;
-  playerToken: string;
-  /** 넘겨받은 이전 소켓 id — 게이트웨이가 그 소켓을 방 채널에서 빼고 sessionReplaced를 보낸다 */
-  replacedSocketId: string | null;
-  /** 경기 중 재연결이면 복원 정보 */
-  rejoin?: { match: MatchSnapshot };
-}
+export type { ClientTraits, EnterRoomResult, RoomChangeResult, SocketIdentity, StoredMatchRef, StoredPlayer, StoredRoom } from './fortress-room.rules';
 
 export type LiveSocketProbe = (code: string) => Promise<Set<string>>;
 export type SocketEvictor = (socketIds: string[]) => void;
 export type RoomChangeListener = (code: string, room: RoomState | null, lobbyChanged: boolean) => void;
 
-interface MutationOutcome<T> {
-  result: T;
-  deleteRoom?: boolean;
-}
-
 /** WAITING 방 우선, 같은 상태면 최근 생성 순 */
 const STATUS_ORDER: Record<RoomStatus, number> = { WAITING: 0, PLAYING: 1, RESULT: 2 };
+
+/** 그 사이 방이 사라졌다 — 정리·종료 반영 경로는 할 일이 없으므로 조용히 끝낸다 */
+const isRoomGone = (error: unknown): boolean => error instanceof FortressError && error.code === 'ROOM_NOT_FOUND';
 
 /**
  * 포트리스 대전 방 서비스 (DESIGN §4·§11, D-014) — `game-room` 부품 위에 새로 만든 방 라이프사이클.
  * 입장 4갈래·이탈·준비·방장 이양·강퇴·끊김·하트비트·생존 확인·재대결은 테트리스 대전 방 서비스와 같은 규칙을 따른다
- * (F3c에서 공용 코어로 뽑을 예정 — 그때까지 두 벌). 포트리스 차이: 방 설정(mode·mapId)·팀·탱크·경기 중 채팅 전원 허용,
+ * (F3c: CAS 변경·자리 규칙·알림은 game-room 공용 코어, 입장·하트비트 판정처럼 경기 연동이 게임마다 다른 흐름은 각 서비스). 포트리스 차이: 방 설정(mode·mapId)·팀·탱크·경기 중 채팅 전원 허용,
  * 경기는 FortressMatchService(서버 권위 턴)에 맡긴다.
  *
  * 모든 변경은 "읽기 → 순수 변경 → 버전 CAS"(mutateRoom). 멤버십은 매 요청 방 기록의 socketId로 판정한다(playbook 클러스터 1).
@@ -188,8 +121,17 @@ export class FortressRoomService {
   private socketEvictor: SocketEvictor | null = null;
   private readonly rooms = new GameRoomStore<StoredRoom>(KEYS, ROOM_TTL_SECONDS, this.logger);
   private readonly rateLimiter = new GameRoomRateLimiter<FortressRateLimitAction>(KEYS, FORTRESS_RATE_LIMITS, this.logger);
-  private wakeScheduler: (task: () => void, delayMs: number) => void = (task, delayMs) => {
-    setTimeout(task, delayMs).unref();
+  private wakeScheduler: (task: () => void, delayMs: number) => void = defaultWakeScheduler;
+  private readonly mutationDeps: RoomMutationDeps<StoredRoom, RoomState> = {
+    store: this.rooms,
+    logger: this.logger,
+    maxAttempts: ROOM_CAS_MAX_ATTEMPTS,
+    prune: pruneDisconnected,
+    changeOf: changeResult,
+    notify: (code, room, lobbyChanged) => this.notifyChange(code, room, lobbyChanged),
+    isRejection: (error) => error instanceof FortressError,
+    roomNotFound: () => new FortressError('ROOM_NOT_FOUND'),
+    roomBusy: () => new FortressError('ROOM_BUSY'),
   };
 
   constructor(private readonly matches: FortressMatchService) {
@@ -227,6 +169,11 @@ export class FortressRoomService {
     this.wakeScheduler(() => void task(), delayMs);
   }
 
+  /** 끊김 유예가 끝날 무렵 정리를 깨운다 */
+  private scheduleGraceSweep(code: string): void {
+    this.scheduleWake(() => this.sweepExpired(code), DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
+  }
+
   /**
    * 끊김 유예가 끝난 방 정리 — WAITING·RESULT는 유예 지난 자리 제거·방장 이양, PLAYING은 끊긴 참가자의 경기 끊김 기록을 채우고
    * 경기 마감 처리를 부른다(기록이 실패했어도 유예 resign이 일어나게 — 테트리스 리뷰 R2와 같은 이유). 실패는 로그만
@@ -250,7 +197,7 @@ export class FortressRoomService {
       }
       await this.mutateRoom<null>(redis, code, now, () => ({ result: null }));
     } catch (error) {
-      if (error instanceof FortressError && error.code === 'ROOM_NOT_FOUND') return;
+      if (isRoomGone(error)) return;
       this.logger.warn(`유예 만료 정리 실패 — 다음 요청이 정리: code=${code}, ${(error as Error).message}`);
     }
   }
@@ -263,8 +210,8 @@ export class FortressRoomService {
     const stored = await this.rooms.scanLobby(redis, LOBBY_SCAN_LIMIT, LOBBY_TAIL_SWEEP_BATCH);
     const summaries: RoomSummary[] = [];
     for (const source of stored) {
-      const room = this.pruneDisconnected(source, now);
-      if (room.players.length > 0) summaries.push(this.toSummary(room));
+      const room = pruneDisconnected(source, now);
+      if (room.players.length > 0) summaries.push(toSummary(room));
     }
     const sorted = summaries
       .map((summary, index) => ({ summary, index }))
@@ -289,8 +236,8 @@ export class FortressRoomService {
     now = Date.now(),
     beforeCommit?: () => Promise<void>,
   ): Promise<EnterRoomResult> {
-    this.assertRoomName(input.name);
-    this.assertPlayerName(input.playerName);
+    assertRoomName(input.name);
+    assertPlayerName(input.playerName);
     const redis = this.requireRedis();
     const passwordHash = input.password
       ? await hashRoomPassword(input.password, { saltBytes: PASSWORD_SALT_BYTES, keyLength: PASSWORD_KEY_LENGTH })
@@ -315,9 +262,9 @@ export class FortressRoomService {
         players: [],
         match: null,
       };
-      room.players.push(this.newPlayer(room, playerId, input.playerName, who, tokenHash, input, now));
+      room.players.push(newPlayer(room, playerId, input.playerName, who, tokenHash, input, now));
       if (await this.rooms.compareAndSet(redis, room.code, '0', room)) {
-        return { room: this.toRoomState(room), playerId, playerToken: token, replacedSocketId: null, lobbyChanged: true };
+        return { room: toRoomState(room), playerId, playerToken: token, replacedSocketId: null, lobbyChanged: true };
       }
     }
     throw new FortressError('ROOM_BUSY');
@@ -348,7 +295,7 @@ export class FortressRoomService {
       // 복원 중 lazy 마감 처리(끊김 resign 등)로 경기가 끝났을 수 있다 — finishMatch가 RESULT를 이미 알렸으니
       // ack의 room도 최신으로(옛 PLAYING을 돌려주지 않게, leaveRoom과 같은 이유)
       const latest = await this.rooms.load(this.requireRedis(), input.code);
-      const room = latest ? this.toRoomState(latest.room) : entered.room;
+      const room = latest ? toRoomState(latest.room) : entered.room;
       return rejoin ? { ...entered, room, rejoin } : { ...entered, room };
     } catch (error) {
       this.logger.warn(`재연결 복원 실패 — 복원 없이 입장: code=${input.code}, player=${entered.playerId}, ${(error as Error).message}`);
@@ -379,11 +326,11 @@ export class FortressRoomService {
       if (!seat) throw new FortressError('INVALID_PLAYER_TOKEN');
       this.assertCanTakeOver(current.room, seat, who, input.tabId);
     } else {
-      this.assertPlayerName(input.playerName);
+      assertPlayerName(input.playerName);
     }
     let passwordVerified = current.room.passwordHash === null;
     if (!isRejoin && !isSameSocket && !userSeat) {
-      const view = this.pruneDisconnected(current.room, now);
+      const view = pruneDisconnected(current.room, now);
       if (view.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
       if (view.players.length >= view.maxPlayers) throw new FortressError('ROOM_FULL');
       if (current.room.passwordHash) {
@@ -404,14 +351,14 @@ export class FortressRoomService {
         if (room.players.some((p) => p !== player && p.socketId === who.socketId)) throw new FortressError('INVALID_PLAYER_TOKEN');
         const replaced = this.takeOver(room, player, who, input, now);
         resumed = true;
-        return { result: this.enterResult(room, before, player.playerId, input.playerToken as string, replaced) };
+        return { result: enterResult(room, before, player.playerId, input.playerToken as string, replaced) };
       }
 
       const self = room.players.find((p) => p.socketId === who.socketId);
       if (self) {
         self.tokenHash = fresh.tokenHash;
         this.refreshSkin(room, self, who);
-        return { result: this.enterResult(room, before, self.playerId, fresh.token, null) };
+        return { result: enterResult(room, before, self.playerId, fresh.token, null) };
       }
 
       const seat = this.findUserSeat(room, who);
@@ -419,7 +366,7 @@ export class FortressRoomService {
         const replaced = this.takeOver(room, seat, who, input, now);
         seat.tokenHash = fresh.tokenHash;
         resumed = true;
-        return { result: this.enterResult(room, before, seat.playerId, fresh.token, replaced) };
+        return { result: enterResult(room, before, seat.playerId, fresh.token, replaced) };
       }
 
       // 읽을 때는 멤버였는데(비밀번호 생략) 그 사이 이탈·정리돼 새 플레이어 갈래로 왔다 → 비밀번호 없이 추가하지 않는다
@@ -428,15 +375,15 @@ export class FortressRoomService {
       if (room.players.length >= room.maxPlayers) throw new FortressError('ROOM_FULL');
       const playerId = `p${room.nextPlayerSeq}`;
       room.nextPlayerSeq += 1;
-      room.players.push(this.newPlayer(room, playerId, input.playerName, who, fresh.tokenHash, input, now));
-      return { result: this.enterResult(room, before, playerId, fresh.token, null) };
+      room.players.push(newPlayer(room, playerId, input.playerName, who, fresh.tokenHash, input, now));
+      return { result: enterResult(room, before, playerId, fresh.token, null) };
     });
     return { entered, resumed };
   }
 
   /** 경기 중 참가자 자리를 다른 탭·기기가 아직 쓰고 있으면 SEAT_IN_USE (같은 탭 tabId의 재연결은 허용) — 테트리스와 같은 규칙 */
   private assertCanTakeOver(room: StoredRoom, player: StoredPlayer, who: SocketIdentity, tabId: string | undefined): void {
-    const inMatch = room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId) === true;
+    const inMatch = isInPlayingMatch(room, player.playerId);
     const usedElsewhere = player.connected && player.socketId !== null && player.socketId !== who.socketId;
     const sameTab = tabId !== undefined && player.tabId === tabId;
     if (inMatch && usedElsewhere && !sameTab) throw new FortressError('SEAT_IN_USE');
@@ -454,8 +401,7 @@ export class FortressRoomService {
    */
   private refreshSkin(room: StoredRoom, player: StoredPlayer, who: SocketIdentity): void {
     if (!who.skin || who.userId === null || who.userId !== player.userId) return;
-    const inMatch = room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId) === true;
-    if (!inMatch) player.skin = who.skin;
+    if (!isInPlayingMatch(room, player.playerId)) player.skin = who.skin;
   }
 
   /** 기존 자리를 이 소켓으로 넘겨받는다 — 넘겨준 이전 소켓 id(없거나 같은 소켓이면 null) */
@@ -485,14 +431,11 @@ export class FortressRoomService {
       code,
       now,
       (room, before) => {
-        const player = this.requireMember(room, socketId);
-        const target =
-          room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId)
-            ? { matchId: room.match.matchId, playerId: player.playerId }
-            : null;
-        this.removePlayer(room, player.playerId);
+        const player = requireMember(room, socketId);
+        const target = isInPlayingMatch(room, player.playerId) && room.match ? { matchId: room.match.matchId, playerId: player.playerId } : null;
+        removeSeat(room, player.playerId);
         if (room.players.length === 0) return { result: { change: { room: null, lobbyChanged: true }, target }, deleteRoom: true };
-        return { result: { change: this.changeResult(room, before), target } };
+        return { result: { change: changeResult(room, before), target } };
       },
     );
     if (!target) return change;
@@ -510,19 +453,19 @@ export class FortressRoomService {
     if (!change.room) return change;
     const latest = await this.rooms.load(redis, code).catch(() => null);
     // 종료 반영(RESULT)은 finishMatch가 이미 알렸다 — 게이트웨이가 마지막에 보내는 roomState가 옛 PLAYING이 되지 않게 최신으로
-    return latest ? { room: this.toRoomState(latest.room), lobbyChanged: change.lobbyChanged } : change;
+    return latest ? { room: toRoomState(latest.room), lobbyChanged: change.lobbyChanged } : change;
   }
 
   async setReady(code: string, socketId: string, ready: boolean, now = Date.now()): Promise<RoomChangeResult> {
     const redis = this.requireRedis();
     void this.reconcileLiveness(redis, code, now);
     const member = await this.requireMemberOf(redis, code, socketId);
-    if (!(await this.consumeRateLimit('setReady', `${code}:${member.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('setReady', `${code}:${member.playerId}`);
     return this.mutateRoom(redis, code, now, (room, before) => {
-      const player = this.requireMember(room, socketId);
-      if (room.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
+      const player = requireMember(room, socketId);
+      assertWaiting(room);
       player.ready = ready;
-      return { result: this.changeResult(room, before) };
+      return { result: changeResult(room, before) };
     });
   }
 
@@ -537,14 +480,14 @@ export class FortressRoomService {
     const redis = this.requireRedis();
     await this.consumeEditLimit(redis, code, socketId);
     return this.mutateRoom(redis, code, now, (room, before) => {
-      const player = this.requireMember(room, socketId);
-      if (room.hostId !== player.playerId) throw new FortressError('NOT_HOST');
-      if (room.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
+      const player = requireMember(room, socketId);
+      assertHost(room, player);
+      assertWaiting(room);
       const mode: RoomMode = patch.mode ?? room.mode;
       const mapId: RoomMapId = patch.mapId ?? room.mapId;
       const maxPlayers = mode === 'team' ? ROOM_MAX_PLAYERS : (patch.maxPlayers ?? room.maxPlayers);
       if (maxPlayers < room.players.length) throw new FortressError('TOO_MANY_PLAYERS');
-      if (mode === room.mode && mapId === room.mapId && maxPlayers === room.maxPlayers) return { result: this.changeResult(room, before) };
+      if (mode === room.mode && mapId === room.mapId && maxPlayers === room.maxPlayers) return { result: changeResult(room, before) };
       if (mode !== room.mode) {
         room.players.forEach((p, i) => {
           p.team = mode === 'team' ? (i % 2 === 0 ? 0 : 1) : null;
@@ -554,7 +497,7 @@ export class FortressRoomService {
       room.mapId = mapId;
       room.maxPlayers = maxPlayers;
       for (const p of room.players) p.ready = false;
-      return { result: this.changeResult(room, before) };
+      return { result: changeResult(room, before) };
     });
   }
 
@@ -563,13 +506,13 @@ export class FortressRoomService {
     const redis = this.requireRedis();
     await this.consumeEditLimit(redis, code, socketId);
     return this.mutateRoom(redis, code, now, (room, before) => {
-      const player = this.requireMember(room, socketId);
-      if (room.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
+      const player = requireMember(room, socketId);
+      assertWaiting(room);
       if (room.mode !== 'team') throw new FortressError('INVALID_PAYLOAD', '팀전 방에서만 팀을 고를 수 있습니다.');
-      if (player.team === team) return { result: this.changeResult(room, before) };
+      if (player.team === team) return { result: changeResult(room, before) };
       if (room.players.filter((p) => p !== player && p.team === team).length >= TEAM_SIZE) throw new FortressError('TEAM_FULL');
       player.team = team;
-      return { result: this.changeResult(room, before) };
+      return { result: changeResult(room, before) };
     });
   }
 
@@ -579,16 +522,16 @@ export class FortressRoomService {
     if (!Number.isInteger(tankId) || tankId < 0 || tankId >= TANKS.length) throw new FortressError('INVALID_PAYLOAD');
     await this.consumeEditLimit(redis, code, socketId);
     return this.mutateRoom(redis, code, now, (room, before) => {
-      const player = this.requireMember(room, socketId);
-      if (room.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
+      const player = requireMember(room, socketId);
+      assertWaiting(room);
       player.tankId = tankId;
-      return { result: this.changeResult(room, before) };
+      return { result: changeResult(room, before) };
     });
   }
 
   private async consumeEditLimit(redis: Redis, code: string, socketId: string): Promise<void> {
     const member = await this.requireMemberOf(redis, code, socketId);
-    if (!(await this.consumeRateLimit('roomEdit', `${code}:${member.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('roomEdit', `${code}:${member.playerId}`);
   }
 
   /**
@@ -605,14 +548,9 @@ export class FortressRoomService {
         (room, before) => {
           const player = room.players.find((p) => p.socketId === socketId);
           if (!player) return { result: null };
-          player.socketId = null;
-          player.connected = false;
-          player.disconnectedAt = now;
-          const inMatch =
-            room.status === 'PLAYING' && room.match?.playerIds.includes(player.playerId)
-              ? { matchId: room.match.matchId, playerId: player.playerId }
-              : null;
-          return { result: { change: this.changeResult(room, before), inMatch } };
+          markSeatDisconnected(player, now);
+          const inMatch = isInPlayingMatch(room, player.playerId) && room.match ? { matchId: room.match.matchId, playerId: player.playerId } : null;
+          return { result: { change: changeResult(room, before), inMatch } };
         },
       );
       if (outcome?.inMatch) {
@@ -620,10 +558,10 @@ export class FortressRoomService {
           this.logger.warn(`경기 끊김 기록 실패 — 깨우기가 회수: code=${code}, ${(error as Error).message}`);
         });
       }
-      if (outcome) this.scheduleWake(() => this.sweepExpired(code), DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
+      if (outcome) this.scheduleGraceSweep(code);
       return outcome?.change ?? null;
     } catch (error) {
-      if (error instanceof FortressError && error.code === 'ROOM_NOT_FOUND') return null;
+      if (isRoomGone(error)) return null;
       throw error;
     }
   }
@@ -640,8 +578,8 @@ export class FortressRoomService {
     const redis = this.requireRedis();
     const loaded = await this.rooms.load(redis, code);
     if (!loaded) throw new FortressError('ROOM_NOT_FOUND');
-    const view = this.pruneDisconnected(loaded.room, now);
-    this.assertCanStart(view, socketId);
+    const view = pruneDisconnected(loaded.room, now);
+    assertCanStart(view, socketId);
 
     const matchId = randomBytes(MATCH_ID_BYTES).toString('base64url');
     const mapId: MapId = view.mapId === 'random' ? MAP_IDS[randomInt(MAP_IDS.length)] : view.mapId;
@@ -654,7 +592,7 @@ export class FortressRoomService {
     };
     // skin은 시작 때 고정(F7) — 화면·리플레이가 같은 값이고, 경기 중 나가 roomState에서 빠진 참가자도 slots로 그린다
     const slots = view.players.map((p, slot) => ({ slot, playerId: p.playerId, name: p.name, skin: storedTankSkin(p.skin) }));
-    const lineup = this.lineupOf(view);
+    const lineup = lineupOf(view);
     // userId는 결과 저장용(F6) — 경기 키에만 두고 matchStarting으로는 보내지 않는다
     const matchSlots = view.players.map((p, slot) => ({ ...slots[slot], userId: p.userId }));
     const match = await this.matches.create({ matchId, code, roomName: view.name, config, slots: matchSlots }, now);
@@ -662,11 +600,11 @@ export class FortressRoomService {
     let roomCommitted = false;
     try {
       const change = await this.mutateRoom<RoomChangeResult>(redis, code, now, (room, before) => {
-        this.assertCanStart(room, socketId);
-        if (this.lineupOf(room) !== lineup) throw new FortressError('ROOM_BUSY');
+        assertCanStart(room, socketId);
+        if (lineupOf(room) !== lineup) throw new FortressError('ROOM_BUSY');
         room.status = 'PLAYING';
         room.match = { matchId, playerIds: room.players.map((p) => p.playerId) };
-        return { result: this.changeResult(room, before) };
+        return { result: changeResult(room, before) };
       });
       roomCommitted = true;
       await this.matches.activate(match, now);
@@ -698,7 +636,7 @@ export class FortressRoomService {
         if (room.status !== 'PLAYING' || room.match?.matchId !== matchId) return { result: null };
         room.status = 'WAITING';
         room.match = null;
-        return { result: this.changeResult(room, before) };
+        return { result: changeResult(room, before) };
       });
       if (!change) return false;
       this.notifyChange(code, change.room, change.lobbyChanged);
@@ -709,24 +647,19 @@ export class FortressRoomService {
     }
   }
 
-  /** 시작 확인용 — 참가자·팀·탱크가 경기 설정을 만든 때와 같은지 */
-  private lineupOf(room: StoredRoom): string {
-    return JSON.stringify(room.players.map((p) => [p.playerId, p.team, p.tankId]));
-  }
-
   /** 재대결 — 방장, RESULT → WAITING, 전원 ready=false. 끝난 경기의 방 반영이 늦었으면 먼저 반영한다 */
   async rematch(code: string, socketId: string, now = Date.now()): Promise<RoomChangeResult> {
     const redis = this.requireRedis();
     await this.repairEndedMatch(redis, code, now);
     return this.mutateRoom<RoomChangeResult>(redis, code, now, (room, before) => {
-      const player = this.requireMember(room, socketId);
-      if (room.hostId !== player.playerId) throw new FortressError('NOT_HOST');
+      const player = requireMember(room, socketId);
+      assertHost(room, player);
       if (room.status === 'PLAYING') throw new FortressError('MATCH_ALREADY_STARTED');
       if (room.status !== 'RESULT') throw new FortressError('MATCH_NOT_FOUND');
       room.status = 'WAITING';
       room.match = null;
       for (const p of room.players) p.ready = false;
-      return { result: this.changeResult(room, before) };
+      return { result: changeResult(room, before) };
     });
   }
 
@@ -734,7 +667,7 @@ export class FortressRoomService {
   async turnSubmit(code: string, socketId: string, input: TurnSubmitInput & { matchId: string }, now = Date.now()): Promise<void> {
     const redis = this.requireRedis();
     const { player } = await this.requireMatchMember(redis, code, socketId, input.matchId, ['PLAYING']);
-    if (!(await this.consumeRateLimit('turnSubmit', `${code}:${player.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('turnSubmit', `${code}:${player.playerId}`);
     await this.clearStaleDisconnect(input.matchId, player.playerId, now);
     await this.matches.submit(input.matchId, player.playerId, input, now);
   }
@@ -743,7 +676,7 @@ export class FortressRoomService {
   async resync(code: string, socketId: string, input: { matchId: string; seq?: number; clientHash?: string }, now = Date.now()): Promise<MatchSnapshot> {
     const redis = this.requireRedis();
     const { player } = await this.requireMatchMember(redis, code, socketId, input.matchId, ['PLAYING', 'RESULT']);
-    if (!(await this.consumeRateLimit('resync', `${code}:${player.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('resync', `${code}:${player.playerId}`);
     await this.clearStaleDisconnect(input.matchId, player.playerId, now);
     const snapshot = await this.matches.snapshot(input.matchId, now, input);
     if (!snapshot) throw new FortressError('MATCH_NOT_FOUND');
@@ -774,17 +707,17 @@ export class FortressRoomService {
       const change = await this.mutateRoom<RoomChangeResult | null>(redis, code, now, (room, before) => {
         if (room.status !== 'PLAYING' || room.match?.matchId !== matchId) return { result: null };
         room.status = 'RESULT';
-        return { result: this.changeResult(room, before) };
+        return { result: changeResult(room, before) };
       });
       if (!change) return;
       this.notifyChange(code, change.room, change.lobbyChanged);
       // 경기 중 끊긴 자리는 PLAYING 동안 정리되지 않는다 — RESULT가 된 지금부터 유예 정리를 깨운다
       if (change.room?.players.some((p) => !p.connected)) {
         this.scheduleWake(() => this.sweepExpired(code), WAKE_MARGIN_MS);
-        this.scheduleWake(() => this.sweepExpired(code), DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
+        this.scheduleGraceSweep(code);
       }
     } catch (error) {
-      if (error instanceof FortressError && error.code === 'ROOM_NOT_FOUND') return;
+      if (isRoomGone(error)) return;
       this.logger.warn(`경기 종료 반영 실패 — 잠시 뒤 다시 시도: code=${code}, ${(error as Error).message}`);
       if (attempt < FINISH_RETRY_MAX_ATTEMPTS) {
         this.scheduleWake(() => this.finishMatch(code, matchId, attempt + 1), FINISH_RETRY_DELAY_MS);
@@ -817,20 +750,6 @@ export class FortressRoomService {
     }
   }
 
-  private assertCanStart(room: StoredRoom, socketId: string): void {
-    const player = this.requireMember(room, socketId);
-    if (room.hostId !== player.playerId) throw new FortressError('NOT_HOST');
-    if (room.status !== 'WAITING') throw new FortressError('MATCH_ALREADY_STARTED');
-    if (room.players.length < ROOM_MIN_PLAYERS) throw new FortressError('NOT_ENOUGH_PLAYERS');
-    if (room.mode === 'team') {
-      const teamA = room.players.filter((p) => p.team === 0).length;
-      const teamB = room.players.filter((p) => p.team === 1).length;
-      if (teamA !== TEAM_SIZE || teamB !== TEAM_SIZE) throw new FortressError('TEAM_UNBALANCED');
-    }
-    // 방장은 ready 불필요 — 시작 버튼이 곧 준비. 연결은 방장 포함 전원
-    if (room.players.some((p) => !p.connected || (p.playerId !== room.hostId && !p.ready))) throw new FortressError('NOT_ALL_READY');
-  }
-
   private async requireMatchMember(
     redis: Redis,
     code: string,
@@ -840,7 +759,7 @@ export class FortressRoomService {
   ): Promise<{ room: StoredRoom; player: StoredPlayer; ref: StoredMatchRef }> {
     const loaded = await this.rooms.load(redis, code);
     if (!loaded) throw new FortressError('ROOM_NOT_FOUND');
-    const player = this.requireMember(loaded.room, socketId);
+    const player = requireMember(loaded.room, socketId);
     const ref = loaded.room.match;
     if (!statuses.includes(loaded.room.status) || !ref || ref.matchId !== matchId || !ref.playerIds.includes(player.playerId)) {
       throw new FortressError('MATCH_NOT_FOUND');
@@ -892,15 +811,15 @@ export class FortressRoomService {
   async kickPlayer(code: string, socketId: string, targetId: string, now = Date.now()): Promise<RoomChangeResult & { kickedSocketId: string | null }> {
     const redis = this.requireRedis();
     const member = await this.requireMemberOf(redis, code, socketId);
-    if (!(await this.consumeRateLimit('kick', `${code}:${member.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('kick', `${code}:${member.playerId}`);
     return this.mutateRoom(redis, code, now, (room, before) => {
-      const host = this.requireMember(room, socketId);
-      if (room.hostId !== host.playerId) throw new FortressError('NOT_HOST');
+      const host = requireMember(room, socketId);
+      assertHost(room, host);
       if (room.status === 'PLAYING') throw new FortressError('MATCH_ALREADY_STARTED');
       const target = room.players.find((p) => p.playerId === targetId);
       if (!target || target.playerId === host.playerId) throw new FortressError('PLAYER_NOT_FOUND');
-      this.removePlayer(room, target.playerId);
-      return { result: { ...this.changeResult(room, before), kickedSocketId: target.socketId } };
+      removeSeat(room, target.playerId);
+      return { result: { ...changeResult(room, before), kickedSocketId: target.socketId } };
     });
   }
 
@@ -937,7 +856,7 @@ export class FortressRoomService {
       if (silent.size === 0) return;
       await this.markGhosts(redis, code, now, (p) => silent.get(p.playerId) === p.socketId, true);
     } catch (error) {
-      if (error instanceof FortressError && error.code === 'ROOM_NOT_FOUND') return;
+      if (isRoomGone(error)) return;
       this.logger.warn(`하트비트 판정 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
     }
   }
@@ -963,7 +882,7 @@ export class FortressRoomService {
       if (loaded) await this.resignDepartedPlayers(loaded.room, now);
       await this.repairEndedMatch(redis, code, now);
     } catch (error) {
-      if (error instanceof FortressError && error.code === 'ROOM_NOT_FOUND') return;
+      if (isRoomGone(error)) return;
       this.logger.warn(`생존 확인 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
     }
   }
@@ -975,17 +894,13 @@ export class FortressRoomService {
     const change = await this.mutateRoom<RoomChangeResult | null>(redis, code, now, (room, before) => {
       const found = room.players.filter((p) => p.connected && p.socketId !== null && isGhost(p));
       ghosts = found.map((p) => ({ playerId: p.playerId, socketId: p.socketId as string }));
-      for (const p of found) {
-        p.socketId = null;
-        p.connected = false;
-        p.disconnectedAt = now;
-      }
+      for (const p of found) markSeatDisconnected(p, now);
       matchId = room.status === 'PLAYING' ? (room.match?.matchId ?? null) : null;
-      return { result: found.length > 0 ? this.changeResult(room, before) : null };
+      return { result: found.length > 0 ? changeResult(room, before) : null };
     });
     if (!change) return;
     if (evict) this.socketEvictor?.(ghosts.map((g) => g.socketId));
-    this.scheduleWake(() => this.sweepExpired(code), DISCONNECT_GRACE_MS + WAKE_MARGIN_MS);
+    this.scheduleGraceSweep(code);
     this.notifyChange(code, change.room, change.lobbyChanged);
     const inMatch: string | null = matchId;
     if (!inMatch) return;
@@ -1003,15 +918,20 @@ export class FortressRoomService {
     const redis = this.requireRedis();
     const player = await this.requireMemberOf(redis, code, socketId);
     if (!chatTextAllowed(text)) throw new FortressError('CHAT_FORBIDDEN');
-    if (!(await this.consumeRateLimit('chat', `${code}:${player.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('chat', `${code}:${player.playerId}`);
     return { playerId: player.playerId, name: player.name, text, at: new Date(now).toISOString() };
   }
 
   async prepareEmote(code: string, socketId: string, emoteId: FortressEmoteId, now = Date.now()): Promise<EmoteReceivedPayload> {
     const redis = this.requireRedis();
     const player = await this.requireMemberOf(redis, code, socketId);
-    if (!(await this.consumeRateLimit('emote', `${code}:${player.playerId}`))) throw new FortressError('RATE_LIMITED');
+    await this.limitOrThrow('emote', `${code}:${player.playerId}`);
     return { playerId: player.playerId, emoteId, at: new Date(now).toISOString() };
+  }
+
+  /** 빈도 제한을 넘으면 RATE_LIMITED */
+  private async limitOrThrow(action: FortressRateLimitAction, subject: string): Promise<void> {
+    if (!(await this.consumeRateLimit(action, subject))) throw new FortressError('RATE_LIMITED');
   }
 
   /** 고정 윈도 빈도 제한(공용 GameRoomRateLimiter). Redis 실패면 통과(fail-open) */
@@ -1047,192 +967,19 @@ export class FortressRoomService {
     if (verdict === 'WRONG') throw new FortressError('ROOM_WRONG_PASSWORD');
   }
 
-  /**
-   * 읽기 → 정리(유예 지난 끊긴 플레이어) → 변경 → CAS 쓰기. 버전이 바뀌었으면 처음부터 다시(테트리스 mutateRoom과 같은 규칙).
-   * `fn`은 재시도될 수 있으므로 순수해야 한다. 바뀐 게 없으면 쓰지 않는다. 정리 결과 아무도 없으면 방을 지우고 ROOM_NOT_FOUND
-   */
-  private async mutateRoom<T>(
-    redis: Redis,
-    code: string,
-    now: number,
-    fn: (room: StoredRoom, before: StoredRoom) => MutationOutcome<T>,
-  ): Promise<T> {
-    for (let attempt = 0; attempt < ROOM_CAS_MAX_ATTEMPTS; attempt++) {
-      const loaded = await this.rooms.load(redis, code);
-      if (!loaded) throw new FortressError('ROOM_NOT_FOUND');
-      const originalJson = JSON.stringify(loaded.room);
-      const room = this.pruneDisconnected(loaded.room, now);
-
-      if (room.players.length === 0) {
-        if (await this.rooms.compareAndSet(redis, code, loaded.version, null)) this.notifyChange(code, null, true);
-        throw new FortressError('ROOM_NOT_FOUND');
-      }
-
-      const before = JSON.parse(originalJson) as StoredRoom;
-      let outcome: MutationOutcome<T>;
-      try {
-        outcome = fn(room, before);
-      } catch (error) {
-        // 요청은 거부됐지만 정리(유예 지난 플레이어 제거)는 반영하고 방송한다
-        const prunedOnly = this.pruneDisconnected(loaded.room, now);
-        if (
-          error instanceof FortressError &&
-          JSON.stringify(prunedOnly) !== originalJson &&
-          (await this.rooms.compareAndSet(redis, code, loaded.version, prunedOnly))
-        ) {
-          const change = this.changeResult(prunedOnly, before);
-          this.notifyChange(code, change.room, change.lobbyChanged);
-        }
-        throw error;
-      }
-
-      if (outcome.deleteRoom) {
-        if (await this.rooms.compareAndSet(redis, code, loaded.version, null)) return outcome.result;
-        continue;
-      }
-      if (JSON.stringify(room) === originalJson) return outcome.result;
-      if (await this.rooms.compareAndSet(redis, code, loaded.version, room)) {
-        if (outcome.result === null) {
-          const change = this.changeResult(room, before);
-          this.notifyChange(code, change.room, change.lobbyChanged);
-        }
-        return outcome.result;
-      }
-    }
-    this.logger.warn(`방 변경 충돌 재시도 초과: code=${code}`);
-    throw new FortressError('ROOM_BUSY');
+  /** 읽기 → 정리 → 변경 → CAS 쓰기(공용 mutateGameRoom). `fn`은 재시도될 수 있으므로 순수해야 한다 */
+  private mutateRoom<T>(redis: Redis, code: string, now: number, fn: (room: StoredRoom, before: StoredRoom) => RoomMutationOutcome<T>): Promise<T> {
+    return mutateGameRoom(this.mutationDeps, redis, code, now, fn);
   }
 
   private async requireMemberOf(redis: Redis, code: string, socketId: string): Promise<StoredPlayer> {
     const loaded = await this.rooms.load(redis, code);
     if (!loaded) throw new FortressError('ROOM_NOT_FOUND');
-    return this.requireMember(loaded.room, socketId);
+    return requireMember(loaded.room, socketId);
   }
 
   private notifyChange(code: string, room: RoomState | null, lobbyChanged: boolean): void {
-    try {
-      this.changeListener?.(code, room, lobbyChanged);
-    } catch (error) {
-      this.logger.warn(`방 변경 알림 실패: code=${code}, ${(error as Error).message}`);
-    }
+    notifyRoomChange(this.changeListener, this.logger, code, room, lobbyChanged);
   }
 
-  // ==================== 내부: 방 규칙 (순수) ====================
-
-  /** 멤버십 = 방 기록의 플레이어 중 대표 소켓이 이 소켓인 사람. 클라이언트가 보낸 playerId는 믿지 않는다 */
-  private requireMember(room: StoredRoom, socketId: string): StoredPlayer {
-    const player = room.players.find((p) => p.socketId === socketId);
-    if (!player) throw new FortressError('NOT_IN_ROOM');
-    return player;
-  }
-
-  /** WAITING·RESULT 방에서 유예가 지난 끊긴 플레이어를 뺀다(새 객체). PLAYING은 경기 끊김 유예(resign)가 처리하므로 건드리지 않는다 */
-  private pruneDisconnected(source: StoredRoom, now: number): StoredRoom {
-    const room: StoredRoom = { ...source, players: source.players.map((p) => ({ ...p })) };
-    if (room.status === 'PLAYING') return room;
-    const expired = room.players.filter((p) => !p.connected && p.disconnectedAt !== null && now - p.disconnectedAt >= DISCONNECT_GRACE_MS);
-    for (const p of expired) this.removePlayer(room, p.playerId);
-    return room;
-  }
-
-  /** 플레이어 제거 + 방장이었으면 이양: 연결된 사람 중 가장 먼저 들어온 사람, 없으면 가장 먼저 들어온 사람 */
-  private removePlayer(room: StoredRoom, playerId: string): void {
-    room.players = room.players.filter((p) => p.playerId !== playerId);
-    if (room.hostId !== playerId || room.players.length === 0) return;
-    const next = room.players.find((p) => p.connected) ?? room.players[0];
-    room.hostId = next.playerId;
-  }
-
-  /** 새 자리 — team 모드면 사람이 적은 팀(같으면 0), 탱크 0 */
-  private newPlayer(
-    room: StoredRoom,
-    playerId: string,
-    name: string,
-    who: SocketIdentity,
-    tokenHash: string,
-    client: ClientTraits,
-    now: number,
-  ): StoredPlayer {
-    let team: 0 | 1 | null = null;
-    if (room.mode === 'team') {
-      const teamA = room.players.filter((p) => p.team === 0).length;
-      const teamB = room.players.filter((p) => p.team === 1).length;
-      team = teamA <= teamB ? 0 : 1;
-    }
-    return {
-      playerId,
-      name,
-      ready: false,
-      connected: true,
-      userId: who.userId,
-      tokenHash,
-      team,
-      tankId: 0,
-      // 게스트는 항상 default — 로그인이면 게이트웨이가 읽은 계정 장착(조회 실패면 default)
-      skin: who.userId === null ? defaultTankSkin() : (who.skin ?? defaultTankSkin()),
-      socketId: who.socketId,
-      tabId: client.tabId ?? null,
-      heartbeat: client.heartbeat === true,
-      joinedAt: now,
-      connectedAt: now,
-      disconnectedAt: null,
-    };
-  }
-
-  private enterResult(room: StoredRoom, before: StoredRoom, playerId: string, playerToken: string, replacedSocketId: string | null): EnterRoomResult {
-    return { ...this.changeResult(room, before), playerId, playerToken, replacedSocketId };
-  }
-
-  private changeResult(room: StoredRoom, before: StoredRoom): { room: RoomState; lobbyChanged: boolean } {
-    const lobbyChanged = JSON.stringify(this.toSummary(room)) !== JSON.stringify(this.toSummary(before));
-    return { room: this.toRoomState(room), lobbyChanged };
-  }
-
-  toRoomState(room: StoredRoom): RoomState {
-    return {
-      code: room.code,
-      name: room.name,
-      mode: room.mode,
-      mapId: room.mapId,
-      maxPlayers: room.maxPlayers,
-      locked: room.passwordHash !== null,
-      hostId: room.hostId,
-      status: room.status,
-      players: room.players.map(
-        (p): RoomPlayer => ({
-          playerId: p.playerId,
-          name: p.name,
-          ready: p.ready,
-          connected: p.connected,
-          isGuest: p.userId === null,
-          extra: { team: p.team, tankId: p.tankId, skin: storedTankSkin(p.skin) },
-        }),
-      ),
-    };
-  }
-
-  private toSummary(room: StoredRoom): RoomSummary {
-    return {
-      code: room.code,
-      name: room.name,
-      mode: room.mode,
-      mapId: room.mapId,
-      maxPlayers: room.maxPlayers,
-      playerCount: room.players.length,
-      locked: room.passwordHash !== null,
-      status: room.status,
-    };
-  }
-
-  private assertPlayerName(name: string): void {
-    const verdict = checkPlayerName(name);
-    if (verdict === 'INVALID') throw new FortressError('NAME_INVALID');
-    if (verdict === 'FORBIDDEN') throw new FortressError('NAME_FORBIDDEN');
-  }
-
-  private assertRoomName(name: string): void {
-    const verdict = checkRoomName(name, ROOM_NAME_MAX_LENGTH);
-    if (verdict === 'INVALID') throw new FortressError('ROOM_NAME_INVALID');
-    if (verdict === 'FORBIDDEN') throw new FortressError('ROOM_NAME_FORBIDDEN');
-  }
 }

@@ -1,4 +1,5 @@
-import { EntityManager, In, QueryFailedError } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
+import { isForeignKeyViolation } from '../../common/utils/oracle-error.utils';
 import { TeamTag } from '../../entities/TeamTag';
 import { TeamTaskTag } from '../../entities/TeamTaskTag';
 import { TeamTaskBadRequestErrorResponseDto } from './team-error.dto';
@@ -93,11 +94,4 @@ export async function replaceTaskTags(
       throw error;
     }
   }
-}
-
-/** ORA-02291: 부모 키 없음(참조 무결성 위반) */
-function isForeignKeyViolation(error: unknown): boolean {
-  if (!(error instanceof QueryFailedError)) return false;
-  const driverError = error.driverError as { errorNum?: number } | undefined;
-  return driverError?.errorNum === 2291;
 }

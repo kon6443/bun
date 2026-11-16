@@ -1,4 +1,5 @@
-import { EntityManager, LessThan, QueryFailedError } from 'typeorm';
+import { EntityManager, LessThan } from 'typeorm';
+import { isUniqueViolation } from '../../common/utils/oracle-error.utils';
 import { TeamChatMessage } from '../../entities/TeamChatMessage';
 import { TeamChatReadCursor } from '../../entities/TeamChatReadCursor';
 
@@ -8,13 +9,6 @@ import { TeamChatReadCursor } from '../../entities/TeamChatReadCursor';
  * TeamService(초대 수락 트랜잭션)와 TeamChatService(전송·읽음) 양쪽이 같은 트랜잭션 manager로 호출한다.
  * 서비스로 만들면 TeamChatService → TeamService → TeamChatService 순환 의존이 생긴다.
  */
-
-/** Oracle 유니크 제약 위반(ORA-00001) 여부 */
-export function isUniqueConstraintError(error: unknown): boolean {
-  if (!(error instanceof QueryFailedError)) return false;
-  const driverError = error.driverError as { errorNum?: number } | undefined;
-  return driverError?.errorNum === 1;
-}
 
 /**
  * 커서를 messageId로 전진시킨다. **절대 뒤로 가지 않는다** — 현재 값보다 클 때만 갱신.
@@ -56,7 +50,7 @@ export async function advanceReadCursor(
     });
     return true;
   } catch (error) {
-    if (!isUniqueConstraintError(error)) throw error;
+    if (!isUniqueViolation(error)) throw error;
     // 같은 순간 다른 요청이 먼저 행을 만들었다 — 그 값보다 크면 전진
     return tryUpdate();
   }

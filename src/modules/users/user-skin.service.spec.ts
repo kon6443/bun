@@ -251,14 +251,14 @@ describe('UserSkinService (tetris-skins D-003)', () => {
 
     it('같은 슬롯 첫 장착이 동시에 와 INSERT가 PK 충돌(ORA-00001)하면 UPDATE로 다시 한다', async () => {
       txRepository.update.mockResolvedValueOnce(updated(0)).mockResolvedValueOnce(updated(1));
-      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-00001: unique constraint violated')));
+      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], Object.assign(new Error('ORA-00001: unique constraint violated'), { errorNum: 1 })));
       await expect(service.equip(1, { board: 'gameboy' })).resolves.toBeDefined();
       expect(txRepository.update).toHaveBeenCalledTimes(2);
     });
 
     it('PK 충돌이 아닌 INSERT 오류는 그대로 던진다', async () => {
       txRepository.update.mockResolvedValue(updated(0));
-      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], new Error('ORA-02291: integrity constraint violated')));
+      txRepository.insert.mockRejectedValue(new QueryFailedError('INSERT', [], Object.assign(new Error('ORA-02291: integrity constraint violated'), { errorNum: 2291 })));
       await expect(service.equip(1, { board: 'gameboy' })).rejects.toThrow('ORA-02291');
     });
 

@@ -5,7 +5,6 @@ import {
   advanceReadCursor,
   findLatestMessageId,
   initReadCursorAtLatest,
-  isUniqueConstraintError,
 } from './chat-read-cursor';
 
 const TEAM_ID = 7;
@@ -82,16 +81,6 @@ describe('chat-read-cursor', () => {
     it.each([0, -1])('messageId가 %s면 DB를 건드리지 않아야 함', async (messageId) => {
       await expect(advance(messageId)).resolves.toBe(false);
       expect(manager.update).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('isUniqueConstraintError', () => {
-    it('Oracle errorNum 1(ORA-00001)만 유니크 위반으로 판정해야 함', () => {
-      expect(isUniqueConstraintError(uniqueViolation())).toBe(true);
-      expect(
-        isUniqueConstraintError(new QueryFailedError('q', [], Object.assign(new Error('x'), { errorNum: 2291 }))),
-      ).toBe(false);
-      expect(isUniqueConstraintError(new Error('ORA-00001'))).toBe(false);
     });
   });
 

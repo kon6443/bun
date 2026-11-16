@@ -9,14 +9,14 @@ import { type Action, type MatchEvent, type MatchState, TICKS_PER_SECOND } from 
  */
 
 /** 사람이 조준하는 시간(ms) — F5 플레이테스트의 턴당 사용 시간 분포로 재조정한다 */
-export const TURN_AIM_MS = 20_000;
+const TURN_AIM_MS = 20_000;
 /**
  * 직전 행동 연출 시간 상한(초) — 엔진 이론 상한은 60초(MAX_TICKS_PER_TURN)라 막아 둔다.
  * 실측 최대 5.2초(AI 909턴)지만 정찰 탱크 최대 이동 + 폭격 고각 조합이 약 7.8초(234틱)까지 나와 9초로 둔다(D-013)
  */
-export const TURN_PLAYBACK_MAX_SECONDS = 9;
+const TURN_PLAYBACK_MAX_SECONDS = 9;
 /** 지연 여유(ms) — 화면 연출 꼬리(최대 약 1.1초)와 네트워크 지연 */
-export const TURN_SLACK_MS = 2_000;
+const TURN_SLACK_MS = 2_000;
 
 /**
  * 다음 턴 길이(ms) = 조준 20초 + 직전 행동 연출 시간 + 여유 2초.
@@ -33,7 +33,7 @@ export function actorOf(before: MatchState, action: Action): number {
 }
 
 /** slot별 누적 집계. `diedAt` = 죽은 행동의 seq(살아 있으면 null) — ffa 순위의 탈락 순서 */
-export type SlotTally = { damage: number; kos: number; diedAt: number | null };
+type SlotTally = { damage: number; kos: number; diedAt: number | null };
 export type MatchTally = (SlotTally | null)[];
 
 export function createTally(state: MatchState): MatchTally {
