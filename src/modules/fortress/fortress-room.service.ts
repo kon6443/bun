@@ -84,6 +84,7 @@ import {
   RoomSummary,
   TEAM_SIZE,
 } from './fortress.events';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /**
  * Redis 키 — 공용 부품 `createGameRoomKeys('fortress:')`(FORTRESS_ROOM_KEYS) + 경기 키(fortress.constants.ts FORTRESS_MATCH_KEYS).
@@ -198,7 +199,7 @@ export class FortressRoomService {
       await this.mutateRoom<null>(redis, code, now, () => ({ result: null }));
     } catch (error) {
       if (isRoomGone(error)) return;
-      this.logger.warn(`유예 만료 정리 실패 — 다음 요청이 정리: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`유예 만료 정리 실패 — 다음 요청이 정리: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -298,7 +299,7 @@ export class FortressRoomService {
       const room = latest ? toRoomState(latest.room) : entered.room;
       return rejoin ? { ...entered, room, rejoin } : { ...entered, room };
     } catch (error) {
-      this.logger.warn(`재연결 복원 실패 — 복원 없이 입장: code=${input.code}, player=${entered.playerId}, ${(error as Error).message}`);
+      this.logger.warn(`재연결 복원 실패 — 복원 없이 입장: code=${input.code}, player=${entered.playerId}, ${toErrorMessage(error)}`);
       return entered;
     }
   }
@@ -443,9 +444,9 @@ export class FortressRoomService {
     try {
       await this.matches.resign(target.matchId, target.playerId, 'leave', now);
     } catch (error) {
-      this.logger.warn(`경기 중 이탈 resign 실패 — 유예 뒤 resign으로 회수: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`경기 중 이탈 resign 실패 — 유예 뒤 resign으로 회수: code=${code}, ${toErrorMessage(error)}`);
       await this.matches.setDisconnected(target.matchId, target.playerId, now, now).catch((e: unknown) => {
-        this.logger.warn(`이탈 끊김 기록도 실패 — 정리 깨우기가 resign 재시도: code=${code}, ${(e as Error).message}`);
+        this.logger.warn(`이탈 끊김 기록도 실패 — 정리 깨우기가 resign 재시도: code=${code}, ${toErrorMessage(e)}`);
       });
       // 둘 다 실패했어도 정리(sweepExpired → resignDepartedPlayers)가 다시 기권시킨다. 생존 확인 경로도 같은 회수를 한다
       this.scheduleWake(() => this.sweepExpired(code), FINISH_RETRY_DELAY_MS);
@@ -555,7 +556,7 @@ export class FortressRoomService {
       );
       if (outcome?.inMatch) {
         await this.markMatchDisconnected(redis, code, outcome.inMatch.matchId, outcome.inMatch.playerId, now).catch((error: unknown) => {
-          this.logger.warn(`경기 끊김 기록 실패 — 깨우기가 회수: code=${code}, ${(error as Error).message}`);
+          this.logger.warn(`경기 끊김 기록 실패 — 깨우기가 회수: code=${code}, ${toErrorMessage(error)}`);
         });
       }
       if (outcome) this.scheduleGraceSweep(code);
@@ -642,7 +643,7 @@ export class FortressRoomService {
       this.notifyChange(code, change.room, change.lobbyChanged);
       return true;
     } catch (error) {
-      this.logger.warn(`경기 시작 되돌리기 실패 — 생존 확인이 회수: code=${code}, match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`경기 시작 되돌리기 실패 — 생존 확인이 회수: code=${code}, match=${matchId}, ${toErrorMessage(error)}`);
       return false;
     }
   }
@@ -668,7 +669,7 @@ export class FortressRoomService {
     const redis = this.requireRedis();
     const { player } = await this.requireMatchMember(redis, code, socketId, input.matchId, ['PLAYING']);
     await this.limitOrThrow('turnSubmit', `${code}:${player.playerId}`);
-    await this.clearStaleDisconnect(input.matchId, player.playerId, now);
+    // 남은 끊김 기록 해제는 submit이 같은 읽기 안에서 한다(clearStaleDisconnect를 따로 부르면 경기를 한 번 더 읽는다)
     await this.matches.submit(input.matchId, player.playerId, input, now);
   }
 
@@ -685,14 +686,14 @@ export class FortressRoomService {
 
   /**
    * 이 소켓이 자리를 대표한다고 확인된 뒤(requireMatchMember) 경기에 남은 끊김 기록을 지운다 — 재연결 경로의 해제가 실패했으면
-   * 연결된 사람이 30초 뒤 resign되므로, 경기 요청(turnSubmit·resync)마다 한 번 더 바로잡는다. 기록이 없으면 쓰지 않는다(setDisconnected가 같은 값이면 무동작).
+   * 연결된 사람이 30초 뒤 resign되므로, 경기 요청마다 한 번 더 바로잡는다(resync — turnSubmit은 submit 안에서 같은 일을 한다). 기록이 없으면 쓰지 않는다(setDisconnected가 같은 값이면 무동작).
    * 실패해도 요청은 막지 않는다(로그만)
    */
   private async clearStaleDisconnect(matchId: string, playerId: string, now: number): Promise<void> {
     try {
       await this.matches.setDisconnected(matchId, playerId, null, now);
     } catch (error) {
-      this.logger.warn(`경기 끊김 기록 해제 실패: match=${matchId}, player=${playerId}, ${(error as Error).message}`);
+      this.logger.warn(`경기 끊김 기록 해제 실패: match=${matchId}, player=${playerId}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -718,7 +719,7 @@ export class FortressRoomService {
       }
     } catch (error) {
       if (isRoomGone(error)) return;
-      this.logger.warn(`경기 종료 반영 실패 — 잠시 뒤 다시 시도: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`경기 종료 반영 실패 — 잠시 뒤 다시 시도: code=${code}, ${toErrorMessage(error)}`);
       if (attempt < FINISH_RETRY_MAX_ATTEMPTS) {
         this.scheduleWake(() => this.finishMatch(code, matchId, attempt + 1), FINISH_RETRY_DELAY_MS);
       }
@@ -832,7 +833,7 @@ export class FortressRoomService {
     try {
       await touchHeartbeat(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS);
     } catch (error) {
-      this.logger.warn(`하트비트 기록 실패: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`하트비트 기록 실패: code=${code}, ${toErrorMessage(error)}`);
       return;
     }
     void this.reconcileHeartbeats(redis, code, now);
@@ -857,7 +858,7 @@ export class FortressRoomService {
       await this.markGhosts(redis, code, now, (p) => silent.get(p.playerId) === p.socketId, true);
     } catch (error) {
       if (isRoomGone(error)) return;
-      this.logger.warn(`하트비트 판정 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`하트비트 판정 실패 — 건너뜀: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -883,7 +884,7 @@ export class FortressRoomService {
       await this.repairEndedMatch(redis, code, now);
     } catch (error) {
       if (isRoomGone(error)) return;
-      this.logger.warn(`생존 확인 실패 — 건너뜀: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`생존 확인 실패 — 건너뜀: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -906,7 +907,7 @@ export class FortressRoomService {
     if (!inMatch) return;
     for (const ghost of ghosts) {
       await this.markMatchDisconnected(redis, code, inMatch, ghost.playerId, now).catch((error: unknown) => {
-        this.logger.warn(`유령의 경기 끊김 기록 실패 — 깨우기가 회수: code=${code}, ${(error as Error).message}`);
+        this.logger.warn(`유령의 경기 끊김 기록 실패 — 깨우기가 회수: code=${code}, ${toErrorMessage(error)}`);
       });
     }
   }

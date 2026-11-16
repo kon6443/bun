@@ -33,6 +33,7 @@ import {
   TurnInfo,
   TurnResolvedPayload,
 } from './fortress.events';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /** 경기 이벤트 — 게이트웨이가 방 채널로 그대로 보낸다 */
 export type MatchBroadcast =
@@ -88,6 +89,13 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
   private sweeping = false;
   /** 깨우기 타이머 — 프로세스 종료를 막지 않는다. 테스트는 setWakeScheduler로 바꾼다 */
   private wakeScheduler: (task: () => void, delayMs: number) => void = defaultWakeScheduler;
+  /**
+   * 경기마다 마지막으로 건 깨우기의 번호(이 레플리카 로컬 — 트리거 중복 제거일 뿐 공유 상태 아님).
+   * 행동마다 깨우기를 걸면 타이머가 쌓이고 각자 마감 때 경기 전체를 읽는다. 마지막 것만 processDue를 부른다 —
+   * 마지막 예약이 이 레플리카가 아는 최신 상태의 가장 이른 처리 시각이다. 다른 레플리카의 변경은 그쪽 타이머·스위퍼가 맡는다
+   */
+  private readonly wakeTokens = new Map<string, number>();
+  private wakeSeq = 0;
 
   /** main.ts에서 RedisIoAdapter 초기화 후 호출 (방 서비스와 같은 연결) */
   setRedisClient(client: Redis): void {
@@ -144,7 +152,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
       const ids = await this.store.dueMatchIds(redis, now, SWEEP_BATCH);
       for (const matchId of ids) await this.processDue(matchId, now);
     } catch (error) {
-      this.logger.warn(`마감 스윕 실패 — 다음 주기에 다시: ${(error as Error).message}`);
+      this.logger.warn(`마감 스윕 실패 — 다음 주기에 다시: ${toErrorMessage(error)}`);
     } finally {
       this.sweeping = false;
     }
@@ -212,7 +220,8 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 턴 주인의 행동 제출. 판정 순서: 경기 없음·끝남 → seq 불일치(늦은·중복 제출) → 턴 주인 아님 → 시작 카운트다운 중 → 마감 지남(lazy skip 후) → 엔진 거부.
-   * 버전 충돌(그 사이 다른 행동이 들어감)이면 다시 읽어 같은 판정을 한다 — 행동이 들어갔으면 seq가 달라 TURN_MISMATCH
+   * 버전 충돌(그 사이 다른 행동이 들어감)이면 다시 읽어 같은 판정을 한다 — 행동이 들어갔으면 seq가 달라 TURN_MISMATCH.
+   * 제출자 자리에 끊김 기록이 남아 있으면 먼저 지운다(판정 전 — 거부되는 제출이어도 연결은 확인됐다)
    */
   async submit(matchId: string, playerId: string, input: TurnSubmitInput, now = Date.now()): Promise<void> {
     const redis = this.requireRedis();
@@ -220,8 +229,16 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
       const loaded = await this.store.load(redis, matchId);
       if (!loaded || loaded.match.status !== 'PLAYING') throw new FortressError('MATCH_NOT_FOUND');
       const match = loaded.match;
-      const slot = match.slots.find((s) => s.playerId === playerId);
-      if (!slot) throw new FortressError('MATCH_NOT_FOUND');
+      const slotIndex = match.slots.findIndex((s) => s.playerId === playerId);
+      if (slotIndex < 0) throw new FortressError('MATCH_NOT_FOUND');
+      const slot = match.slots[slotIndex];
+      if (slot.disconnectedAt !== null) {
+        // 제출은 이 소켓이 자리를 대표한다고 확인된 뒤에만 온다(방 서비스 requireMatchMember) — 재연결 경로의 해제가
+        // 실패해 남은 끊김 기록이면 연결된 사람이 유예 뒤 resign되므로 먼저 지우고 다시 읽는다.
+        // 방 서비스가 제출마다 setDisconnected를 따로 부르면 기록이 없을 때도 경기 전체를 한 번 더 읽는다
+        await this.writeDisconnected(redis, loaded, slotIndex, null, now);
+        continue;
+      }
       if (input.seq !== match.actions.length) throw new FortressError('TURN_MISMATCH');
       if (match.state.turn.slot !== slot.slot) throw new FortressError('NOT_YOUR_TURN');
       if (now < match.startedAt + MATCH_START_DELAY_MS) throw new FortressError('MATCH_NOT_STARTED');
@@ -268,16 +285,20 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
       if (!loaded || loaded.match.status !== 'PLAYING') return;
       const index = loaded.match.slots.findIndex((s) => s.playerId === playerId);
       if (index < 0 || loaded.match.slots[index].disconnectedAt === at) return;
-      const next: StoredMatch = {
-        ...loaded.match,
-        slots: loaded.match.slots.map((s, i) => (i === index ? { ...s, disconnectedAt: at } : s)),
-      };
-      if (await this.store.compareAndSet(redis, loaded.version, next, this.dueAt(next))) {
-        this.scheduleDue(next, now);
-        return;
-      }
+      if (await this.writeDisconnected(redis, loaded, index, at, now)) return;
     }
     throw new FortressError('ROOM_BUSY');
+  }
+
+  /** 읽은 경기에 끊김 시각만 바꿔 CAS로 쓴다(성공 여부). 성공하면 바뀐 처리 시각으로 깨우기를 다시 건다 */
+  private async writeDisconnected(redis: Redis, loaded: LoadedMatch, index: number, at: number | null, now: number): Promise<boolean> {
+    const next: StoredMatch = {
+      ...loaded.match,
+      slots: loaded.match.slots.map((s, i) => (i === index ? { ...s, disconnectedAt: at } : s)),
+    };
+    if (!(await this.store.compareAndSet(redis, loaded.version, next, this.dueAt(next)))) return false;
+    this.scheduleDue(next, now);
+    return true;
   }
 
   /** 경기에 기록된 끊김 시각(없거나 경기가 끝났으면 null) — 방 정리 경로가 기록 누락만 채울 때 */
@@ -313,7 +334,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
         }
       }
     } catch (error) {
-      this.logger.warn(`마감 처리 실패 — 다음 깨우기·스윕이 다시: match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`마감 처리 실패 — 다음 깨우기·스윕이 다시: match=${matchId}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -407,12 +428,12 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
         next: ended ? null : this.turnInfo(next, now),
       },
     });
+    // 끝났으면 걸려 있던 깨우기를 무효로, 아니면 다음 처리 시각으로 다시 건다
+    this.scheduleDue(next, now);
     if (ended) {
       this.publish(next.code, { event: 'matchEnded', payload: this.endedPayload(next) });
       await this.notifyEnded(next.code, next.matchId);
       this.notifySave(next.matchId);
-    } else {
-      this.scheduleDue(next, now);
     }
     return { kind: 'applied', match: next };
   }
@@ -441,10 +462,20 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
 
   /** 다음 처리 시각에 이 레플리카에서 한 번 깨운다 — 트리거일 뿐, 늦거나 사라져도 스위퍼·lazy가 같은 일을 한다 */
   private scheduleDue(match: StoredMatch, now: number): void {
-    const due = this.dueAt(match);
-    if (due === null) return;
     const matchId = match.matchId;
-    this.wakeScheduler(() => void this.processDue(matchId), Math.max(0, due - now) + WAKE_MARGIN_MS);
+    const due = this.dueAt(match);
+    if (due === null) {
+      // 끝났으면 걸려 있던 깨우기를 무효로 — 타이머는 그대로 울리지만 번호가 없어 아무것도 읽지 않는다
+      this.wakeTokens.delete(matchId);
+      return;
+    }
+    const token = ++this.wakeSeq;
+    this.wakeTokens.set(matchId, token);
+    this.wakeScheduler(() => {
+      if (this.wakeTokens.get(matchId) !== token) return; // 더 나중에 건 깨우기가 있다
+      this.wakeTokens.delete(matchId);
+      void this.processDue(matchId);
+    }, Math.max(0, due - now) + WAKE_MARGIN_MS);
   }
 
   /**
@@ -476,7 +507,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
     try {
       this.broadcastListener?.(code, broadcast);
     } catch (error) {
-      this.logger.warn(`경기 이벤트 알림 실패: code=${code}, ${(error as Error).message}`);
+      this.logger.warn(`경기 이벤트 알림 실패: code=${code}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -484,7 +515,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.endedHook?.(code, matchId);
     } catch (error) {
-      this.logger.warn(`경기 종료 반영 실패: code=${code}, match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`경기 종료 반영 실패: code=${code}, match=${matchId}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -493,7 +524,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.store.markPendingSave(redis, matchId, now);
     } catch (error) {
-      this.logger.warn(`저장 대기 등록 실패: match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`저장 대기 등록 실패: match=${matchId}, ${toErrorMessage(error)}`);
     }
   }
 
@@ -501,7 +532,7 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
   private notifySave(matchId: string): void {
     if (!this.saveHook) return;
     this.saveHook(matchId).catch((error: unknown) => {
-      this.logger.warn(`결과 저장 알림 실패: match=${matchId}, ${(error as Error).message}`);
+      this.logger.warn(`결과 저장 알림 실패: match=${matchId}, ${toErrorMessage(error)}`);
     });
   }
 

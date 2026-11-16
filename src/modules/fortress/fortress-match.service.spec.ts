@@ -105,6 +105,73 @@ describe('FortressMatchService', () => {
     });
   });
 
+  // 리팩터 A6 (docs/tasks/refactor-perf-survey-2026-11) — 행동마다 경기 JSON(지형 포함)을 여러 번 읽지 않는다
+  describe('submit — 경기 읽기 횟수·남은 끊김 기록', () => {
+    const matchReads = () => mock.redis.hgetall.mock.calls.filter(([key]) => String(key).includes(MATCH_ID)).length;
+
+    it('끊김 기록이 없으면 제출 1건에 경기를 한 번만 읽는다', async () => {
+      await create();
+      const first = firstSlot(configOf(2));
+      mock.redis.hgetall.mockClear();
+
+      await service.submit(MATCH_ID, playerAt(first), { seq: 0, ...PASS }, STARTED + 1_000);
+
+      expect(matchReads()).toBe(1);
+      expect(resolved()).toHaveLength(1);
+    });
+
+    it('제출자 자리에 남은 끊김 기록은 지우고 같은 제출을 이어 적용한다', async () => {
+      await create();
+      const first = firstSlot(configOf(2));
+      await service.setDisconnected(MATCH_ID, playerAt(first), T0, T0);
+
+      await service.submit(MATCH_ID, playerAt(first), { seq: 0, ...PASS }, STARTED + 1_000);
+
+      expect(mock.readMatch(MATCH_ID)?.slots[first].disconnectedAt).toBeNull();
+      expect(resolved()).toHaveLength(1);
+    });
+
+    it('거부되는 제출(남의 턴)이어도 연결은 확인됐으니 끊김 기록을 지운다', async () => {
+      await create();
+      const other = 1 - firstSlot(configOf(2));
+      await service.setDisconnected(MATCH_ID, playerAt(other), T0, T0);
+
+      await expectCode(service.submit(MATCH_ID, playerAt(other), { seq: 0, ...PASS }, STARTED + 1_000), 'NOT_YOUR_TURN');
+
+      // 안 지우면 연결된 사람이 유예 뒤 disconnect resign된다
+      expect(mock.readMatch(MATCH_ID)?.slots[other].disconnectedAt).toBeNull();
+    });
+  });
+
+  describe('깨우기 — 경기마다 마지막 것만 처리', () => {
+    it('행동마다 깨우기가 쌓여도 마지막 것만 경기를 읽고, 앞선 것은 아무것도 읽지 않는다', async () => {
+      await create();
+      const first = firstSlot(configOf(2));
+      await service.submit(MATCH_ID, playerAt(first), { seq: 0, ...PASS }, STARTED + 1_000);
+      expect(wakes).toHaveLength(2); // activate + 행동 1
+      const processDue = jest.spyOn(service, 'processDue');
+
+      wakes[0].task();
+      expect(processDue).not.toHaveBeenCalled();
+
+      wakes[1].task();
+      expect(processDue).toHaveBeenCalledTimes(1);
+      expect(processDue).toHaveBeenCalledWith(MATCH_ID);
+      await new Promise((r) => setImmediate(r));
+    });
+
+    it('끝난 경기의 남은 깨우기는 아무것도 읽지 않는다', async () => {
+      await create(2);
+      await service.resign(MATCH_ID, 'p2', 'leave', T0);
+      expect(ended()).toHaveLength(1);
+      const processDue = jest.spyOn(service, 'processDue');
+
+      for (const wake of wakes) wake.task();
+
+      expect(processDue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('submit', () => {
     it('턴 주인의 fire → 엔진 결과 그대로 turnResolved(해시·다음 턴·연출 길이 반영 마감) 1번', async () => {
       await create();
