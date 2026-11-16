@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { FishingOnlineUserInfo, PlayerPosition } from './fishing.events';
+import { toErrorMessage } from '../../common/utils/error.utils';
+import { ADD_SOCKET_SCRIPT, REMOVE_SOCKET_SCRIPT } from '../../common/utils/presence-scripts';
 
 /**
  * Redis 키 패턴 (fishing: prefix로 team 키와 완전 분리):
@@ -24,6 +26,15 @@ export class FishingOnlineService {
    */
   setRedisClient(client: Redis): void {
     this.redis = client;
+  }
+
+  /**
+   * 등록·조회용 — 어댑터 클라이언트는 maxRetriesPerRequest: null(redis-adapter 필수)이라 끊긴 동안 명령이 무한 대기하고,
+   * 재연결 때 쌓인 명령이 한꺼번에 흐른다. ready가 아니면 묻지 않고 각 메서드의 실패 기본값을 돌려준다
+   * (team-chat.service.ts consumeRateLimit과 같은 방식)
+   */
+  private isRedisReady(): boolean {
+    return this.redis?.status === 'ready';
   }
 
   // ===== 키 생성 헬퍼 =====
@@ -59,29 +70,28 @@ export class FishingOnlineService {
     userName: string,
     socketId: string,
   ): Promise<{ wasAlreadyOnline: boolean }> {
+    if (!this.isRedisReady()) return { wasAlreadyOnline: false };
     try {
       const sKey = this.socketKey(socketId);
       const uKey = this.userSocketsKey(mapId, userId);
       const tKey = this.mapOnlineKey(mapId);
 
-      const existingCount = await this.redis.scard(uKey);
-      const wasAlreadyOnline = existingCount > 0;
-
-      const pipeline = this.redis.pipeline();
-
-      // 소켓 → 유저 역방향 매핑
-      pipeline.hset(sKey, { mapId, userId: String(userId), userName });
-      pipeline.expire(sKey, SOCKET_KEY_TTL);
-
-      // 유저별 소켓 목록
-      pipeline.sadd(uKey, socketId);
-      pipeline.expire(uKey, SOCKET_KEY_TTL);
-
-      // 맵 온라인 유저 (TTL로 고아 데이터 자동 정리)
-      pipeline.hset(tKey, String(userId), userName);
-      pipeline.expire(tKey, MAP_KEY_TTL);
-
-      await pipeline.exec();
+      // 소켓 수 확인과 등록을 한 번에 — 나누면 사이에 다른 탭의 제거가 끼어 userLeft 뒤에 입장 알림이 빠진다
+      const before = await this.redis.eval(
+        ADD_SOCKET_SCRIPT,
+        3,
+        sKey,
+        uKey,
+        tKey,
+        socketId,
+        String(userId),
+        userName,
+        String(SOCKET_KEY_TTL),
+        String(MAP_KEY_TTL),
+        'mapId',
+        mapId,
+      );
+      const wasAlreadyOnline = Number(before) > 0;
 
       this.logger.debug(
         `온라인 유저 추가: mapId=${mapId}, userId=${userId}, socketId=${socketId}, ` +
@@ -90,7 +100,7 @@ export class FishingOnlineService {
 
       return { wasAlreadyOnline };
     } catch (error) {
-      this.logger.error(`addUserToOnline 실패: ${(error as Error).message}`);
+      this.logger.error(`addUserToOnline 실패: ${toErrorMessage(error)}`);
       return { wasAlreadyOnline: false };
     }
   }
@@ -104,6 +114,9 @@ export class FishingOnlineService {
     userName: string;
     isFullyOffline: boolean;
   } | null> {
+    // 정리 쪽은 ready 가드를 두지 않는다 — 끊긴 동안의 명령은 오프라인 큐에 쌓였다가 재연결 때 적용된다.
+    // 여기서 버리면 닫힌 탭이 온라인으로 남고, 죽은 socketId가 소켓 집합에 남아 이후 마지막 탭 판정(SCARD=0)이 영영 안 된다.
+    // 기다리는 쪽은 연결 해제·퇴장 핸들러라 사용자 응답을 막지 않는다
     try {
       const sKey = this.socketKey(socketId);
 
@@ -114,28 +127,18 @@ export class FishingOnlineService {
       const userId = Number(mapping.userId);
       const userName = mapping.userName;
 
-      const uKey = this.userSocketsKey(mapId, userId);
-
-      const pipeline = this.redis.pipeline();
-      pipeline.del(sKey);
-      pipeline.srem(uKey, socketId);
-      await pipeline.exec();
-
-      const remainingCount = await this.redis.scard(uKey);
-      const isFullyOffline = remainingCount === 0;
-
-      if (isFullyOffline) {
-        const tKey = this.mapOnlineKey(mapId);
-        const pKey = this.mapPositionsKey(mapId);
-        const stKey = this.mapStatesKey(mapId);
-
-        const cleanupPipeline = this.redis.pipeline();
-        cleanupPipeline.hdel(tKey, String(userId));
-        cleanupPipeline.hdel(pKey, String(userId));
-        cleanupPipeline.hdel(stKey, String(userId));
-        cleanupPipeline.del(uKey);
-        await cleanupPipeline.exec();
-      }
+      const removed = await this.redis.eval(
+        REMOVE_SOCKET_SCRIPT,
+        5,
+        sKey,
+        this.userSocketsKey(mapId, userId),
+        this.mapOnlineKey(mapId),
+        this.mapPositionsKey(mapId),
+        this.mapStatesKey(mapId),
+        socketId,
+        String(userId),
+      );
+      const isFullyOffline = removed === 1;
 
       this.logger.debug(
         `소켓 제거: socketId=${socketId}, mapId=${mapId}, userId=${userId}, isFullyOffline=${isFullyOffline}`,
@@ -143,7 +146,7 @@ export class FishingOnlineService {
 
       return { mapId, userId, userName, isFullyOffline };
     } catch (error) {
-      this.logger.error(`removeSocket 실패: ${(error as Error).message}`);
+      this.logger.error(`removeSocket 실패: ${toErrorMessage(error)}`);
       return null;
     }
   }
@@ -152,10 +155,11 @@ export class FishingOnlineService {
    * 소켓이 등록되어 있는지 확인
    */
   async isSocketRegistered(socketId: string): Promise<boolean> {
+    // removeSocket 앞의 확인이다 — 정리와 같은 이유로 ready 가드를 두지 않는다(false면 정리가 건너뛰어진다)
     try {
       return (await this.redis.exists(this.socketKey(socketId))) === 1;
     } catch (error) {
-      this.logger.error(`isSocketRegistered 실패: ${(error as Error).message}`);
+      this.logger.error(`isSocketRegistered 실패: ${toErrorMessage(error)}`);
       return false;
     }
   }
@@ -166,6 +170,7 @@ export class FishingOnlineService {
   async getSocketMapping(
     socketId: string,
   ): Promise<{ mapId: string; userId: number; userName: string } | null> {
+    if (!this.isRedisReady()) return null;
     try {
       const mapping = await this.redis.hgetall(this.socketKey(socketId));
       if (!mapping.mapId) return null;
@@ -176,7 +181,7 @@ export class FishingOnlineService {
         userName: mapping.userName,
       };
     } catch (error) {
-      this.logger.error(`getSocketMapping 실패: ${(error as Error).message}`);
+      this.logger.error(`getSocketMapping 실패: ${toErrorMessage(error)}`);
       return null;
     }
   }
@@ -187,6 +192,7 @@ export class FishingOnlineService {
    * 맵의 온라인 유저 목록 조회 (최대 50명)
    */
   async getOnlineUsersForMap(mapId: string): Promise<FishingOnlineUserInfo[]> {
+    if (!this.isRedisReady()) return [];
     try {
       const tKey = this.mapOnlineKey(mapId);
       const pKey = this.mapPositionsKey(mapId);
@@ -228,7 +234,7 @@ export class FishingOnlineService {
         };
       });
     } catch (error) {
-      this.logger.error(`getOnlineUsersForMap 실패: ${(error as Error).message}`);
+      this.logger.error(`getOnlineUsersForMap 실패: ${toErrorMessage(error)}`);
       return [];
     }
   }
@@ -237,10 +243,11 @@ export class FishingOnlineService {
    * 맵의 온라인 유저 수 조회
    */
   async getOnlineUsersCount(mapId: string): Promise<number> {
+    if (!this.isRedisReady()) return 0;
     try {
       return await this.redis.hlen(this.mapOnlineKey(mapId));
     } catch (error) {
-      this.logger.error(`getOnlineUsersCount 실패: ${(error as Error).message}`);
+      this.logger.error(`getOnlineUsersCount 실패: ${toErrorMessage(error)}`);
       return 0;
     }
   }
@@ -251,15 +258,13 @@ export class FishingOnlineService {
    * 유저 위치 업데이트
    */
   async updatePosition(mapId: string, userId: number, position: PlayerPosition): Promise<void> {
-    try {
-      const pKey = this.mapPositionsKey(mapId);
-      const pipeline = this.redis.pipeline();
+    // 위치는 새 접속자용 스냅샷일 뿐이라 끊긴 동안은 버린다 — 오프라인 큐에 쌓였다가 재연결 때 몰려 나가지 않게
+    if (!this.isRedisReady()) return;
+    const pKey = this.mapPositionsKey(mapId);
+    this.fireAndForget('updatePosition', (pipeline) => {
       pipeline.hset(pKey, String(userId), JSON.stringify(position));
       pipeline.expire(pKey, MAP_KEY_TTL);
-      void pipeline.exec(); // fire-and-forget (await 불필요 — gateway에서 broadcast 먼저 처리)
-    } catch (error) {
-      this.logger.error(`updatePosition 실패: ${(error as Error).message}`);
-    }
+    });
   }
 
   /**
@@ -268,6 +273,7 @@ export class FishingOnlineService {
   async getAllPositions(
     mapId: string,
   ): Promise<Record<number, PlayerPosition & { userName: string; fishingState?: string }>> {
+    if (!this.isRedisReady()) return {};
     try {
       const pKey = this.mapPositionsKey(mapId);
       const tKey = this.mapOnlineKey(mapId);
@@ -296,7 +302,7 @@ export class FishingOnlineService {
 
       return result;
     } catch (error) {
-      this.logger.error(`getAllPositions 실패: ${(error as Error).message}`);
+      this.logger.error(`getAllPositions 실패: ${toErrorMessage(error)}`);
       return {};
     }
   }
@@ -307,14 +313,27 @@ export class FishingOnlineService {
    * 유저 낚시 상태 업데이트
    */
   async updateFishingState(mapId: string, userId: number, state: string): Promise<void> {
-    try {
-      const stKey = this.mapStatesKey(mapId);
-      const pipeline = this.redis.pipeline();
+    if (!this.isRedisReady()) return;
+    const stKey = this.mapStatesKey(mapId);
+    this.fireAndForget('updateFishingState', (pipeline) => {
       pipeline.hset(stKey, String(userId), state);
       pipeline.expire(stKey, MAP_KEY_TTL);
-      void pipeline.exec(); // fire-and-forget
+    });
+  }
+
+  /**
+   * 응답을 기다리지 않는 쓰기 — gateway가 broadcast를 먼저 처리하고 저장은 뒤따른다.
+   * exec()의 거부도 여기서 받아 로그로 남긴다(처리되지 않은 rejection으로 새지 않게)
+   */
+  private fireAndForget(label: string, build: (pipeline: ReturnType<Redis['pipeline']>) => void): void {
+    try {
+      const pipeline = this.redis.pipeline();
+      build(pipeline);
+      pipeline.exec().catch((error: unknown) => {
+        this.logger.error(`${label} 실패: ${toErrorMessage(error)}`);
+      });
     } catch (error) {
-      this.logger.error(`updateFishingState 실패: ${(error as Error).message}`);
+      this.logger.error(`${label} 실패: ${toErrorMessage(error)}`);
     }
   }
 }

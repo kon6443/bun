@@ -17,3 +17,11 @@ export function toErrorDetail(err: unknown): string | undefined {
   }
   return String(err);
 }
+
+/**
+ * catch 절의 `unknown` 예외에서 로그용 메시지를 꺼낸다.
+ * `(error as Error).message`는 문자열·객체가 던져지면 `undefined`로 찍힌다 — Error가 아니면 문자열로 바꾼다.
+ */
+export function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

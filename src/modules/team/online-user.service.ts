@@ -3,6 +3,8 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Gauge } from 'prom-client';
 import { Redis } from 'ioredis';
 import { OnlineUserInfo } from './team.events';
+import { toErrorMessage } from '../../common/utils/error.utils';
+import { ADD_SOCKET_SCRIPT, REMOVE_SOCKET_SCRIPT } from '../../common/utils/presence-scripts';
 
 /**
  * Redis 키 패턴:
@@ -70,6 +72,15 @@ export class OnlineUserService implements OnModuleDestroy {
   }
 
   /**
+   * 등록·조회용 — 어댑터 클라이언트는 maxRetriesPerRequest: null(redis-adapter 필수)이라 끊긴 동안 명령이 무한 대기한다 —
+   * joinTeam·disconnect 핸들러가 응답 없이 멈추지 않게 ready가 아니면 각 메서드의 실패 기본값을 돌려준다
+   * (team-chat.service.ts consumeRateLimit과 같은 방식)
+   */
+  private isRedisReady(): boolean {
+    return this.redis?.status === 'ready';
+  }
+
+  /**
    * TeamGateway.handleJoinTeam 에서 호출 — 60s 주기 재계산 대상 팀 등록.
    * count == 0 이 되면 refreshTeamOnlineMetric 에서 자동으로 Set/Gauge 에서 제거.
    */
@@ -99,7 +110,7 @@ export class OnlineUserService implements OnModuleDestroy {
           return { teamId, count, ok: true as const };
         } catch (error) {
           this.logger.warn(
-            `refreshTeamOnlineMetric 실패 (teamId=${teamId}): ${(error as Error).message}`,
+            `refreshTeamOnlineMetric 실패 (teamId=${teamId}): ${toErrorMessage(error)}`,
           );
           return { teamId, count: 0, ok: false as const };
         }
@@ -142,30 +153,28 @@ export class OnlineUserService implements OnModuleDestroy {
     userName: string,
     socketId: string,
   ): Promise<{ wasAlreadyOnline: boolean }> {
+    if (!this.isRedisReady()) return { wasAlreadyOnline: false };
     try {
       const sKey = this.socketKey(socketId);
       const uKey = this.userSocketsKey(teamId, userId);
       const tKey = this.teamOnlineKey(teamId);
 
-      // 기존 소켓 수로 이미 온라인인지 판단
-      const existingCount = await this.redis.scard(uKey);
-      const wasAlreadyOnline = existingCount > 0;
-
-      const pipeline = this.redis.pipeline();
-
-      // 소켓 → 유저 역방향 매핑
-      pipeline.hset(sKey, { teamId: String(teamId), userId: String(userId), userName });
-      pipeline.expire(sKey, SOCKET_KEY_TTL);
-
-      // 유저별 소켓 목록
-      pipeline.sadd(uKey, socketId);
-      pipeline.expire(uKey, SOCKET_KEY_TTL);
-
-      // 팀 온라인 유저 (TTL로 고아 데이터 자동 정리)
-      pipeline.hset(tKey, String(userId), userName);
-      pipeline.expire(tKey, TEAM_ONLINE_KEY_TTL);
-
-      await pipeline.exec();
+      // 소켓 수 확인과 등록을 한 번에 — 나누면 사이에 다른 탭의 제거가 끼어 userLeft 뒤에 입장 알림이 빠진다
+      const before = await this.redis.eval(
+        ADD_SOCKET_SCRIPT,
+        3,
+        sKey,
+        uKey,
+        tKey,
+        socketId,
+        String(userId),
+        userName,
+        String(SOCKET_KEY_TTL),
+        String(TEAM_ONLINE_KEY_TTL),
+        'teamId',
+        String(teamId),
+      );
+      const wasAlreadyOnline = Number(before) > 0;
 
       this.logger.debug(
         `온라인 유저 추가: teamId=${teamId}, userId=${userId}, socketId=${socketId}, ` +
@@ -174,7 +183,7 @@ export class OnlineUserService implements OnModuleDestroy {
 
       return { wasAlreadyOnline };
     } catch (error) {
-      this.logger.error(`addUserToOnline 실패: ${(error as Error).message}`);
+      this.logger.error(`addUserToOnline 실패: ${toErrorMessage(error)}`);
       return { wasAlreadyOnline: false };
     }
   }
@@ -186,6 +195,7 @@ export class OnlineUserService implements OnModuleDestroy {
    * (다음 joinTeam이 새 이름으로 등록한다). 실패해도 다음 joinTeam에서 맞춰지므로 예외를 올리지 않는다.
    */
   async updateUserName(teamId: number, userId: number, userName: string): Promise<void> {
+    if (!this.isRedisReady()) return;
     try {
       const socketIds = await this.redis.smembers(this.userSocketsKey(teamId, userId));
       if (socketIds.length === 0) return;
@@ -197,7 +207,7 @@ export class OnlineUserService implements OnModuleDestroy {
         ),
       ]);
     } catch (error) {
-      this.logger.error(`updateUserName 실패: ${(error as Error).message}`);
+      this.logger.error(`updateUserName 실패: ${toErrorMessage(error)}`);
     }
   }
 
@@ -211,6 +221,9 @@ export class OnlineUserService implements OnModuleDestroy {
     userName: string;
     isFullyOffline: boolean;
   } | null> {
+    // 정리 쪽은 ready 가드를 두지 않는다 — 끊긴 동안의 명령은 오프라인 큐에 쌓였다가 재연결 때 적용된다.
+    // 여기서 버리면 닫힌 탭이 온라인으로 남고, 죽은 socketId가 소켓 집합에 남아 이후 마지막 탭 판정(SCARD=0)이 영영 안 된다.
+    // 기다리는 쪽은 연결 해제·퇴장 핸들러라 사용자 응답을 막지 않는다
     try {
       const sKey = this.socketKey(socketId);
 
@@ -222,28 +235,16 @@ export class OnlineUserService implements OnModuleDestroy {
       const userId = Number(mapping.userId);
       const userName = mapping.userName;
 
-      const uKey = this.userSocketsKey(teamId, userId);
-      const tKey = this.teamOnlineKey(teamId);
-
-      const pipeline = this.redis.pipeline();
-
-      // 소켓 매핑 삭제
-      pipeline.del(sKey);
-      // 유저 소켓 목록에서 제거
-      pipeline.srem(uKey, socketId);
-
-      await pipeline.exec();
-
-      // 남은 소켓 수 확인
-      const remainingCount = await this.redis.scard(uKey);
-      const isFullyOffline = remainingCount === 0;
-
-      if (isFullyOffline) {
-        // 유저의 모든 소켓이 제거됨 → 온라인 목록에서도 제거
-        await this.redis.hdel(tKey, String(userId));
-        // 소켓 Set 키도 정리
-        await this.redis.del(uKey);
-      }
+      const removed = await this.redis.eval(
+        REMOVE_SOCKET_SCRIPT,
+        3,
+        sKey,
+        this.userSocketsKey(teamId, userId),
+        this.teamOnlineKey(teamId),
+        socketId,
+        String(userId),
+      );
+      const isFullyOffline = removed === 1;
 
       this.logger.debug(
         `소켓 제거: socketId=${socketId}, teamId=${teamId}, userId=${userId}, isFullyOffline=${isFullyOffline}`,
@@ -251,7 +252,7 @@ export class OnlineUserService implements OnModuleDestroy {
 
       return { teamId, userId, userName, isFullyOffline };
     } catch (error) {
-      this.logger.error(`removeSocket 실패: ${(error as Error).message}`);
+      this.logger.error(`removeSocket 실패: ${toErrorMessage(error)}`);
       return null;
     }
   }
@@ -260,6 +261,7 @@ export class OnlineUserService implements OnModuleDestroy {
    * 특정 유저의 온라인 정보 조회
    */
   async getUserOnlineInfo(teamId: number, userId: number): Promise<OnlineUserInfo | null> {
+    if (!this.isRedisReady()) return null;
     try {
       const tKey = this.teamOnlineKey(teamId);
       const userName = await this.redis.hget(tKey, String(userId));
@@ -270,7 +272,7 @@ export class OnlineUserService implements OnModuleDestroy {
 
       return { userId, userName, connectionCount };
     } catch (error) {
-      this.logger.error(`getUserOnlineInfo 실패: ${(error as Error).message}`);
+      this.logger.error(`getUserOnlineInfo 실패: ${toErrorMessage(error)}`);
       return null;
     }
   }
@@ -279,6 +281,7 @@ export class OnlineUserService implements OnModuleDestroy {
    * 팀의 온라인 유저 목록 조회 (최대 100명)
    */
   async getOnlineUsersForTeam(teamId: number): Promise<OnlineUserInfo[]> {
+    if (!this.isRedisReady()) return [];
     try {
       const tKey = this.teamOnlineKey(teamId);
       const allUsers = await this.redis.hgetall(tKey);
@@ -299,7 +302,7 @@ export class OnlineUserService implements OnModuleDestroy {
         connectionCount: (results?.[i]?.[1] as number) ?? 0,
       }));
     } catch (error) {
-      this.logger.error(`getOnlineUsersForTeam 실패: ${(error as Error).message}`);
+      this.logger.error(`getOnlineUsersForTeam 실패: ${toErrorMessage(error)}`);
       return [];
     }
   }
@@ -308,11 +311,12 @@ export class OnlineUserService implements OnModuleDestroy {
    * 팀의 온라인 유저 수 조회
    */
   async getOnlineUsersCount(teamId: number): Promise<number> {
+    if (!this.isRedisReady()) return 0;
     try {
       const tKey = this.teamOnlineKey(teamId);
       return await this.redis.hlen(tKey);
     } catch (error) {
-      this.logger.error(`getOnlineUsersCount 실패: ${(error as Error).message}`);
+      this.logger.error(`getOnlineUsersCount 실패: ${toErrorMessage(error)}`);
       return 0;
     }
   }
@@ -321,10 +325,11 @@ export class OnlineUserService implements OnModuleDestroy {
    * 소켓이 등록되어 있는지 확인
    */
   async isSocketRegistered(socketId: string): Promise<boolean> {
+    // removeSocket 앞의 확인이다 — 정리와 같은 이유로 ready 가드를 두지 않는다(false면 정리가 건너뛰어진다)
     try {
       return (await this.redis.exists(this.socketKey(socketId))) === 1;
     } catch (error) {
-      this.logger.error(`isSocketRegistered 실패: ${(error as Error).message}`);
+      this.logger.error(`isSocketRegistered 실패: ${toErrorMessage(error)}`);
       return false;
     }
   }
@@ -335,6 +340,7 @@ export class OnlineUserService implements OnModuleDestroy {
   async getSocketUserMapping(
     socketId: string,
   ): Promise<{ teamId: number; userId: number; userName: string } | null> {
+    if (!this.isRedisReady()) return null;
     try {
       const mapping = await this.redis.hgetall(this.socketKey(socketId));
       if (!mapping.teamId) return null;
@@ -345,7 +351,7 @@ export class OnlineUserService implements OnModuleDestroy {
         userName: mapping.userName,
       };
     } catch (error) {
-      this.logger.error(`getSocketUserMapping 실패: ${(error as Error).message}`);
+      this.logger.error(`getSocketUserMapping 실패: ${toErrorMessage(error)}`);
       return null;
     }
   }

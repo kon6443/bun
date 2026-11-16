@@ -5,6 +5,7 @@ import { verify, JwtPayload } from 'jsonwebtoken';
 import { Socket } from 'socket.io';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
+import type { FishingRateWindows } from './fishing-rate-limit';
 
 type AccessTokenPayload = JwtPayload & {
   sub: number;
@@ -25,6 +26,8 @@ export interface FishingSocket extends Socket {
   };
   /** 현재 참가 중인 맵 ID (고빈도 이벤트 최적화용 캐시) */
   _fishingMapId?: string;
+  /** 이벤트 빈도 제한 윈도 (소켓 단위 — fishing-rate-limit.ts) */
+  _fishingRateWindows?: FishingRateWindows;
 }
 
 /**

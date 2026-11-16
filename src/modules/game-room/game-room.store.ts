@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { GameRoomKeys } from './game-room-keys';
+import { toErrorMessage } from '../../common/utils/error.utils';
 
 /**
  * 방 단위 원자 변경 — 버전 비교 후 쓰기(CAS) Lua.
@@ -109,7 +110,7 @@ export class GameRoomStore<TRoom extends GameRoomRecord> {
     if (vanished.length > 0) {
       // TTL로 사라진 방을 인덱스에서 정리 — 실패해도 다음 조회에서 다시 시도된다
       redis.zrem(this.keys.lobbyIndex, ...vanished).catch((error: unknown) => {
-        this.logger.warn(`로비 인덱스 정리 실패: ${(error as Error).message}`);
+        this.logger.warn(`로비 인덱스 정리 실패: ${toErrorMessage(error)}`);
       });
     }
     // 인덱스가 읽는 범위(최근 scanLimit개)보다 크면 가장 오래된 쪽도 조금씩 정리한다 — 범위 밖으로 밀린 사라진 방 코드가
@@ -129,7 +130,7 @@ export class GameRoomStore<TRoom extends GameRoomRecord> {
       const gone = oldest.filter((_, i) => results[i]?.[1] === 0);
       if (gone.length > 0) await redis.zrem(this.keys.lobbyIndex, ...gone);
     } catch (error) {
-      this.logger.warn(`로비 인덱스 끝 정리 실패: ${(error as Error).message}`);
+      this.logger.warn(`로비 인덱스 끝 정리 실패: ${toErrorMessage(error)}`);
     }
   }
 

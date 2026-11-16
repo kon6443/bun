@@ -6,6 +6,10 @@ import { FishingOnlineService } from './fishing-online.service';
 import { FishingWsGuard, FishingSocket } from './fishing-ws.guard';
 import { FishingSocketEvents } from './fishing.events';
 import { createUser } from '../../entities/__spec__/entity.factory';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
+import { CatchResultDto, FishingStateDto, JoinMapDto } from './fishing.gateway.dto';
+import { FISHING_RATE_LIMITS } from './fishing-rate-limit';
 
 const MAP_ID = 'lake-1';
 const ROOM = `fishing-map-${MAP_ID}`;
@@ -56,6 +60,7 @@ describe('FishingGateway', () => {
     return {
       id: SOCKET_ID,
       data,
+      disconnected: false,
       _fishingMapId: mapId,
       join: jest.fn(),
       leave: jest.fn(),
@@ -314,6 +319,224 @@ describe('FishingGateway', () => {
         room: ROOM,
       });
       expect(client.leave).toHaveBeenCalledWith(ROOM);
+    });
+
+    it('나간 뒤에는 캐시한 mapId를 지워 이동·채팅이 이전 맵으로 가지 않아야 함', async () => {
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      await gateway.handleLeaveMap(client, { mapId: MAP_ID });
+      await gateway.handleMove(client, { x: 100, y: 300, direction: 'left' });
+
+      expect(client._fishingMapId).toBeUndefined();
+      expect(clientRoomEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleJoinMap — 다른 맵으로 옮길 때', () => {
+    const NEXT_MAP_ID = 'sea-1';
+
+    it('이전 맵의 온라인 등록을 해제하고 room을 떠난 뒤 새 맵에 들어가야 함', async () => {
+      fishingOnlineService.isSocketRegistered.mockResolvedValue(true);
+      fishingOnlineService.removeSocket.mockResolvedValue({
+        mapId: MAP_ID,
+        userId: USER_ID,
+        userName: '낚시왕',
+        isFullyOffline: true,
+      });
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      await gateway.handleJoinMap(client, { mapId: NEXT_MAP_ID });
+
+      expect(fishingOnlineService.removeSocket).toHaveBeenCalledWith(SOCKET_ID);
+      expect(client.leave).toHaveBeenCalledWith(ROOM);
+      // 이전 맵 사람들에게 퇴장을 알린다 — 안 하면 유령 캐릭터가 남는다
+      expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
+      expect(serverRoomEmit).toHaveBeenCalledWith(FishingSocketEvents.USER_LEFT, expect.objectContaining({ userId: USER_ID }));
+      expect(fishingOnlineService.removeSocket.mock.invocationCallOrder[0]).toBeLessThan(
+        fishingOnlineService.addUserToOnline.mock.invocationCallOrder[0],
+      );
+      expect(client.join).toHaveBeenCalledWith(`fishing-map-${NEXT_MAP_ID}`);
+      expect(client._fishingMapId).toBe(NEXT_MAP_ID);
+    });
+
+    // 같은 소켓의 입장·퇴장은 직렬로 처리된다 — 겹치면 늦게 끝난 쪽이 방금 한 등록·room 참가를 지운다
+    it('퇴장 처리 중 같은 맵에 다시 들어오면, 퇴장이 끝난 뒤 재등록·재참가해야 함', async () => {
+      let releaseLeave: (registered: boolean) => void = () => undefined;
+      fishingOnlineService.isSocketRegistered.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          releaseLeave = resolve;
+        }),
+      );
+      fishingOnlineService.removeSocket.mockResolvedValue({ mapId: MAP_ID, userId: USER_ID, userName: '낚시왕', isFullyOffline: false });
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      const leaving = gateway.handleLeaveMap(client, { mapId: MAP_ID });
+      const joining = gateway.handleJoinMap(client, { mapId: MAP_ID });
+      await new Promise((r) => setImmediate(r));
+      // 퇴장이 끝나기 전에는 입장이 등록하지 않는다
+      expect(fishingOnlineService.addUserToOnline).not.toHaveBeenCalled();
+
+      releaseLeave(true);
+      await Promise.all([leaving, joining]);
+
+      expect(fishingOnlineService.removeSocket.mock.invocationCallOrder[0]).toBeLessThan(
+        fishingOnlineService.addUserToOnline.mock.invocationCallOrder[0],
+      );
+      expect(client.leave.mock.invocationCallOrder[0]).toBeLessThan(client.join.mock.invocationCallOrder[0]);
+      expect(client._fishingMapId).toBe(MAP_ID);
+    });
+
+    it('맵 이동이 연달아 겹쳐도 거쳐 간 맵의 room·등록이 남지 않아야 함', async () => {
+      let releaseFirstLeave: (registered: boolean) => void = () => undefined;
+      fishingOnlineService.isSocketRegistered
+        .mockReturnValueOnce(
+          new Promise<boolean>((resolve) => {
+            releaseFirstLeave = resolve;
+          }),
+        )
+        .mockResolvedValue(true);
+      fishingOnlineService.removeSocket.mockResolvedValue({ mapId: MAP_ID, userId: USER_ID, userName: '낚시왕', isFullyOffline: false });
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      const toB = gateway.handleJoinMap(client, { mapId: 'map-b' });
+      const toC = gateway.handleJoinMap(client, { mapId: 'map-c' });
+      releaseFirstLeave(true);
+      await Promise.all([toB, toC]);
+
+      // A → B → C 순서로 떠나고 들어간다 — B를 떠나지 않으면 C에 있으면서 B 이벤트를 받고 B 목록에 유령이 남는다
+      expect(client.leave.mock.calls.map(([room]) => room)).toEqual([ROOM, 'fishing-map-map-b']);
+      expect(client.join.mock.calls.map(([room]) => room)).toEqual(['fishing-map-map-b', 'fishing-map-map-c']);
+      expect(fishingOnlineService.removeSocket).toHaveBeenCalledTimes(2);
+      expect(client._fishingMapId).toBe('map-c');
+    });
+
+    it('입장 처리 중 연결이 끊기면 등록이 끝난 뒤 정리해야 함', async () => {
+      let releaseAdd: () => void = () => undefined;
+      fishingOnlineService.addUserToOnline.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseAdd = () => resolve({ wasAlreadyOnline: false });
+        }),
+      );
+      const client = createClient('auth');
+
+      const joining = gateway.handleJoinMap(client, { mapId: MAP_ID });
+      const disconnecting = gateway.handleDisconnect(client);
+      await new Promise((r) => setImmediate(r));
+      expect(fishingOnlineService.removeSocket).not.toHaveBeenCalled();
+
+      releaseAdd();
+      await Promise.all([joining, disconnecting]);
+      expect(fishingOnlineService.removeSocket).toHaveBeenCalledWith(SOCKET_ID);
+    });
+
+    it('가드를 기다리는 사이 끊긴 소켓이면 등록하지 않아야 함 (유령 방지)', async () => {
+      const client = createClient('auth');
+      (client as unknown as { disconnected: boolean }).disconnected = true;
+
+      await gateway.handleJoinMap(client, { mapId: MAP_ID });
+
+      expect(fishingOnlineService.addUserToOnline).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('퇴장 정리를 기다리는 사이 들어온 이동은 이전 맵에 위치를 다시 쓰지 않아야 함', async () => {
+      let releaseLeave: (registered: boolean) => void = () => undefined;
+      fishingOnlineService.isSocketRegistered.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          releaseLeave = resolve;
+        }),
+      );
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      const leaving = gateway.handleLeaveMap(client, { mapId: MAP_ID });
+      await new Promise((r) => setImmediate(r)); // 이동은 다음 패킷으로 온다 — 퇴장 작업이 시작된 뒤
+      await gateway.handleMove(client, { x: 100, y: 300, direction: 'left' });
+      releaseLeave(false);
+      await leaving;
+
+      expect(fishingOnlineService.updatePosition).not.toHaveBeenCalled();
+      expect(clientRoomEmit).not.toHaveBeenCalled();
+    });
+
+    it('앞선 소속 변경이 실패해도 예외는 호출자에게 가고, 다음 입장은 진행돼야 함 (큐가 막히지 않음)', async () => {
+      fishingOnlineService.isSocketRegistered.mockRejectedValueOnce(new Error('boom'));
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      await expect(gateway.handleLeaveMap(client, { mapId: MAP_ID })).rejects.toThrow('boom');
+      await gateway.handleJoinMap(client, { mapId: MAP_ID });
+
+      expect(fishingOnlineService.addUserToOnline).toHaveBeenCalledTimes(1);
+    });
+
+    it('같은 맵에 다시 들어오면 떠나지 않아야 함 (재입장)', async () => {
+      const client = createClient('auth', { mapId: MAP_ID });
+
+      await gateway.handleJoinMap(client, { mapId: MAP_ID });
+
+      expect(client.leave).not.toHaveBeenCalled();
+      expect(fishingOnlineService.removeSocket).not.toHaveBeenCalled();
+    });
+  });
+
+  // 같은 맵 전원에게 팬아웃되는 이벤트라 클라이언트 스로틀만 믿지 않는다 (fishing-rate-limit.ts)
+  describe('빈도 제한', () => {
+    it.each([
+      ['handleMove', 'move' as const, (g: FishingGateway, c: FishingSocket) => g.handleMove(c, { x: 100, y: 300, direction: 'left' })],
+      ['handleFishingState', 'state' as const, (g: FishingGateway, c: FishingSocket) => g.handleFishingState(c, { state: 'idle' })],
+      ['handleCatchResult', 'catch' as const, (g: FishingGateway, c: FishingSocket) =>
+        g.handleCatchResult(c, { fishName: '붕어', grade: 'rare', size: 30, weight: 500 })],
+    ])('%s는 한도를 넘는 이벤트를 조용히 버려야 함', async (_name, action, run) => {
+      const client = createClient('auth', { mapId: MAP_ID });
+      const { limit } = FISHING_RATE_LIMITS[action];
+
+      for (let i = 0; i < limit + 3; i++) await run(gateway, client);
+
+      expect(clientRoomEmit).toHaveBeenCalledTimes(limit);
+    });
+
+    it('채팅도 한도를 넘으면 버려야 함', async () => {
+      const client = createClient('auth', { mapId: MAP_ID });
+      const { limit } = FISHING_RATE_LIMITS.chat;
+
+      for (let i = 0; i < limit + 3; i++) await gateway.handleChatMessage(client, { message: '안녕' });
+
+      expect(serverRoomEmit).toHaveBeenCalledTimes(limit);
+    });
+
+    it('한도는 소켓마다 따로 센다', async () => {
+      const first = createClient('auth', { mapId: MAP_ID });
+      const second = createClient('auth', { mapId: MAP_ID });
+      const { limit } = FISHING_RATE_LIMITS.catch;
+      const dto = { fishName: '붕어', grade: 'rare', size: 30, weight: 500 };
+
+      for (let i = 0; i < limit; i++) await gateway.handleCatchResult(first, dto);
+      await gateway.handleCatchResult(second, dto);
+
+      expect(clientRoomEmit).toHaveBeenCalledTimes(limit + 1);
+    });
+  });
+
+  // 결과·상태는 맵 전원에게 그대로 중계된다 — 상한이 없으면 한 소켓이 큰 값을 뿌릴 수 있다
+  describe('입력 상한 (DTO)', () => {
+    const errorsOf = <T extends object>(cls: new () => T, plain: object) =>
+      validateSync(plainToInstance(cls, plain)).map((e) => e.property);
+
+    it('프론트 정상 최대값(이름 5자·200cm·30000g·point-5)은 통과해야 함', () => {
+      expect(errorsOf(CatchResultDto, { fishName: '무지개송어', grade: 'legendary', size: 200, weight: 30000 })).toEqual([]);
+      expect(errorsOf(FishingStateDto, { state: 'casting', pointId: 'point-5' })).toEqual([]);
+    });
+
+    it.each([
+      ['물고기 이름 21자', { fishName: '가'.repeat(21), grade: 'rare', size: 30, weight: 500 }, 'fishName'],
+      ['크기 1001', { fishName: '붕어', grade: 'rare', size: 1001, weight: 500 }, 'size'],
+      ['무게 100001', { fishName: '붕어', grade: 'rare', size: 30, weight: 100_001 }, 'weight'],
+    ])('낚시 결과의 %s는 거부해야 함', (_desc, plain, property) => {
+      expect(errorsOf(CatchResultDto, plain)).toEqual([property]);
+    });
+
+    it('포인트 id 33자·맵 id 65자는 거부해야 함', () => {
+      expect(errorsOf(FishingStateDto, { state: 'casting', pointId: 'p'.repeat(33) })).toEqual(['pointId']);
+      expect(errorsOf(JoinMapDto, { mapId: 'm'.repeat(65) })).toEqual(['mapId']);
     });
   });
 
