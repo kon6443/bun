@@ -40,15 +40,15 @@ await this.dataSource.transaction(async (manager: EntityManager) => {
 ```typescript
 // src/modules/scheduler/scheduler.service.ts
 private shouldSkipScheduler(): boolean {
-  return !this.schedulerEnvs.includes(this.env) || this.TASK_SLOT !== 1;
+  return !this.schedulerEnvs.includes(this.env) || !this.isLeader; // isLeader = isLeaderReplica(configService.get('TASK_SLOT'))
 }
 ```
 
 - 가드 없는 `@Cron`은 모든 레플리카에서 중복 실행된다.
-- `TASK_SLOT`은 `infra/docker-stack.app.yml`의 `{{.Task.Slot}}`으로 주입되고 **1인 레플리카만** 실행한다. env 화이트리스트도 함께 건다.
+- `TASK_SLOT`은 `infra/docker-stack.app.yml`의 `{{.Task.Slot}}`으로 주입되고 **1인 레플리카만** 실행한다. 판정은 `common/utils/replica.utils.ts`의 `isLeaderReplica()` 하나만 쓴다(미설정 = 리더 아님). env 화이트리스트도 함께 건다.
 - Prometheus 게이지처럼 "전역 1회 계산" 지표도 `TASK_SLOT=1`에서만 갱신한다 (중복 timeseries 방지).
 
 ## 신규 스케줄러·배치 체크리스트
 
-- [ ] `TASK_SLOT !== 1` + env 화이트리스트 2단 가드
+- [ ] `isLeaderReplica()` + env 화이트리스트 2단 가드
 - [ ] 공유 상태는 Redis (인메모리 금지)

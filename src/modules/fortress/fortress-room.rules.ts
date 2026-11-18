@@ -1,5 +1,6 @@
 import { checkPlayerName, checkRoomName } from '../game-room/game-room-text';
 import { findMemberBySocket, pruneDisconnectedSeats } from '../game-room/game-room.rules';
+import type { ClientTraits, GameSocketIdentity } from '../game-room/game-room-ports';
 import { defaultTankSkin, storedTankSkin } from './fortress-skins';
 import { DISCONNECT_GRACE_MS } from './fortress.constants';
 import { FortressError } from './fortress.errors';
@@ -73,12 +74,8 @@ export interface StoredRoom extends RoomSettings {
   match: StoredMatchRef | null;
 }
 
-/** 요청한 소켓의 신원 — 게이트웨이가 소켓에서 꺼내 넘긴다(클라이언트 페이로드에서 받지 않는다) */
-export interface SocketIdentity {
-  socketId: string;
-  userId: number | null;
-  /** 빈도 제한·비밀번호 잠금용 IP */
-  ip: string;
+/** 요청한 소켓의 신원 — 공통부(game-room-ports) + 포트리스 탱크 스킨 */
+export interface SocketIdentity extends GameSocketIdentity {
   /**
    * 입장(create·join)에서만 — 게이트웨이가 계정 장착에서 읽은 탱크 스킨(F7). 조회 실패면 없다:
    * 새 자리는 default, 기존 자리는 이전 값 유지(기본값으로 덮지 않게 — 테트리스 enterIdentity와 같은 규칙)
@@ -86,11 +83,7 @@ export interface SocketIdentity {
   skin?: FortressTankSkin;
 }
 
-/** 입장 요청에 실려 오는 클라이언트 특성 */
-export interface ClientTraits {
-  tabId?: string;
-  heartbeat?: boolean;
-}
+export type { ClientTraits };
 
 export interface RoomChangeResult {
   /** 변경 후 방 상태. 방이 삭제됐으면 null */

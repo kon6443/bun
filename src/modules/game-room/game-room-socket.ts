@@ -1,10 +1,8 @@
 import { ArgumentsHost, BadRequestException, Logger } from '@nestjs/common';
-import { JwtPayload, verify } from 'jsonwebtoken';
 import { Socket } from 'socket.io';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
-
-type AccessTokenPayload = JwtPayload & { sub: number };
+import { extractSocketAccessToken, verifyAccessToken } from '../../common/utils/access-token.utils';
 
 /**
  * 게임 대전 소켓의 로그인 판정 (게임 공용 — 테트리스 대전·포트리스 WS 가드). **접속을 거부하지 않는다**(비로그인 참가 허용).
@@ -20,33 +18,17 @@ export async function resolveGameSocketUserId(
   userRepository: Repository<User>,
   unavailable: () => Error,
 ): Promise<number | null> {
-  const token = extractSocketToken(client);
-  if (!token || !secret) return null;
-
-  let payload: AccessTokenPayload;
-  try {
-    payload = verify(token, secret) as AccessTokenPayload;
-  } catch {
-    return null;
-  }
-  if (!payload?.sub) return null;
+  const token = extractSocketAccessToken(client);
+  if (!token) return null;
+  const verified = verifyAccessToken(token, secret);
+  if (!verified.ok) return null;
 
   try {
-    const user = await userRepository.findOne({ where: { userId: payload.sub, isActivated: 1 } });
+    const user = await userRepository.findOne({ where: { userId: verified.payload.sub, isActivated: 1 } });
     return user ? user.userId : null;
   } catch {
     throw unavailable();
   }
-}
-
-function extractSocketToken(client: Socket): string | null {
-  const authToken: unknown = client.handshake.auth?.token;
-  if (typeof authToken === 'string' && authToken) return authToken;
-
-  const authHeader = client.handshake.headers?.authorization;
-  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
-
-  return null;
 }
 
 /** 실패 ack 모양 — 각 게임 events.ts의 Ack 실패 갈래와 같다 */

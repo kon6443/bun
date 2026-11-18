@@ -2,7 +2,9 @@ import {
   GameRoomSeat,
   GameRoomShape,
   findMemberBySocket,
+  findUserSeat,
   isInPlayingMatch,
+  isSeatTakeOverBlocked,
   markSeatDisconnected,
   pruneDisconnectedSeats,
   removeSeat,
@@ -75,5 +77,44 @@ describe('game-room.rules', () => {
 
     const playing = roomOf([gone('p1', NOW - GRACE * 10), seat('p2')], { status: 'PLAYING' });
     expect(pruneDisconnectedSeats(playing, NOW, GRACE).players).toHaveLength(2);
+  });
+});
+
+// 테트리스 대전·포트리스가 같은 규칙을 두 벌 들고 있던 것 (docs/tasks/refactor-perf-b-2026-11 B2)
+describe('자리 넘겨받기 규칙', () => {
+  type UserSeat = GameRoomSeat & { userId: number | null; tabId?: string | null };
+  const userSeat = (playerId: string, userId: number | null, over: Partial<UserSeat> = {}): UserSeat => ({
+    ...seat(playerId),
+    userId,
+    tabId: null,
+    ...over,
+  });
+  const playing = (players: UserSeat[]): GameRoomShape<UserSeat> => ({
+    hostId: 'p1',
+    status: 'PLAYING',
+    players,
+    match: { playerIds: players.map(p => p.playerId) },
+  });
+
+  it('findUserSeat — 로그인 유저면 그 계정의 자리, 게스트(null)면 없음', () => {
+    const room = playing([userSeat('p1', 7), userSeat('p2', null)]);
+    expect(findUserSeat(room, 7)?.playerId).toBe('p1');
+    expect(findUserSeat(room, null)).toBeUndefined();
+    expect(findUserSeat(room, 99)).toBeUndefined();
+  });
+
+  it('경기 중 자리를 다른 소켓이 연결해 쓰고 있으면 막는다', () => {
+    const p1 = userSeat('p1', 7, { socketId: 'old' });
+    expect(isSeatTakeOverBlocked(playing([p1]), p1, 'new', undefined)).toBe(true);
+  });
+
+  it.each([
+    ['같은 탭의 재연결', userSeat('p1', 7, { socketId: 'old', tabId: 'tab-a' }), 'tab-a', 'PLAYING'],
+    ['이전 소켓이 이미 끊김', userSeat('p1', 7, { socketId: null, connected: false }), undefined, 'PLAYING'],
+    ['같은 소켓', userSeat('p1', 7, { socketId: 'new' }), undefined, 'PLAYING'],
+    ['경기 중이 아님', userSeat('p1', 7, { socketId: 'old' }), undefined, 'WAITING'],
+  ] as const)('%s이면 허용한다', (_desc, player, tabId, status) => {
+    const room = { ...playing([player]), status } as GameRoomShape<UserSeat>;
+    expect(isSeatTakeOverBlocked(room, player, 'new', tabId)).toBe(false);
   });
 });

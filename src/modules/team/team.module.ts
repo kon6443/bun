@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TeamController } from './team.controller';
 import { TeamChatController } from './team-chat.controller';
 import { TeamTagController } from './team-tag.controller';
+import { TeamIntegrationController } from './team-integration.controller';
 import { TeamService } from './team.service';
 import { TeamGateway } from './team.gateway';
 import { OnlineUserService } from './online-user.service';
@@ -42,7 +43,7 @@ import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
     AuthModule,
     ConfigModule,
   ],
-  controllers: [TeamController, TeamChatController, TeamTagController],
+  controllers: [TeamController, TeamChatController, TeamTagController, TeamIntegrationController],
   providers: [
     TeamService,
     TeamGateway, // NestJS 정석: Gateway를 Provider로 등록

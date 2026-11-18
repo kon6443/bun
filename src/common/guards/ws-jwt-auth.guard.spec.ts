@@ -136,6 +136,27 @@ describe('WsJwtGuard', () => {
     });
   });
 
+  // 실패 사유별 메시지 — 판정은 verifyAccessToken 공용, 문구는 가드가 정한다
+  describe('토큰 검증 실패 메시지', () => {
+    const errorOf = async (promise: Promise<unknown>) => {
+      try {
+        await promise;
+      } catch (error) {
+        return (error as WsException).getError() as { code: string; message: string };
+      }
+      throw new Error('예외가 발생하지 않았습니다');
+    };
+
+    it.each([
+      ['서명이 다른 토큰', () => sign({ sub: 1 }, 'wrong-secret', { expiresIn: '1h' }), '토큰 검증에 실패했습니다.'],
+      ['sub 없는 토큰', () => signToken({ teamId: 1, userId: 2, jti: 'x' }), '유효하지 않은 토큰입니다.'],
+    ])('%s → %s', async (_desc, make, message) => {
+      const client = buildClient({ auth: { token: make() }, headers: {} });
+
+      await expect(errorOf(guard.canActivate(buildContext(client)))).resolves.toEqual({ code: 'AUTH_INVALID_TOKEN', message });
+    });
+  });
+
   describe('사용자 조회 및 주입', () => {
     it('사용자가 없으면 AUTH_UNAUTHORIZED로 차단해야 함', async () => {
       userRepository.findOne.mockResolvedValue(null);

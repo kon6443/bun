@@ -34,6 +34,7 @@ import {
   TurnResolvedPayload,
 } from './fortress.events';
 import { toErrorMessage } from '../../common/utils/error.utils';
+import { isLeaderReplica } from '../../common/utils/replica.utils';
 
 /** 경기 이벤트 — 게이트웨이가 방 채널로 그대로 보낸다 */
 export type MatchBroadcast =
@@ -130,10 +131,10 @@ export class FortressMatchService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 스위퍼는 `TASK_SLOT === '1'` 레플리카에서만 돈다(멀티 레플리카 원칙 — 여러 레플리카가 돌아도 CAS라 결과는 같지만 Redis 부하만 는다).
-   * TASK_SLOT은 docker-stack `{{.Task.Slot}}` — 읽는 방식은 online-user.service와 같다(process.env 직접). LOCAL(미설정)은 로컬 타이머만
+   * TASK_SLOT은 docker-stack `{{.Task.Slot}}` — 판정은 isLeaderReplica 한 곳. LOCAL(미설정)은 로컬 타이머만
    */
   onModuleInit(): void {
-    if (process.env.TASK_SLOT !== '1') return;
+    if (!isLeaderReplica()) return;
     this.sweepTimer = setInterval(() => void this.sweep(), SWEEP_INTERVAL_MS);
     this.sweepTimer.unref();
   }

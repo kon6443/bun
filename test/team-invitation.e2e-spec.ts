@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 import { TeamController } from '../src/modules/team/team.controller';
+import { TeamIntegrationController } from '../src/modules/team/team-integration.controller';
 import { TeamService, TeamMemberType } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
@@ -39,7 +40,7 @@ const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600_000);
  * 잘못된 토큰을 익명으로 취급하면 만료된 세션이 조용히 비회원으로 격하된다.
  *
  * **2. 컨트롤러에만 있는 권한 로직** — `requireManagerAccess`는 서비스가 아니라
- * `TeamController`의 private 메서드다(텔레그램·디스코드 연동 4곳에서 사용).
+ * `TeamIntegrationController`의 private 메서드다(텔레그램·디스코드 연동 4곳에서 사용).
  * 서비스 단위 테스트로는 절대 덮이지 않는 영역이라 E2E가 유일한 검증 수단이다.
  */
 describe('E2E 초대·연동 (권한 경계)', () => {
@@ -56,7 +57,7 @@ describe('E2E 초대·연동 (권한 경계)', () => {
     teamGateway = { emitMemberJoined: jest.fn() };
 
     e2e = await createE2eApp({
-      controllers: [TeamController],
+      controllers: [TeamController, TeamIntegrationController],
       authUser,
       providers: [
         TeamService,
@@ -234,7 +235,7 @@ describe('E2E 초대·연동 (권한 경계)', () => {
   });
 
   /**
-   * `requireManagerAccess`는 `TeamController`의 private 메서드다.
+   * `requireManagerAccess`는 `TeamIntegrationController`의 private 메서드다.
    * 서비스가 아니라 컨트롤러에 있으므로 **단위 테스트로는 덮이지 않는다** —
    * 이 경로가 뚫리면 일반 멤버가 팀의 알림 채널을 임의로 연동/해제할 수 있다.
    */

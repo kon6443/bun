@@ -754,6 +754,42 @@ describe('TetrisBattleRoomService', () => {
       expect(mock.readRoom(code)?.players[1].connected).toBe(true);
     });
 
+    it('게이트를 다른 레플리카가 쥐어 실패했으면 다음 하트비트에 다시 시도한다 — 로컬 기억은 잡은 게이트만(리뷰 B-R1)', async () => {
+      const code = await heartbeatRoom();
+      const probeKey = `tetris-battle:hbprobe:${code}`;
+      mock.strings.set(probeKey, '1'); // 다른 레플리카가 판정 게이트를 쥐고 있다
+      await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS);
+      await settle();
+      expect(mock.readRoom(code)?.players[1].connected).toBe(true);
+
+      mock.strings.delete(probeKey); // 게이트 만료
+      await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS + 4_000); // 다음 핑 — 간격 안
+      await settle();
+      expect(mock.readRoom(code)?.players[1].connected).toBe(false);
+    });
+
+    it('게이트 기억은 SET NX 직전 단조 시각 기준 — 살아 있는 동안은 SET NX를 보내지 않고, 간격에서 여유(500ms)를 뺀 만큼 지나면 다시 보낸다 (리뷰 B-R3·R4)', async () => {
+      const code = await heartbeatRoom();
+      const probeKey = `tetris-battle:hbprobe:${code}`;
+      mock.strings.set(hbKey(code, B.socketId), '1'); // 판정은 돌되 아무도 끊지 않게
+      const probeSets = () => mock.redis.set.mock.calls.filter(([key]) => key === probeKey).length;
+      const clock = jest.spyOn(performance, 'now');
+      const beatAt = async (mono: number | null) => {
+        if (mono !== null) clock.mockReturnValue(mono);
+        await service.recordHeartbeat(code, A.socketId, T0 + HEARTBEAT_TTL_MS); // 벽시계(now)는 그대로 — 게이트는 단조 시계만 본다
+        await settle();
+      };
+
+      clock.mockReturnValueOnce(0).mockReturnValue(400); // SET 응답이 400ms 뒤에 와도 기억은 SET 직전(0) 기준
+      await beatAt(null);
+      expect(probeSets()).toBe(1);
+      await beatAt(HEARTBEAT_PROBE_INTERVAL_MS - 501);
+      expect(probeSets()).toBe(1);
+      mock.strings.delete(probeKey); // mock은 PX를 따르지 않는다 — 만료를 흉내 낸다
+      await beatAt(HEARTBEAT_PROBE_INTERVAL_MS - 500);
+      expect(probeSets()).toBe(2);
+    });
+
     it('답이 있으면(키가 살아 있으면) 끊지 않는다', async () => {
       const code = await heartbeatRoom();
       mock.strings.set(hbKey(code, B.socketId), '1'); // p2(B)는 방금 답함

@@ -7,6 +7,7 @@ import { TeamTask } from '../../entities/TeamTask';
 import { ConfigService } from '@nestjs/config';
 import { TaskStatus, ActStatus } from '../../common/enums/task-status.enum';
 import { toErrorDetail } from '../../common/utils/error.utils';
+import { isLeaderReplica } from '../../common/utils/replica.utils';
 
 /** 자동 아카이브 대기 일수 */
 const AUTO_ARCHIVE_DAYS = 14;
@@ -15,7 +16,7 @@ const AUTO_ARCHIVE_DAYS = 14;
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
   private readonly env: string;
-  private readonly TASK_SLOT: number;
+  private readonly isLeader: boolean;
   private readonly schedulerEnvs: string[] = ['QA', 'PROD'];
 
   constructor(
@@ -28,7 +29,7 @@ export class SchedulerService {
     // 환경 변수 확인용 (테스트용)
     // this.env = 'QA';
     this.env = this.configService.get<string>('ENV')?.toUpperCase() ?? '';
-    this.TASK_SLOT = Number(this.configService.get<number>('TASK_SLOT')) || 1;
+    this.isLeader = isLeaderReplica(this.configService.get('TASK_SLOT'));
   }
 
   /**
@@ -36,7 +37,7 @@ export class SchedulerService {
    * @returns 스케줄러 실행 여부
    */
   private shouldSkipScheduler(): boolean {
-    return !this.schedulerEnvs.includes(this.env) || this.TASK_SLOT !== 1;
+    return !this.schedulerEnvs.includes(this.env) || !this.isLeader;
   }
 
   /**

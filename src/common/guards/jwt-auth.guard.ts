@@ -2,8 +2,7 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { verify, JwtPayload } from 'jsonwebtoken';
-import { extractHttpAccessToken } from '../utils/access-token.utils';
+import { AccessTokenPayload, extractHttpAccessToken, verifyAccessToken } from '../utils/access-token.utils';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
 import {
@@ -12,11 +11,6 @@ import {
 } from '../../modules/auth/auth-error.dto';
 
 type RequestWithUser = Request & { user?: User };
-
-type AccessTokenPayload = JwtPayload & {
-  sub: number;
-  loginType?: string;
-};
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -55,22 +49,15 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   protected verifyToken(token: string): AccessTokenPayload {
-    const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret) {
-      throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
-    }
-
-    try {
-      const payload = verify(token, secret) as AccessTokenPayload;
-      if (!payload?.sub) {
+    const result = verifyAccessToken(token, this.configService.get<string>('JWT_SECRET'));
+    if (result.ok) return result.payload;
+    switch (result.reason) {
+      case 'NO_SECRET':
+        throw new AuthInvalidTokenErrorResponseDto('JWT_SECRET이 설정되지 않았습니다.');
+      case 'NO_SUBJECT':
         throw new AuthInvalidTokenErrorResponseDto('유효하지 않은 토큰입니다.');
-      }
-      return payload;
-    } catch (error) {
-      if (error instanceof AuthInvalidTokenErrorResponseDto) {
-        throw error;
-      }
-      throw new AuthInvalidTokenErrorResponseDto('토큰 검증에 실패했습니다.');
+      case 'INVALID':
+        throw new AuthInvalidTokenErrorResponseDto('토큰 검증에 실패했습니다.');
     }
   }
 }
