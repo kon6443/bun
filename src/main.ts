@@ -23,6 +23,7 @@ import { FortressLobbyChatService } from './modules/fortress/fortress-lobby-chat
 import { TetrisLobbyChatService } from './modules/tetris-battle/tetris-lobby-chat.service';
 import { ConfigService } from '@nestjs/config';
 import { GRACEFUL_SHUTDOWN_TIMEOUT_MS, JSON_BODY_LIMIT } from './common/constants/app.constants';
+import { closeAppThenRedis } from './common/utils/graceful-shutdown';
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -176,8 +177,8 @@ async function bootstrap() {
       logger.log('Swagger documentation available at /api/v1/docs');
     }
 
-    // NestJS 라이프사이클 훅 활성화 (OnModuleDestroy 등)
-    app.enableShutdownHooks();
+    // 라이프사이클 훅(OnModuleDestroy 등)은 아래 shutdown의 app.close()가 부른다. enableShutdownHooks()는 쓰지 않는다 —
+    // 켜면 Nest의 시그널 핸들러가 이 shutdown과 동시에 app을 한 번 더 닫아(훅 2회·Redis 종료와 경합) 순서가 보장되지 않는다
 
     await app.listen(port, '0.0.0.0');
     logger.log(`Application is running on: http://0.0.0.0:${port}`);
@@ -198,8 +199,7 @@ async function bootstrap() {
       timer.unref();
 
       try {
-        await redisAdapter.disconnect();
-        await app.close();
+        await closeAppThenRedis(app, redisAdapter);
         logger.log('Graceful shutdown 완료');
         process.exit(0);
       } catch (error) {

@@ -77,6 +77,13 @@ import { ALLOWED_ORIGINS } from '../../common/constants/cors.constants';
 @Injectable()
 export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TeamGateway.name);
+  /**
+   * 소켓별 팀 소속 변경(입장·퇴장·연결 해제)을 순서대로 처리한다 — 겹치면 늦게 끝난 쪽이 방금 한 등록을 지우거나 유령을 남긴다.
+   * 예: joinTeam이 멤버십·표시 이름 조회를 기다리는 사이 연결이 끊기면 연결 해제 정리가 먼저 끝나고, 뒤이어 죽은 소켓이
+   * 온라인으로 등록돼 그 유저가 계속 온라인으로 보인다. 낚시 게이트웨이(serializeMembership)와 같은 방식.
+   * 레플리카 간 공유 상태가 아니라 한 소켓 안의 처리 순서라 메모리에 둔다(소켓이 사라지면 WeakMap에서 함께 사라진다)
+   */
+  private readonly membershipQueues = new WeakMap<Socket, Promise<void>>();
 
   @WebSocketServer()
   server: Server;
@@ -119,8 +126,8 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.wsConnectionsActive.dec();
     this.logger.log(`클라이언트 연결 해제: ${client.id}`);
 
-    // 온라인 유저에서 제거
-    await this.removeUserFromOnline(client.id);
+    // 온라인 유저에서 제거 — 진행 중인 입장 뒤에 실행해, 입장이 끝난 등록을 지운다
+    await this.serializeMembership(client, () => this.removeUserFromOnline(client.id));
   }
 
   // ===== 팀 Room 관리 (Client → Server) =====
@@ -144,94 +151,109 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.wsEventsTotal.inc({ event: 'joinTeam' });
     const endTimer = this.wsEventDuration.startTimer({ event: 'joinTeam' });
     try {
-      const { teamId } = dto;
-      const userId = client.data.user?.userId;
-
-      this.logger.debug(`팀 참가 요청: teamId=${teamId}, userId=${userId}, socketId=${client.id}`);
-
-      // 인증 정보 확인
-      // WsJwtGuard가 앞단에서 막지만, 팀 격리를 가드 한 겹에만 의존하지 않는다 —
-      // @UseGuards가 빠지면 아무나 임의 팀 room에 들어가 모든 이벤트를 수신하게 된다.
-      // HTTP 경로가 가드 + verifyTeamMemberAccess 2겹인 것과 같은 구조를 맞춘다.
-      if (!userId) {
-        this.logger.warn(`팀 참가 거부: 인증 정보 없음 socketId=${client.id}`);
-        throw new WsException({
-          code: 'AUTH_UNAUTHORIZED',
-          message: '인증이 필요합니다.',
-        });
-      }
-
-      // 팀 멤버십 검증
-      try {
-        await this.teamService.verifyTeamMemberAccess(teamId, userId);
-      } catch (_error) {
-        this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
-        // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
-        throw new WsException({
-          code: 'FORBIDDEN',
-          message: '해당 팀에 접근 권한이 없습니다.',
-        });
-      }
-
-      const roomName = this.getRoomName(teamId);
-      await client.join(roomName);
-
-      // 채팅 등 후속 이벤트의 room 식별을 위해 teamId 캐싱
-      client.data.teamId = teamId;
-
-      // 온라인 유저에 추가 — 이름은 팀 안 표시 이름(팀 닉네임 → 계정 닉네임). 핸드셰이크 때 읽은 user가 아니라 지금 값을 쓴다
-      const userName = await this.teamDisplayNameService.getDisplayName(teamId, userId);
-
-      const { wasAlreadyOnline } = await this.onlineUserService.addUserToOnline(
-        teamId,
-        userId,
-        userName,
-        client.id,
-      );
-
-      // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
-      this.onlineUserService.trackActiveTeam(teamId);
-
-      // 목록 한 번으로 내 접속 정보까지 얻는다(왕복 절약). 목록은 최대 100명이라 그 밖이면 따로 조회한다
-      const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
-      const userInfo =
-        onlineUsers.find((u) => u.userId === userId) ??
-        (onlineUsers.length >= ONLINE_USERS_LIST_LIMIT ? await this.onlineUserService.getUserOnlineInfo(teamId, userId) : null);
-      if (userInfo) {
-        // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
-        if (!wasAlreadyOnline) {
-          const payload: UserJoinedPayload = {
-            teamId,
-            userId,
-            userName,
-            connectionCount: userInfo.connectionCount,
-            totalOnlineCount: onlineUsers.length,
-          };
-          // 본인 제외하고 브로드캐스트
-          client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
-        }
-
-        // 본인에게는 항상 현재 온라인 유저 목록 전송
-        const onlineUsersPayload: OnlineUsersPayload = {
-          teamId,
-          users: onlineUsers,
-          totalCount: onlineUsers.length,
-        };
-        client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
-      }
-
-      this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);
-
-      return { teamId, room: roomName };
+      return await this.serializeMembership(client, () => this.joinTeam(client, dto.teamId));
     } finally {
       endTimer();
     }
   }
 
+  /** handleJoinTeam 본문 — serializeMembership 안에서 부른다 */
+  private async joinTeam(client: AuthenticatedSocket, teamId: number): Promise<JoinedTeamPayload> {
+    const roomName = this.getRoomName(teamId);
+    // 가드(DB 조회)를 기다리는 사이 끊긴 소켓 — 연결 해제 정리가 이미 큐 앞에서 끝났다. 여기서 등록하면 유령이 된다.
+    // 돌려주는 ack는 받을 소켓이 없어 버려진다(실패로 던지지 않는 것은 로그·필터를 남기지 않기 위해)
+    if (client.disconnected) return { teamId, room: roomName };
+
+    const userId = client.data.user?.userId;
+
+    this.logger.debug(`팀 참가 요청: teamId=${teamId}, userId=${userId}, socketId=${client.id}`);
+
+    // 인증 정보 확인
+    // WsJwtGuard가 앞단에서 막지만, 팀 격리를 가드 한 겹에만 의존하지 않는다 —
+    // @UseGuards가 빠지면 아무나 임의 팀 room에 들어가 모든 이벤트를 수신하게 된다.
+    // HTTP 경로가 가드 + verifyTeamMemberAccess 2겹인 것과 같은 구조를 맞춘다.
+    if (!userId) {
+      this.logger.warn(`팀 참가 거부: 인증 정보 없음 socketId=${client.id}`);
+      throw new WsException({
+        code: 'AUTH_UNAUTHORIZED',
+        message: '인증이 필요합니다.',
+      });
+    }
+
+    // 팀 멤버십 검증
+    try {
+      await this.teamService.verifyTeamMemberAccess(teamId, userId);
+    } catch (_error) {
+      this.logger.warn(`팀 접근 거부: teamId=${teamId}, userId=${userId}`);
+      // WsExceptionFilter가 {code, message, timestamp} 표준 포맷으로 'error' emit
+      throw new WsException({
+        code: 'FORBIDDEN',
+        message: '해당 팀에 접근 권한이 없습니다.',
+      });
+    }
+
+    // 같은 소켓이 다른 팀에 있었으면 먼저 나간다 — 소켓 매핑은 팀 하나라 새 팀으로 덮이면 이전 팀 소켓 집합에 죽은 id가 남아
+    // TTL까지 온라인으로 보이고, 이전 팀 room 이벤트도 계속 받는다. 프론트는 팀마다 새 연결이라 지금은 타지 않는 방어 경로
+    const previousTeamId = client.data.teamId;
+    // Redis가 끊긴 동안엔 이전 팀 등록 정리를 기다리지 않는다 — 정리 명령은 오프라인 큐에서 재연결까지 멈춰 입장 응답이 오지 않는다.
+    // 정리를 건너뛰었으면 이번 입장의 온라인 등록도 하지 않는다 — 그사이 Redis가 돌아와 등록하면 소켓 매핑이 새 팀으로 덮여
+    // 이전 팀 소켓 집합의 죽은 id를 아무도 지우지 못한다(매핑이 이전 팀을 가리키면 연결 해제 정리가 지운다)
+    let registerOnline = true;
+    if (previousTeamId !== undefined && previousTeamId !== teamId) {
+      registerOnline = this.onlineUserService.isReady();
+      await this.leaveTeam(client, previousTeamId, { cleanupOnline: registerOnline });
+    }
+
+    await client.join(roomName);
+
+    // 채팅 등 후속 이벤트의 room 식별을 위해 teamId 캐싱
+    client.data.teamId = teamId;
+
+    // 온라인 유저에 추가 — 이름은 팀 안 표시 이름(팀 닉네임 → 계정 닉네임). 핸드셰이크 때 읽은 user가 아니라 지금 값을 쓴다
+    const userName = await this.teamDisplayNameService.getDisplayName(teamId, userId);
+
+    const { wasAlreadyOnline } = registerOnline
+      ? await this.onlineUserService.addUserToOnline(teamId, userId, userName, client.id)
+      : { wasAlreadyOnline: true }; // 등록하지 않았으면 입장 알림도 내지 않는다(다른 탭이 목록에 있어도)
+
+    // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
+    this.onlineUserService.trackActiveTeam(teamId);
+
+    // 목록 한 번으로 내 접속 정보까지 얻는다(왕복 절약). 목록은 최대 100명이라 그 밖이면 따로 조회한다
+    const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
+    const userInfo =
+      onlineUsers.find((u) => u.userId === userId) ??
+      (onlineUsers.length >= ONLINE_USERS_LIST_LIMIT ? await this.onlineUserService.getUserOnlineInfo(teamId, userId) : null);
+    if (userInfo) {
+      // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
+      if (!wasAlreadyOnline) {
+        const payload: UserJoinedPayload = {
+          teamId,
+          userId,
+          userName,
+          connectionCount: userInfo.connectionCount,
+          totalOnlineCount: onlineUsers.length,
+        };
+        // 본인 제외하고 브로드캐스트
+        client.to(roomName).emit(TeamSocketEvents.USER_JOINED, payload);
+      }
+
+      // 본인에게는 항상 현재 온라인 유저 목록 전송
+      const onlineUsersPayload: OnlineUsersPayload = {
+        teamId,
+        users: onlineUsers,
+        totalCount: onlineUsers.length,
+      };
+      client.emit(TeamSocketEvents.ONLINE_USERS, onlineUsersPayload);
+    }
+
+    this.logger.log(`팀 참가 완료: teamId=${teamId}, userId=${userId}, room=${roomName}`);
+
+    return { teamId, room: roomName };
+  }
+
   /**
-   * 팀 room 퇴장
-   *
-   * 주의: handleDisconnect에서 이미 처리된 소켓이면 중복 처리하지 않음
+   * 팀 room 퇴장 (프론트는 지금 보내지 않는다 — 팀 전환은 연결 해제 → 새 연결 → joinTeam)
    */
   @UseGuards(WsJwtGuard)
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -244,30 +266,36 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const endTimer = this.wsEventDuration.startTimer({ event: 'leaveTeam' });
     try {
       const { teamId } = dto;
-      const roomName = this.getRoomName(teamId);
-
-      // 온라인 유저에서 제거 및 퇴장 알림
-      // 이미 handleDisconnect에서 처리된 소켓이면 스킵 (중복 알림 방지)
-      const userId = client.data.user?.userId;
-      if (userId && (await this.onlineUserService.isSocketRegistered(client.id))) {
-        const result = await this.onlineUserService.removeSocket(client.id);
-        if (result?.isFullyOffline) {
-          await this.broadcastUserLeftIfOffline(teamId, userId, result.userName);
-        }
-      }
-
-      await client.leave(roomName);
-
-      // 캐싱된 teamId 정리 (퇴장한 팀의 채팅이 계속 전송되는 것 방지)
-      if (client.data.teamId === teamId) {
-        client.data.teamId = undefined;
-      }
-
+      await this.serializeMembership(client, () => this.leaveTeam(client, teamId));
       this.logger.log(`팀 퇴장: teamId=${teamId}, socketId=${client.id}`);
-
-      return { teamId, room: roomName };
+      return { teamId, room: this.getRoomName(teamId) };
     } finally {
       endTimer();
+    }
+  }
+
+  /**
+   * 팀에서 나간다 — serializeMembership 안에서 부른다(퇴장 요청·다른 팀 입장).
+   * room과 캐시를 먼저 정리한다: Redis 정리를 기다리는 동안(끊긴 Redis면 명령이 오프라인 큐에서 기다린다) 퇴장한 팀의
+   * 이벤트를 계속 받거나 채팅을 보내지 않게. 온라인 등록은 이 소켓이 그 팀에 들어와 있을 때만 지운다 —
+   * 소켓 매핑은 지금 팀 하나라 다른 팀 id로 지우면 지금 팀의 등록이 빠진다
+   */
+  private async leaveTeam(client: AuthenticatedSocket, teamId: number, { cleanupOnline = true } = {}): Promise<void> {
+    const wasCurrentTeam = client.data.teamId === teamId;
+    await client.leave(this.getRoomName(teamId));
+    if (!wasCurrentTeam) return;
+    // 퇴장한 팀의 채팅이 계속 전송되는 것 방지
+    client.data.teamId = undefined;
+    if (!cleanupOnline) return;
+
+    // 이미 연결 해제 정리로 지워진 소켓이면 건너뛴다 (중복 퇴장 알림 방지)
+    const userId = client.data.user?.userId;
+    if (userId && (await this.onlineUserService.isSocketRegistered(client.id))) {
+      const result = await this.onlineUserService.removeSocket(client.id);
+      // 알림은 실제로 지운 등록의 팀으로 — Redis가 끊긴 동안의 팀 전환은 등록을 이전 팀에 남겨 둘 수 있다
+      if (result?.isFullyOffline) {
+        await this.broadcastUserLeftIfOffline(result.teamId, result.userId, result.userName);
+      }
     }
   }
 
@@ -653,6 +681,20 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
 
     this.logger.debug(`온라인 유저 제거 (disconnect): socketId=${socketId}`);
+  }
+
+  /** 소켓별 팀 소속 변경을 순서대로 — 실패해도 다음 작업은 이어서 돈다(실패는 호출한 쪽으로 그대로 전달) */
+  private serializeMembership<T>(client: Socket, task: () => Promise<T>): Promise<T> {
+    const previous = this.membershipQueues.get(client) ?? Promise.resolve();
+    const run = previous.then(task);
+    this.membershipQueues.set(
+      client,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
   }
 
   /**

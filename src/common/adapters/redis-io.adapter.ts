@@ -100,11 +100,19 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   /**
-   * Graceful shutdown 시 Redis 연결 정리
+   * Graceful shutdown 시 Redis 연결 정리 — 연결돼 있으면 quit(보낸 명령을 마저 처리한 뒤 닫는다).
+   * 끊긴 동안(재연결 중)이면 바로 끊는다: quit도 오프라인 큐에서 재연결을 기다려(maxRetriesPerRequest: null)
+   * 종료가 강제 종료 타이머까지 멈춘다. 그때 큐에 남은 명령은 어차피 나갈 수 없다
    */
   async disconnect(): Promise<void> {
+    const close = (client: Redis) => (client.status === 'ready' ? client.quit() : Promise.resolve(client.disconnect()));
+    if (this.pubClient.status !== 'ready' || this.subClient.status !== 'ready') {
+      this.logger.warn(
+        `Redis가 연결돼 있지 않아 바로 끊는다(대기 중 명령은 버려짐): pub=${this.pubClient.status}, sub=${this.subClient.status}`,
+      );
+    }
     try {
-      await Promise.all([this.pubClient.quit(), this.subClient.quit()]);
+      await Promise.all([close(this.pubClient), close(this.subClient)]);
       this.logger.log('Redis 연결 정리 완료');
     } catch (error) {
       this.logger.error('Redis 연결 정리 실패:', toErrorMessage(error));
