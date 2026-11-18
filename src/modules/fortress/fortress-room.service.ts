@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
 import type { Redis } from 'ioredis';
 import { GameRoomRateLimiter } from '../game-room/game-room-rate-limit';
-import { acquireIntervalGate, recordHeartbeatSafely } from '../game-room/game-room-presence';
+import { LocalGateHold, acquireIntervalGate, recordHeartbeatSafely } from '../game-room/game-room-presence';
 import {
   generateRoomCode,
   hashPlayerToken,
@@ -124,6 +124,8 @@ export class FortressRoomService {
   private readonly rooms = new GameRoomStore<StoredRoom>(KEYS, ROOM_TTL_SECONDS, this.logger);
   private readonly rateLimiter = new GameRoomRateLimiter<FortressRateLimitAction>(KEYS, FORTRESS_RATE_LIMITS, this.logger);
   private wakeScheduler: (task: () => void, delayMs: number) => void = defaultWakeScheduler;
+  /** 이 레플리카가 잡은 하트비트 판정 게이트 — 살아 있는 동안 SET NX 왕복을 건너뛴다(게이트 자체는 Redis NX) */
+  private readonly heartbeatGateHold = new LocalGateHold(HEARTBEAT_PROBE_INTERVAL_MS);
   private readonly mutationDeps: RoomMutationDeps<StoredRoom, RoomState> = {
     store: this.rooms,
     logger: this.logger,
@@ -834,7 +836,10 @@ export class FortressRoomService {
    */
   private async reconcileHeartbeats(redis: Redis, code: string, now: number): Promise<void> {
     try {
+      const gateAt = this.heartbeatGateHold.now(); // SET NX 직전 단조 시각 — now(판정 기준)와 따로 잰다(리뷰 B-R3·R4)
+      if (this.heartbeatGateHold.isHeld(code, gateAt)) return;
       if (!(await acquireIntervalGate(redis, KEYS.heartbeatProbe(code), HEARTBEAT_PROBE_INTERVAL_MS))) return;
+      this.heartbeatGateHold.markAcquired(code, gateAt);
       const loaded = await this.rooms.load(redis, code);
       if (!loaded) return;
       const due = loaded.room.players.filter(

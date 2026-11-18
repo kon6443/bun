@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { FortressMatchService } from './fortress-match.service';
-import { DISCONNECT_GRACE_MS, FINISH_RETRY_DELAY_MS, FINISH_RETRY_MAX_ATTEMPTS, FORTRESS_RATE_LIMITS, HEARTBEAT_TTL_MS, LIVENESS_MIN_CONNECTED_MS } from './fortress.constants';
+import { DISCONNECT_GRACE_MS, FINISH_RETRY_DELAY_MS, FINISH_RETRY_MAX_ATTEMPTS, FORTRESS_RATE_LIMITS, FORTRESS_ROOM_KEYS, HEARTBEAT_PROBE_INTERVAL_MS, HEARTBEAT_TTL_MS, LIVENESS_MIN_CONNECTED_MS } from './fortress.constants';
 import { RoomSettings } from './fortress.events';
 import { FortressRoomService, SocketIdentity } from './fortress-room.service';
 import { createRedisMock, expectCode } from './__spec__/redis-mock';
@@ -91,6 +91,61 @@ describe('FortressRoomService — 연결 감시·강퇴·로비', () => {
 
       expect(mock.redis.mget).not.toHaveBeenCalled();
       expect(connectedOf(room.code)).toEqual({ p1: true, p2: true });
+    });
+
+    it('게이트 — 이 레플리카가 잡은 게이트가 살아 있는 동안은 SET NX 왕복도 보내지 않는다', async () => {
+      const { room } = await create({}, A, true);
+      await join(room.code, B, '도전자', true);
+      const probeKey = FORTRESS_ROOM_KEYS.heartbeatProbe(room.code);
+      await service.recordHeartbeat(room.code, A.socketId, T0 + 1_000);
+      await flush();
+      mock.redis.set.mockClear();
+
+      await service.recordHeartbeat(room.code, A.socketId, T0 + 5_000);
+      await flush();
+
+      expect(mock.redis.set.mock.calls.filter(([key]) => key === probeKey)).toEqual([]);
+    });
+
+    it('게이트를 다른 레플리카가 쥐어 실패했으면 다음 하트비트에 다시 시도한다 — 로컬 기억은 잡은 게이트만(리뷰 B-R1)', async () => {
+      const { room } = await create({}, A, true);
+      await join(room.code, B, '도전자', true);
+      const probeKey = FORTRESS_ROOM_KEYS.heartbeatProbe(room.code);
+      await mock.redis.set(probeKey, '1'); // 다른 레플리카가 판정 게이트를 쥐고 있다
+
+      await service.recordHeartbeat(room.code, A.socketId, T0 + HEARTBEAT_TTL_MS);
+      await flush();
+      expect(connectedOf(room.code)).toEqual({ p1: true, p2: true });
+
+      await mock.redis.del(probeKey); // 게이트 만료
+      await service.recordHeartbeat(room.code, A.socketId, T0 + HEARTBEAT_TTL_MS + 4_000); // 다음 핑(4초) — 간격(5초) 안
+      await flush();
+
+      expect(connectedOf(room.code)).toEqual({ p1: true, p2: false });
+      expect(evicted).toEqual([[B.socketId]]);
+    });
+
+    it('게이트 기억은 SET NX 직전 단조 시각 기준 — 간격에서 여유(500ms)를 뺀 만큼 지나면 다시 SET NX를 보낸다 (리뷰 B-R3·R4)', async () => {
+      const { room } = await create({}, A, true);
+      await join(room.code, B, '도전자', true);
+      const probeKey = FORTRESS_ROOM_KEYS.heartbeatProbe(room.code);
+      mock.strings.set(FORTRESS_ROOM_KEYS.heartbeat(room.code, B.socketId), '1'); // 판정은 돌되 아무도 끊지 않게
+      const probeSets = () => mock.redis.set.mock.calls.filter(([key]) => key === probeKey).length;
+      const clock = jest.spyOn(performance, 'now');
+      const beatAt = async (mono: number | null) => {
+        if (mono !== null) clock.mockReturnValue(mono);
+        await service.recordHeartbeat(room.code, A.socketId, T0 + HEARTBEAT_TTL_MS); // 벽시계(now)는 그대로 — 게이트는 단조 시계만 본다
+        await flush();
+      };
+
+      clock.mockReturnValueOnce(0).mockReturnValue(400); // SET 응답이 400ms 뒤에 와도 기억은 SET 직전(0) 기준
+      await beatAt(null);
+      expect(probeSets()).toBe(1);
+      await beatAt(HEARTBEAT_PROBE_INTERVAL_MS - 501);
+      expect(probeSets()).toBe(1);
+      mock.strings.delete(probeKey); // mock은 PX를 따르지 않는다 — 만료를 흉내 낸다
+      await beatAt(HEARTBEAT_PROBE_INTERVAL_MS - 500);
+      expect(probeSets()).toBe(2);
     });
 
     it('경기 중 유령은 경기에도 끊김 시각을 남긴다(30초 유예 resign의 출발점)', async () => {
