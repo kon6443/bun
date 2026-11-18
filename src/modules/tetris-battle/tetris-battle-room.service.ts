@@ -2,11 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
 import type { Redis } from 'ioredis';
 import { GameRoomRateLimiter } from '../game-room/game-room-rate-limit';
-import { acquireIntervalGate, touchHeartbeat } from '../game-room/game-room-presence';
+import { acquireIntervalGate, recordHeartbeatSafely } from '../game-room/game-room-presence';
 import { chatTextAllowed, checkPlayerName, checkRoomName } from '../game-room/game-room-text';
 import { GameRoomStore } from '../game-room/game-room.store';
 import { RoomMutationDeps, RoomMutationOutcome, defaultWakeScheduler, mutateGameRoom, notifyRoomChange } from '../game-room/game-room-mutation';
-import { findMemberBySocket, isInPlayingMatch, markSeatDisconnected, pruneDisconnectedSeats, removeSeat } from '../game-room/game-room.rules';
+import {
+  findMemberBySocket,
+  findUserSeat,
+  isInPlayingMatch,
+  isSeatTakeOverBlocked,
+  markSeatDisconnected,
+  pruneDisconnectedSeats,
+  removeSeat,
+} from '../game-room/game-room.rules';
+import type { ClientTraits, GameRoomChangeListener, GameSocketIdentity, LiveSocketProbe, SocketEvictor } from '../game-room/game-room-ports';
 import {
   DISCONNECT_GRACE_MS,
   WAKE_MARGIN_MS,
@@ -185,21 +194,13 @@ export interface LockOutcome {
 /** 백그라운드 경로(끊김 유예 KO 등)에서 생긴 매치 이벤트를 알리는 콜백 — 게이트웨이가 방송 */
 export type MatchEventListener = (code: string, events: MatchEvents) => void;
 
-/** 요청한 소켓의 신원 — 게이트웨이가 소켓에서 꺼내 넘긴다(클라이언트 페이로드에서 받지 않는다) */
-export interface SocketIdentity {
-  socketId: string;
-  userId: number | null;
+/** 요청한 소켓의 신원 — 공통부(game-room-ports) + 테트리스 스킨 */
+export interface SocketIdentity extends GameSocketIdentity {
   /** 입장(create·join)에서만 — 게이트웨이가 계정 장착을 읽어 붙인다(클라이언트 페이로드에서 받지 않는다). 조회 실패면 없음 → 새 자리는 default, 기존 자리는 유지 */
   skins?: TetrisBoardSkins;
-  /** 빈도 제한·비밀번호 잠금용 IP (X-Forwarded-For 마지막 값 — 게이트웨이 clientIp) */
-  ip: string;
 }
 
-/** 입장 요청에 실려 오는 클라이언트 특성(tetris-audit D-007·D-010) */
-export interface ClientTraits {
-  tabId?: string;
-  heartbeat?: boolean;
-}
+export type { ClientTraits, LiveSocketProbe, SocketEvictor };
 
 export interface EnterRoomResult {
   /** 경기 중 재연결이면 복구 정보 */
@@ -223,19 +224,8 @@ export interface RoomChangeResult {
   match?: MatchEvents;
 }
 
-/**
- * 방 채널에 지금 붙어 있는 소켓 id 집합(전 레플리카). 게이트웨이가 주입한다 — 서비스가 socket.io 서버에 직접 의존하지 않게.
- * 실패(타임아웃 등)면 throw — 호출 쪽은 이번 확인을 건너뛴다.
- */
-export type LiveSocketProbe = (code: string) => Promise<Set<string>>;
-/** 하트비트가 끊긴 소켓을 서버에서 끊는다(게이트웨이 주입, 다른 레플리카 소켓도 어댑터가 전달) */
-export type SocketEvictor = (socketIds: string[]) => void;
-
-/**
- * 요청 결과로 돌려줄 수 없는 방 변경(정리만 일어난 경우·전원 정리로 삭제·생존 확인)을 알리는 콜백.
- * 게이트웨이가 roomState·roomsChanged로 방송한다. room=null이면 방이 삭제됨.
- */
-export type RoomChangeListener = (code: string, room: RoomState | null, lobbyChanged: boolean) => void;
+/** 방 변경 알림 콜백(game-room-ports) — 게이트웨이가 roomState·roomsChanged로 방송. room=null이면 삭제 */
+export type RoomChangeListener = GameRoomChangeListener<RoomState>;
 
 /** WAITING 방 우선, 같은 상태면 최근 생성 순 */
 const STATUS_ORDER: Record<RoomStatus, number> = { WAITING: 0, PLAYING: 1, RESULT: 2 };
@@ -518,7 +508,7 @@ export class TetrisBattleRoomService {
     const isRejoin = tokenHash !== null;
     const isSameSocket = current.room.players.some((p) => p.socketId === who.socketId);
     // 같은 userId의 자리 — 넘겨받기라 정원·상태·비밀번호를 보지 않는다(이미 들어와 있던 사람)
-    const userSeat = !isRejoin && !isSameSocket ? this.findUserSeat(current.room, who) : undefined;
+    const userSeat = !isRejoin && !isSameSocket ? findUserSeat(current.room, who.userId) : undefined;
     if (userSeat) this.assertCanTakeOver(current.room, userSeat, who, input.tabId);
 
     // ---- 사전 검증 (CAS 밖, 읽은 방 기준) ----
@@ -580,7 +570,7 @@ export class TetrisBattleRoomService {
         return { result: this.enterResult(room, before, self.playerId, fresh.token, null) };
       }
 
-      const userSeat = this.findUserSeat(room, who);
+      const userSeat = findUserSeat(room, who.userId);
       if (userSeat) {
         const replacedSocketId = this.takeOver(room, userSeat, who, input, now);
         // 방 자리 토큰만 새로 준다 — 매치에 복사한 토큰 해시는 그대로 둔다(리뷰 R1): 그 경기의 입력 기록은 원래 탭에만 있어
@@ -611,17 +601,9 @@ export class TetrisBattleRoomService {
     return { entered, resumed };
   }
 
+  /** 판정은 game-room 공용(isSeatTakeOverBlocked) — 거부만 이 게임의 에러로 */
   private assertCanTakeOver(room: StoredRoom, player: StoredPlayer, who: SocketIdentity, tabId: string | undefined): void {
-    const inMatch = isInPlayingMatch(room, player.playerId);
-    const usedElsewhere = player.connected && player.socketId !== null && player.socketId !== who.socketId;
-    const sameTab = tabId !== undefined && player.tabId === tabId;
-    if (inMatch && usedElsewhere && !sameTab) throw new TetrisBattleError('SEAT_IN_USE');
-  }
-
-  /** 로그인 유저의 기존 자리(게스트는 없음) */
-  private findUserSeat(room: StoredRoom, who: SocketIdentity): StoredPlayer | undefined {
-    if (who.userId === null) return undefined;
-    return room.players.find((p) => p.userId === who.userId);
+    if (isSeatTakeOverBlocked(room, player, who.socketId, tabId)) throw new TetrisBattleError('SEAT_IN_USE');
   }
 
   /**
@@ -1243,13 +1225,9 @@ export class TetrisBattleRoomService {
   async recordHeartbeat(code: string, socketId: string, now = Date.now()): Promise<void> {
     const redis = this.readyRedisClient();
     if (!redis) return;
-    try {
-      await touchHeartbeat(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS);
-    } catch (error) {
-      this.logger.warn(`하트비트 기록 실패: code=${code}, ${toErrorMessage(error)}`);
-      return;
+    if (await recordHeartbeatSafely(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS, this.logger, code)) {
+      void this.reconcileHeartbeats(redis, code, now);
     }
-    void this.reconcileHeartbeats(redis, code, now);
   }
 
   /**

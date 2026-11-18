@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
 import type { Redis } from 'ioredis';
 import { GameRoomRateLimiter } from '../game-room/game-room-rate-limit';
-import { acquireIntervalGate, touchHeartbeat } from '../game-room/game-room-presence';
+import { acquireIntervalGate, recordHeartbeatSafely } from '../game-room/game-room-presence';
 import {
   generateRoomCode,
   hashPlayerToken,
@@ -14,7 +14,8 @@ import {
 import { chatTextAllowed } from '../game-room/game-room-text';
 import { GameRoomStore } from '../game-room/game-room.store';
 import { RoomMutationDeps, RoomMutationOutcome, defaultWakeScheduler, mutateGameRoom, notifyRoomChange } from '../game-room/game-room-mutation';
-import { isInPlayingMatch, markSeatDisconnected, removeSeat } from '../game-room/game-room.rules';
+import { findUserSeat, isInPlayingMatch, isSeatTakeOverBlocked, markSeatDisconnected, removeSeat } from '../game-room/game-room.rules';
+import type { GameRoomChangeListener, LiveSocketProbe, SocketEvictor } from '../game-room/game-room-ports';
 import { ENGINE_VERSION, MAP_IDS, type MapId, type MatchConfig, SEED_MAX, TANKS } from './engine';
 import { FortressMatchService, TurnSubmitInput } from './fortress-match.service';
 import {
@@ -95,9 +96,9 @@ const KEYS = FORTRESS_ROOM_KEYS;
 
 export type { ClientTraits, EnterRoomResult, RoomChangeResult, SocketIdentity, StoredMatchRef, StoredPlayer, StoredRoom } from './fortress-room.rules';
 
-export type LiveSocketProbe = (code: string) => Promise<Set<string>>;
-export type SocketEvictor = (socketIds: string[]) => void;
-export type RoomChangeListener = (code: string, room: RoomState | null, lobbyChanged: boolean) => void;
+export type { LiveSocketProbe, SocketEvictor };
+/** 방 변경 알림 콜백(game-room-ports) */
+export type RoomChangeListener = GameRoomChangeListener<RoomState>;
 
 /** WAITING 방 우선, 같은 상태면 최근 생성 순 */
 const STATUS_ORDER: Record<RoomStatus, number> = { WAITING: 0, PLAYING: 1, RESULT: 2 };
@@ -318,7 +319,7 @@ export class FortressRoomService {
     const tokenHash = input.playerToken ? hashPlayerToken(input.playerToken) : null;
     const isRejoin = tokenHash !== null;
     const isSameSocket = current.room.players.some((p) => p.socketId === who.socketId);
-    const userSeat = !isRejoin && !isSameSocket ? this.findUserSeat(current.room, who) : undefined;
+    const userSeat = !isRejoin && !isSameSocket ? findUserSeat(current.room, who.userId) : undefined;
     if (userSeat) this.assertCanTakeOver(current.room, userSeat, who, input.tabId);
 
     // ---- 사전 검증 (CAS 밖, 읽은 방 기준) — 통과해야 beforeCommit(이전 방 이탈)을 부른다 ----
@@ -362,7 +363,7 @@ export class FortressRoomService {
         return { result: enterResult(room, before, self.playerId, fresh.token, null) };
       }
 
-      const seat = this.findUserSeat(room, who);
+      const seat = findUserSeat(room, who.userId);
       if (seat) {
         const replaced = this.takeOver(room, seat, who, input, now);
         seat.tokenHash = fresh.tokenHash;
@@ -384,15 +385,7 @@ export class FortressRoomService {
 
   /** 경기 중 참가자 자리를 다른 탭·기기가 아직 쓰고 있으면 SEAT_IN_USE (같은 탭 tabId의 재연결은 허용) — 테트리스와 같은 규칙 */
   private assertCanTakeOver(room: StoredRoom, player: StoredPlayer, who: SocketIdentity, tabId: string | undefined): void {
-    const inMatch = isInPlayingMatch(room, player.playerId);
-    const usedElsewhere = player.connected && player.socketId !== null && player.socketId !== who.socketId;
-    const sameTab = tabId !== undefined && player.tabId === tabId;
-    if (inMatch && usedElsewhere && !sameTab) throw new FortressError('SEAT_IN_USE');
-  }
-
-  private findUserSeat(room: StoredRoom, who: SocketIdentity): StoredPlayer | undefined {
-    if (who.userId === null) return undefined;
-    return room.players.find((p) => p.userId === who.userId);
+    if (isSeatTakeOverBlocked(room, player, who.socketId, tabId)) throw new FortressError('SEAT_IN_USE');
   }
 
   /**
@@ -830,13 +823,9 @@ export class FortressRoomService {
   async recordHeartbeat(code: string, socketId: string, now = Date.now()): Promise<void> {
     const redis = this.readyRedisClient();
     if (!redis) return;
-    try {
-      await touchHeartbeat(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS);
-    } catch (error) {
-      this.logger.warn(`하트비트 기록 실패: code=${code}, ${toErrorMessage(error)}`);
-      return;
+    if (await recordHeartbeatSafely(redis, KEYS.heartbeat(code, socketId), HEARTBEAT_TTL_MS, this.logger, code)) {
+      void this.reconcileHeartbeats(redis, code, now);
     }
-    void this.reconcileHeartbeats(redis, code, now);
   }
 
   /**
