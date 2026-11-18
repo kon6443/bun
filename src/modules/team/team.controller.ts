@@ -45,13 +45,6 @@ import {
   TeamUsersListResponseDto,
   CreateTeamInviteResponseDto,
   AcceptTeamInviteResponseDto,
-  CreateTelegramLinkResponseDto,
-  TelegramStatusResponseDto,
-  DeleteTelegramLinkResponseDto,
-  SaveDiscordWebhookDto,
-  DiscordStatusResponseDto,
-  SaveDiscordWebhookResponseDto,
-  DeleteDiscordWebhookResponseDto,
   UpdateMemberRoleResponseDto,
   UpdateMemberStatusResponseDto,
   UpdateTeamNicknameDto,
@@ -59,7 +52,6 @@ import {
 } from './team.dto';
 import {
   TeamForbiddenErrorResponseDto,
-  TeamDiscordWebhookInvalidErrorResponseDto,
   TeamNotFoundErrorResponseDto,
   TeamTaskNotFoundErrorResponseDto,
   TeamTaskBadRequestErrorResponseDto,
@@ -84,10 +76,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../entities/User';
 import { ActStatus } from '../../common/enums/task-status.enum';
-import { TelegramService } from '../notification/telegram.service';
-import { DiscordService } from '../notification/discord.service';
 import { getDisplayName } from '../../common/utils/user.utils';
-import { toLinkStatusForRole, toMyTeamItem } from './team.mapper';
+import { toMyTeamItem } from './team.mapper';
 
 @ApiTags('teams')
 @Controller('teams')
@@ -97,22 +87,9 @@ export class TeamController {
   constructor(
     private readonly teamService: TeamService,
     private readonly teamChatService: TeamChatService,
-    private readonly telegramService: TelegramService,
-    private readonly discordService: DiscordService,
     private readonly teamGateway: TeamGateway, // WebSocket Gateway DI
     private readonly teamDisplayNameService: TeamDisplayNameService,
   ) {}
-
-  /**
-   * MASTER/MANAGER 권한 체크 공통 메서드
-   */
-  private async requireManagerAccess(teamId: number, userId: number, errorMessage?: string): Promise<void> {
-    await this.teamService.assertManagerAccess(
-      teamId,
-      userId,
-      () => new TeamForbiddenErrorResponseDto(errorMessage || '팀 리더 또는 매니저만 이 작업을 할 수 있습니다.'),
-    );
-  }
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -649,148 +626,6 @@ export class TeamController {
       data: invites,
       message: '',
     };
-  }
-
-  // ==================== 텔레그램 연동 API ====================
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':teamId/telegram/link')
-  @ApiOperation({ summary: '텔레그램 연동 링크 생성' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiResponse({ status: 201, description: 'SUCCESS', type: CreateTelegramLinkResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  async createTelegramLink(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
-    await this.requireManagerAccess(teamId, user.userId);
-
-    const result = await this.telegramService.generateLinkToken(teamId);
-    return {
-      code: 'SUCCESS',
-      data: result,
-      message: '',
-    };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':teamId/telegram/status')
-  @ApiOperation({ summary: '텔레그램 연동 상태 조회' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: TelegramStatusResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  async getTelegramStatus(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
-    // 팀 멤버 확인 — 연동 토큰·chatId는 관리자에게만 준다
-    const member = await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
-
-    const status = await this.telegramService.getLinkStatus(teamId);
-    return {
-      code: 'SUCCESS',
-      data: toLinkStatusForRole(status, member.role),
-      message: '',
-    };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Delete(':teamId/telegram/link')
-  @ApiOperation({ summary: '텔레그램 연동 해제' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteTelegramLinkResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 텔레그램 연동을 해제할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  async deleteTelegramLink(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
-    await this.requireManagerAccess(teamId, user.userId);
-
-    await this.telegramService.unlinkTeam(teamId);
-    return { code: 'SUCCESS', data: null, message: '' };
-  }
-
-  // ==================== 디스코드 연동 API ====================
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':teamId/discord/webhook')
-  @ApiOperation({ summary: '디스코드 Webhook URL 저장' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiBody({ type: SaveDiscordWebhookDto })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: SaveDiscordWebhookResponseDto })
-  @ApiResponse({ status: 400, description: '유효하지 않은 Webhook URL입니다.', type: TeamDiscordWebhookInvalidErrorResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  @ApiCommonValidationResponse()
-  async saveDiscordWebhook(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-    @Body() dto: SaveDiscordWebhookDto,
-  ) {
-    await this.requireManagerAccess(teamId, user.userId);
-
-    // Webhook URL 유효성 검증
-    const validation = await this.discordService.validateWebhookUrl(dto.webhookUrl);
-    if (!validation.valid) {
-      throw new TeamDiscordWebhookInvalidErrorResponseDto();
-    }
-
-    await this.discordService.saveWebhookUrl(teamId, dto.webhookUrl);
-    return { code: 'SUCCESS', data: null, message: '' };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':teamId/discord/status')
-  @ApiOperation({ summary: '디스코드 연동 상태 조회' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: DiscordStatusResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 멤버만 접근할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  async getDiscordStatus(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
-    // 웹훅 URL은 관리자에게만 준다 (URL만 있으면 채널에 임의 게시 가능)
-    const member = await this.teamService.verifyTeamMemberAccess(teamId, user.userId);
-
-    const status = await this.discordService.getLinkStatus(teamId);
-    return {
-      code: 'SUCCESS',
-      data: toLinkStatusForRole(status, member.role),
-      message: '',
-    };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Delete(':teamId/discord/webhook')
-  @ApiOperation({ summary: '디스코드 연동 해제' })
-  @ApiParam({ name: 'teamId', description: '팀 ID', type: Number })
-  @ApiResponse({ status: 200, description: 'SUCCESS', type: DeleteDiscordWebhookResponseDto })
-  @ApiCommonUnauthorizedResponse()
-  @ApiResponse({ status: 403, description: '팀 리더 또는 매니저만 디스코드 연동을 해제할 수 있습니다.', type: TeamForbiddenErrorResponseDto })
-  @ApiResponse({ status: 404, description: '팀을 찾을 수 없습니다.', type: TeamNotFoundErrorResponseDto })
-  @ApiCommonInternalServerErrorResponse()
-  async deleteDiscordWebhook(
-    @CurrentUser() user: User,
-    @Param('teamId', ParseIntPipe) teamId: number,
-  ) {
-    await this.requireManagerAccess(teamId, user.userId);
-
-    await this.discordService.unlinkTeam(teamId);
-    return { code: 'SUCCESS', data: null, message: '' };
   }
 
   // ==================== 팀 닉네임 API (docs/tasks/team-nickname) ====================
