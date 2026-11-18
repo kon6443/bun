@@ -39,6 +39,7 @@ import { TetrisBattleRoomService } from './tetris-battle-room.service';
 import { BattleMatchDto, BattleReplayDetailDto, BattleReplayDto } from './tetris-battle-result.dto';
 import { VerificationContext, verifyBattleReplay } from './tetris-battle-verify';
 import { defaultSkinSet, parseBoardSkins, toBoardSkins } from '../users/skin-catalog';
+import { isLeaderReplica } from '../../common/utils/replica.utils';
 
 /** Redis 제출 기록 (DB 저장 전까지) */
 interface StoredSubmission {
@@ -109,8 +110,7 @@ export class TetrisBattleResultService {
     configService: ConfigService,
   ) {
     const env = configService.get<string>('ENV')?.toUpperCase() ?? '';
-    const taskSlot = Number(configService.get<number>('TASK_SLOT')) || 1;
-    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && taskSlot === 1;
+    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && isLeaderReplica(configService.get('TASK_SLOT'));
 
     // 마감이 지나면 한 번 깨워 저장한다 — 미제출자가 있고 아무도 조회하지 않아도 Redis TTL 전에 DB에 남게(D-009·BE-06).
     // 타이머는 레플리카 메모리라 재시작하면 사라진다 → Redis 저장 대기에도 올려 스윕이 대신 깨운다(games-polish BT-05)

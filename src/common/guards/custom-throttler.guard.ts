@@ -8,8 +8,7 @@ import {
   ThrottlerModuleOptions,
   ThrottlerStorage,
 } from '@nestjs/throttler';
-import { JwtPayload, verify } from 'jsonwebtoken';
-import { extractHttpAccessToken } from '../utils/access-token.utils';
+import { extractHttpAccessToken, verifyAccessToken } from '../utils/access-token.utils';
 import { ApiTooManyRequestsErrorResponseDto } from '../dto/api-error.dto';
 
 /**
@@ -63,16 +62,12 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const token = extractHttpAccessToken(
       req as { cookies?: Record<string, unknown>; headers?: Record<string, unknown> },
     );
-    const secret = this.configService.get<string>('JWT_SECRET');
-    if (!token || !secret) {
+    if (!token) {
       return null;
     }
 
-    try {
-      const payload = verify(token, secret) as JwtPayload & { sub?: number };
-      return typeof payload.sub === 'number' ? payload.sub : null;
-    } catch {
-      return null;
-    }
+    const verified = verifyAccessToken(token, this.configService.get<string>('JWT_SECRET'));
+    // 스로틀 키는 숫자 userId만 — 이상한 sub는 IP 기준으로 센다(기존 동작)
+    return verified.ok && typeof verified.payload.sub === 'number' ? verified.payload.sub : null;
   }
 }

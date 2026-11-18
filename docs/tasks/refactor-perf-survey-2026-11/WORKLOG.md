@@ -160,3 +160,11 @@
 - 화면: 낚시(로그인+게스트) 이동·채팅 중계, 콘솔 오류 0 · 팀 보드(141)·태스크 상세(팀 1 #41) 렌더·로딩 해제, 콘솔 오류 0 — 6/6 PASS
 - 스크립트·스크린샷: scratchpad `fishing-live.cjs`, `pw/perf-esc.cjs`, `pw/perf-ui.cjs`, `pw/perf-team-api.cjs`, `pw/shots/`
 - 미검증: 3x 실기기 렌더링(DPR 상한), 운영 배포 후 화면
+
+## 2026-11-16 — 운영 배포
+- 백엔드: 의도별 6커밋(00b4cf9 infra · 81a6e48 common · e7235ae team · 0e564ba fortress · a7d9337 realtime · e044e56 docs) → #335 develop(머지 `4251497`) → #336 main(머지 `01afdf1`), 두 PR CI check·lint·e2e·docker-build 통과, Deploy NestJS run 43830888407 success
+  - 운영 확인: `GET /teams` 401 · `GET /games/tetris/rankings` 200 · 낚시 소켓 `joinMap`·`leaveMap` ack 정상(wss)
+- 프론트(next-bun-fe): 5커밋(3e44ce7 perf(bundle) · d401370 fix(tetris) · 66dd283 perf(games) · ce3535e fix(teams) · f211079 chore) → #413 develop(`3179c49`) → #414 main(`47288dd`), CI verify·verify-sim 통과, Deploy Next run 43832314484 success
+  - 운영 확인: `/`·`/games`·`/games/tetris`·`/fishing`·`/teams` 200, 운영 `/` 청크 14개 중 react-colorful·DndContext 포함 0개
+- 미검증: 로그인이 필요한 운영 화면
+- 롤백: 백 `01afdf1`·프 `47288dd` revert(DB 변경 없음). 커밋이 의도별이라 개별 revert도 가능

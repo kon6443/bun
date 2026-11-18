@@ -18,7 +18,7 @@ import { Server, Socket } from 'socket.io';
 import { WsJwtGuard, AuthenticatedSocket } from '../../common/guards/ws-jwt-auth.guard';
 import { WsExceptionFilter } from '../../common/filters/ws-exception.filter';
 import { TeamService } from './team.service';
-import { OnlineUserService } from './online-user.service';
+import { ONLINE_USERS_LIST_LIMIT, OnlineUserService } from './online-user.service';
 import { getDisplayName } from '../../common/utils/user.utils';
 import { TeamDisplayNameService } from './team-display-name.service';
 import { TeamChatMessage } from '../../entities/TeamChatMessage';
@@ -192,10 +192,12 @@ export class TeamGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       // 팀별 온라인 Gauge 갱신 대상에 등록 (TASK_SLOT=1 replica 에서 60s 주기로 count 재계산)
       this.onlineUserService.trackActiveTeam(teamId);
 
-      const userInfo = await this.onlineUserService.getUserOnlineInfo(teamId, userId);
+      // 목록 한 번으로 내 접속 정보까지 얻는다(왕복 절약). 목록은 최대 100명이라 그 밖이면 따로 조회한다
+      const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
+      const userInfo =
+        onlineUsers.find((u) => u.userId === userId) ??
+        (onlineUsers.length >= ONLINE_USERS_LIST_LIMIT ? await this.onlineUserService.getUserOnlineInfo(teamId, userId) : null);
       if (userInfo) {
-        const onlineUsers = await this.onlineUserService.getOnlineUsersForTeam(teamId);
-
         // 첫 번째 연결일 때만 (이전에 온라인이 아니었을 때만) 입장 알림
         if (!wasAlreadyOnline) {
           const payload: UserJoinedPayload = {

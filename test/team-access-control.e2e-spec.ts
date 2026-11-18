@@ -4,6 +4,7 @@ import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { TeamController } from '../src/modules/team/team.controller';
+import { TeamIntegrationController } from '../src/modules/team/team-integration.controller';
 import { TeamService } from '../src/modules/team/team.service';
 import { TeamGateway } from '../src/modules/team/team.gateway';
 import { TeamChatService } from '../src/modules/team/team-chat.service';
@@ -80,7 +81,7 @@ describe('E2E 접근 제어 (팀 멤버십)', () => {
     };
 
     e2e = await createE2eApp({
-      controllers: [TeamController],
+      controllers: [TeamController, TeamIntegrationController],
       authUser: AUTHOR,
       providers: [
         // 서비스는 진짜를 쓴다 — 검증하려는 것이 서비스의 접근 제어 로직이기 때문이다.

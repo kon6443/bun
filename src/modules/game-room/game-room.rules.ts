@@ -65,3 +65,27 @@ export function pruneDisconnectedSeats<P extends GameRoomSeat, R extends GameRoo
   for (const p of expired) removeSeat(room, p.playerId);
   return room;
 }
+
+/** 로그인 유저의 기존 자리(게스트는 없음) — 다른 탭·기기에서 같은 계정이 들어오면 그 자리를 넘겨받는다 */
+export function findUserSeat<P extends GameRoomSeat & { userId: number | null }>(
+  room: GameRoomShape<P>,
+  userId: number | null,
+): P | undefined {
+  if (userId === null) return undefined;
+  return room.players.find(p => p.userId === userId);
+}
+
+/**
+ * 자리를 넘겨받을 수 없는가 — 경기 중 참가자 자리를 다른 탭·기기가 아직 쓰고 있다(같은 탭 tabId의 재연결은 허용).
+ * 넘겨받은 탭은 그 매치의 입력 기록이 없어 이어서 할 수 없다(tetris-audit D-003·D-007). 거부는 각 게임이 SEAT_IN_USE로 던진다
+ */
+export function isSeatTakeOverBlocked<P extends GameRoomSeat & { tabId?: string | null }>(
+  room: GameRoomShape<P>,
+  player: P,
+  socketId: string,
+  tabId: string | undefined,
+): boolean {
+  const usedElsewhere = player.connected && player.socketId !== null && player.socketId !== socketId;
+  const sameTab = tabId !== undefined && player.tabId === tabId;
+  return isInPlayingMatch(room, player.playerId) && usedElsewhere && !sameTab;
+}

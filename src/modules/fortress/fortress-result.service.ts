@@ -31,6 +31,7 @@ import {
 import { FortressMatchNotFoundErrorResponseDto, FortressReplayNotFoundErrorResponseDto } from './fortress-error.dto';
 import { FortressMatchDto, FortressMatchListDto, FortressReplayDto } from './fortress-result.dto';
 import type { FortressTankSkin, MatchSlot } from './fortress.events';
+import { isLeaderReplica } from '../../common/utils/replica.utils';
 
 /** 리플레이 slot — 계약 MatchSlot + 경기 시작 때 고정한 탱크 스킨(F7, DESIGN §13). F7 전에 저장된 본문에는 skin이 없다 */
 type ReplaySlot = Omit<MatchSlot, 'skin'> & { skin?: FortressTankSkin };
@@ -90,8 +91,7 @@ export class FortressResultService {
     private readonly pointsService: FortressPointsService,
   ) {
     const env = configService.get<string>('ENV')?.toUpperCase() ?? '';
-    const taskSlot = Number(configService.get<number>('TASK_SLOT')) || 1;
-    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && taskSlot === 1;
+    this.runsPendingSaveSweep = PENDING_SAVE_SWEEP_ENVS.includes(env) && isLeaderReplica(configService.get('TASK_SLOT'));
     this.matchService.setSaveHook(async (matchId) => {
       await this.saveIfEnded(matchId);
     });

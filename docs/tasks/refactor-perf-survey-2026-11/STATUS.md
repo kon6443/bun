@@ -1,6 +1,6 @@
 # 백·프 리팩터링·성능 전수조사 (2026-11)
 
-- **상태**: 🟡 진행 중 — A 등급(A1~A9) 구현·리뷰·검증 완료, 커밋·배포 지시 대기 (2026-11-16)
+- **상태**: 🟢 완료 — A 등급(A1~A9) 운영 배포(백 #335·#336 `01afdf1`, 프 #413·#414 `47288dd`). B·C 등급은 별건 (2026-11-16)
 - **브랜치**: 백 `refactor-onam-perf-a` (base `origin/develop` `3e8f900`) · 프 `refactor-onam-perf-a` (base `origin/develop` `41c8cb6`) · **최종수정**: 2026-11-16
 - **관련 문서**: DECISIONS.md · WORKLOG.md (2026-11-16 절에 원표 전체)
 
@@ -17,7 +17,7 @@
 
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: 전수조사(WORKLOG 2026-11-16 원표) · 착수 결정(D-002·D-003) · 백엔드 A1~A6 구현 + 단위 테스트 + 변이 검증 6/6 (WORKLOG "A 구현" 절)
-- **다음 할 일**: 1) 사용자 커밋·배포 지시 수신 → 백 의도별 커밋(A1·A2·A3+A4·A5·A6·docs)·프 5커밋 → feature→develop→main 2) 배포 후 운영 확인 3) 로컬 Redis 컨테이너(`presence-redis-test`)·dev 서버 정리
+- **다음 할 일**: 없음(A 완료). B·C 등급은 사용자가 고르면 새 태스크로 — 등급표가 출발점
 
 ## 진행 체크리스트 (A 등급)
 - [x] A1 미사용 의존성 3개·Dockerfile `unzip` 제거
@@ -30,7 +30,7 @@
 - [x] 리뷰 루프 — 백 R3 두 리뷰어 확정 0(R1·R2 확정 수정), 프 R1 두 리뷰어 확정 0
 - [x] 백 `ci:all` EXIT 0
 - [x] 로컬 실 API·Playwright — 낚시 소켓 7/7, A5 실 API, Esc 2/2, 화면 6/6 (WORKLOG 검증 절)
-- [ ] 커밋·PR·배포 (사용자 지시 대기)
+- [x] 커밋·PR·배포 — 백 6커밋 #335→develop `4251497`, #336→main `01afdf1`, Deploy NestJS run 43830888407 success · 프 5커밋 #413 `3179c49`, #414 `47288dd`, Deploy Next run 43832314484 success
 - [x] Redis 실검증: opt-in Redis E2E 6 스위트 68/68 (로컬 6380)
 
 ## 전제 — 실측 규모 (2026-11-16, `pnpm db:select`)
