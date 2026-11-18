@@ -23,7 +23,7 @@
 
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: 범위·결정(D-001~D-004), 백 B1~B4 · 프 B5~B9 구현, 리뷰 루프(백 5R·프 4R, 마지막 라운드 양쪽 확정 0), 백 `ci:all`·실 Redis E2E·실 API·Playwright (WORKLOG 2026-11-17)
-- **다음 할 일**: 없음. 확인 — 다음 배포 때 Loki에서 "Connection is closed" Unhandled Rejection 소멸. 텔레그램·디스코드 연결·해제 수동 확인은 사용자 몫
+- **다음 할 일**: 없음. 확인 — 다음 배포 때 Loki에서 "Connection is closed" Unhandled Rejection 소멸(로컬 실 Redis로는 확인 완료). 텔레그램·디스코드 연결·해제 수동 확인은 사용자 몫
 
 ## 진행 체크리스트
 - [x] B1 JWT 검증·소켓 토큰 추출 단일화
