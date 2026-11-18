@@ -76,3 +76,8 @@
 - 브라우저 수준(백 dev 3510 — Redis 없이(6399 미기동), 프 dev 3000 프론트 세션): 2계정 8/8(팀 입장·실시간 채팅 배지·댓글 작성·수정·삭제 실시간, 콘솔 오류 0). 온라인 프레즌스는 Redis가 없어 브라우저로는 미확인(단위·E2E로만)
 - 브라우저 수준에서 새로 발견: Redis가 끊긴 상태에서 SIGTERM → `quit()`이 오프라인 큐에서 재연결을 기다려 강제 종료 타이머(30초)까지 멈추고 exit 1(예전 순서도 같음, 스웜은 10초에 SIGKILL) → `RedisIoAdapter.disconnect()`가 ready가 아니면 바로 `disconnect()`(+ warn 로그). 실측: SIGTERM 뒤 약 1.1초에 "Redis 연결 정리 완료"·"Graceful shutdown 완료", Unhandled Rejection 없음. 단위 spec 2 + 변이 검출
 - 리뷰 R8(어댑터 변경): Opus 확정 0 — 구독 모드에서도 status는 ready(ioredis `Redis.js:261-269`, quit은 구독 모드 허용 명령), 메인도 status 전이 목록으로 재확인. PLAUSIBLE 수용: 종료 순간 Redis가 잠깐 끊기면 대기 중 정리 명령이 버려짐(예전엔 30초 멈춤) · nit 반영: 바로 끊을 때 warn → **루프 종료**. 실 Redis 대체로 가짜 RESP Redis E2E 재실행 2/2
+- 배포: 3커밋(64caf3e fix(realtime) · f97e98e fix(team) · 5b5b446 docs) → #341 develop(check·lint·e2e 통과, 머지 `14dc73a`) → #342 main(통과, 머지 `857f79c`) → Deploy NestJS run 44260450564 success
+  - 운영 확인: `GET /teams` 401 · 랭킹 200 · 연동 라우트 무토큰 401 · 게스트 Playwright 4경로 콘솔 오류 0, 낚시 소켓 맵 입장·캐스팅 정상
+  - 효과 확인 시점: 새 종료 순서는 **다음 배포에서 이번 레플리카가 내려갈 때** 처음 적용된다(이번 배포에서 내려간 레플리카는 옛 코드). 그때 Loki에서 "Connection is closed" Unhandled Rejection이 사라졌는지 본다
+- 롤백: `857f79c` revert(DB 변경 없음), 커밋별 revert 가능
+- 정리: 백 dev 종료, 프 dev 종료 요청, 원격 브랜치 `fix-onam-team-membership-shutdown`·이 문서 브랜치는 머지 뒤 삭제

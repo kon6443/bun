@@ -1,6 +1,6 @@
 # 리팩터링·성능 B 등급 (구조 개선)
 
-- **상태**: ✅ 완료 — 백·프 운영 배포 (백 `aecaca8`·프 `41fd452`, 2026-11-18)
+- **상태**: ✅ 완료 — 백·프 운영 배포 (B: 백 `aecaca8`·프 `41fd452`, 후속 D-005~D-007: 백 `857f79c`, 2026-11-18)
 - **브랜치**: 백 `refactor-onam-perf-b` (base `origin/develop` `0e6b1e9`) · 프 `refactor-onam-perf-b` (next-bun-fe가 origin/develop에서) · **최종수정**: 2026-11-18
 - **관련 문서**: DECISIONS.md · WORKLOG.md · 출발점 `../refactor-perf-survey-2026-11/` (STATUS 등급표 B, WORKLOG 원표 번호)
 
@@ -23,7 +23,7 @@
 
 ## 지금 어디까지 (다음 세션이 여기서 이어간다)
 - 완료: 범위·결정(D-001~D-004), 백 B1~B4 · 프 B5~B9 구현, 리뷰 루프(백 5R·프 4R, 마지막 라운드 양쪽 확정 0), 백 `ci:all`·실 Redis E2E·실 API·Playwright (WORKLOG 2026-11-17)
-- **다음 할 일**: 후속(D-005~D-007) 커밋·PR·배포 — 사용자 지시(2026-11-18) 진행 중. 텔레그램·디스코드 연결·해제 수동 확인은 사용자 몫
+- **다음 할 일**: 없음. 확인 — 다음 배포 때 Loki에서 "Connection is closed" Unhandled Rejection 소멸. 텔레그램·디스코드 연결·해제 수동 확인은 사용자 몫
 
 ## 진행 체크리스트
 - [x] B1 JWT 검증·소켓 토큰 추출 단일화
