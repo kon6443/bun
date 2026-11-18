@@ -5,6 +5,7 @@ import { Redis } from 'ioredis';
 import { OnlineUserInfo } from './team.events';
 import { toErrorMessage } from '../../common/utils/error.utils';
 import { ADD_SOCKET_SCRIPT, REMOVE_SOCKET_SCRIPT } from '../../common/utils/presence-scripts';
+import { isLeaderReplica } from '../../common/utils/replica.utils';
 
 /**
  * Redis 키 패턴:
@@ -34,8 +35,7 @@ const TEAM_ONLINE_KEY_TTL = 7200; // 2시간 (online 해시 — 서버 재시작
 // 팀별 온라인 유저 수 Gauge 재계산 주기 (Prometheus scrape 15s 보다 길게 — 설계 결정 P3).
 const METRIC_REFRESH_INTERVAL_MS = 60_000;
 // 멀티 replica 환경에서 같은 team_id 에 대해 여러 replica 가 동시에 set 하면
-// Prometheus 에 중복 timeseries 가 생겨 쿼리 혼란. TASK_SLOT=1 (리더) 만 갱신.
-const METRIC_LEADER_TASK_SLOT = 1;
+// Prometheus 에 중복 timeseries 가 생겨 쿼리 혼란. TASK_SLOT=1 (리더, isLeaderReplica) 만 갱신.
 
 @Injectable()
 export class OnlineUserService implements OnModuleDestroy {
@@ -49,13 +49,12 @@ export class OnlineUserService implements OnModuleDestroy {
     @InjectMetric('ws_team_online_users')
     private readonly teamOnlineGauge: Gauge<string>,
   ) {
-    const taskSlot = Number(process.env.TASK_SLOT ?? 0);
-    if (taskSlot === METRIC_LEADER_TASK_SLOT) {
+    if (isLeaderReplica()) {
       this.metricTimer = setInterval(
         () => void this.refreshTeamOnlineMetric(),
         METRIC_REFRESH_INTERVAL_MS,
       );
-      this.logger.log(`ws_team_online_users 60s 주기 갱신 활성 (TASK_SLOT=${taskSlot})`);
+      this.logger.log('ws_team_online_users 60s 주기 갱신 활성 (TASK_SLOT=1)');
     }
   }
 

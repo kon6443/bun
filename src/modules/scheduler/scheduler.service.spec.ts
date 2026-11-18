@@ -57,8 +57,6 @@ describe('SchedulerService', () => {
       // 소문자 env도 대문자로 정규화되어 통과해야 한다
       ['prod', '1'],
       ['qa', '1'],
-      // TASK_SLOT 미설정 시 기본값 1 → 단일 인스턴스 환경에서도 크론이 돌아야 한다
-      ['PROD', undefined],
     ])('ENV=%s, TASK_SLOT=%s → 실행됨', async (env, taskSlot) => {
       const service = await buildService(env, taskSlot);
       teamTaskRepository.update.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
@@ -80,6 +78,10 @@ describe('SchedulerService', () => {
       ['DEV', '1'],
       ['', '1'],
       [undefined, '1'],
+      // TASK_SLOT 주입이 빠지면 아무도 리더가 아니다 — 모든 replica 중복 실행보다 안전하다
+      // (docs/tasks/refactor-perf-b-2026-11 D-002, 감사 M6 — 예전엔 미설정을 1로 간주했다)
+      ['PROD', undefined],
+      ['PROD', 'not-a-number'],
     ])('ENV=%s, TASK_SLOT=%s → 실행되지 않음', async (env, taskSlot) => {
       const service = await buildService(env, taskSlot);
 
@@ -89,14 +91,6 @@ describe('SchedulerService', () => {
 
       expect(userRepository.count).not.toHaveBeenCalled();
       expect(teamTaskRepository.update).not.toHaveBeenCalled();
-    });
-
-    it('TASK_SLOT이 숫자로 파싱되지 않으면 기본값 1로 취급해 실행해야 함', async () => {
-      const service = await buildService('PROD', 'not-a-number');
-
-      await service.handleDoTrash();
-
-      expect(userRepository.count).toHaveBeenCalled();
     });
   });
 
