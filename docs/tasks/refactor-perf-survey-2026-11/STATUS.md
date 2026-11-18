@@ -88,7 +88,7 @@
 - BE `pnpm ci:core` → PR 직전 `pnpm ci:all` · FE `ci:core`(프론트 세션) · Playwright 회귀
 
 ## 후속 (이번 범위 밖)
-- 팀 `leaveTeam`이 room 이탈 전에 Redis 정리를 기다림 · 팀 leave→join 경합 (R2 #4, base와 같음)
+- 팀 `leaveTeam`이 room 이탈 전에 Redis 정리를 기다림 · 팀 leave→join 경합 (R2 #4, base와 같음) → `refactor-perf-b-2026-11` D-006에서 처리(2026-11-18)
 
 ## 위험 & 롤백
 - 조사 문서만 — 코드 영향 없음. 착수 묶음별 격리 커밋으로 revert 가능하게

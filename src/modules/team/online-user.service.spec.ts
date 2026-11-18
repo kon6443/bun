@@ -542,6 +542,12 @@ describe('OnlineUserService', () => {
       redis.status = 'reconnecting';
     });
 
+    it('isReady는 false — ready일 때만 true', () => {
+      expect(service.isReady()).toBe(false);
+      redis.status = 'ready';
+      expect(service.isReady()).toBe(true);
+    });
+
     it('명령을 보내지 않고 각 메서드의 실패 기본값을 돌려줘야 함', async () => {
       await expect(service.addUserToOnline(TEAM_ID, USER_ID, '홍길동', SOCKET_ID)).resolves.toEqual({
         wasAlreadyOnline: false,

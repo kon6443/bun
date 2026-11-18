@@ -47,6 +47,7 @@ describe('TeamGateway', () => {
     getOnlineUsersForTeam: jest.Mock;
     getOnlineUsersCount: jest.Mock;
     isSocketRegistered: jest.Mock;
+    isReady: jest.Mock;
     trackActiveTeam: jest.Mock;
     updateUserName: jest.Mock;
   };
@@ -91,6 +92,7 @@ describe('TeamGateway', () => {
       getOnlineUsersForTeam: jest.fn().mockResolvedValue([]),
       getOnlineUsersCount: jest.fn().mockResolvedValue(0),
       isSocketRegistered: jest.fn().mockResolvedValue(false),
+      isReady: jest.fn().mockReturnValue(true),
       trackActiveTeam: jest.fn(),
       updateUserName: jest.fn().mockResolvedValue(undefined),
     };
@@ -591,6 +593,162 @@ describe('TeamGateway', () => {
       expect(onlineUserService.updateUserName).toHaveBeenCalledWith(TEAM_ID, USER_ID, '팀닉');
       expect(gateway.server.to).toHaveBeenCalledWith(ROOM);
       expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.MEMBER_NICKNAME_CHANGED, payload);
+    });
+  });
+
+  describe('소속 변경 직렬화 — 입장·퇴장·연결 해제가 겹칠 때', () => {
+    /** 밖에서 풀어 주는 Promise — 핸들러를 원하는 지점에서 멈춰 둔다 */
+    const deferred = <T>() => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => (resolve = r));
+      return { promise, resolve };
+    };
+
+    it('입장이 멤버십 조회를 기다리는 사이 끊기면, 연결 해제 정리는 입장이 끝난 뒤 돌아 등록을 지운다 (유령 방지)', async () => {
+      const membership = deferred<unknown>();
+      teamService.verifyTeamMemberAccess.mockReturnValueOnce(membership.promise);
+      const client = createClient();
+      const order: string[] = [];
+      onlineUserService.addUserToOnline.mockImplementation(() => {
+        order.push('add');
+        return Promise.resolve({ wasAlreadyOnline: false });
+      });
+      onlineUserService.removeSocket.mockImplementation(() => {
+        order.push('remove');
+        return Promise.resolve(null);
+      });
+
+      const joining = gateway.handleJoinTeam(client, { teamId: TEAM_ID });
+      const disconnecting = gateway.handleDisconnect(client);
+      await new Promise((r) => setImmediate(r));
+      expect(order).toEqual([]); // 정리가 입장을 앞질러 먼저 끝나지 않는다
+
+      membership.resolve(createTeamMemberView());
+      await Promise.all([joining, disconnecting]);
+
+      expect(order).toEqual(['add', 'remove']);
+    });
+
+    it('가드를 기다리는 사이 이미 끊긴 소켓이면 입장 등록을 하지 않는다', async () => {
+      const client = Object.assign(createClient(), { disconnected: true });
+
+      await expect(gateway.handleJoinTeam(client, { teamId: TEAM_ID })).resolves.toEqual({ teamId: TEAM_ID, room: ROOM });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(onlineUserService.addUserToOnline).not.toHaveBeenCalled();
+    });
+
+    it('앞선 입장이 거부돼도 뒤의 연결 해제 정리는 돈다', async () => {
+      teamService.verifyTeamMemberAccess.mockRejectedValueOnce(new Error('not member'));
+      const client = createClient();
+
+      await expect(gateway.handleJoinTeam(client, { teamId: TEAM_ID })).rejects.toBeInstanceOf(WsException);
+      await gateway.handleDisconnect(client);
+
+      expect(onlineUserService.removeSocket).toHaveBeenCalledWith(SOCKET_ID);
+    });
+
+    it('다른 팀에 있던 소켓이 입장하면 이전 팀 room·등록부터 정리한다', async () => {
+      const OTHER_TEAM_ID = 999;
+      const client = createClient({ teamId: OTHER_TEAM_ID });
+      onlineUserService.isSocketRegistered.mockResolvedValue(true);
+      const order: string[] = [];
+      client.leave.mockImplementation((room: string) => order.push(`leave ${room}`));
+      client.join.mockImplementation((room: string) => order.push(`join ${room}`));
+      onlineUserService.removeSocket.mockImplementation(() => {
+        order.push('remove');
+        return Promise.resolve(null);
+      });
+      onlineUserService.addUserToOnline.mockImplementation(() => {
+        order.push('add');
+        return Promise.resolve({ wasAlreadyOnline: false });
+      });
+
+      await gateway.handleJoinTeam(client, { teamId: TEAM_ID });
+
+      expect(order).toEqual([`leave team-${OTHER_TEAM_ID}`, 'remove', `join ${ROOM}`, 'add']);
+      expect(client.data.teamId).toBe(TEAM_ID);
+    });
+
+    it('Redis가 끊긴 동안 다른 팀에 입장하면 이전 팀 등록 정리를 기다리지 않고 입장을 끝낸다 (오프라인 큐에서 멈추지 않게)', async () => {
+      onlineUserService.isReady.mockReturnValue(false);
+      const client = createClient({ teamId: 999 });
+
+      await expect(gateway.handleJoinTeam(client, { teamId: TEAM_ID })).resolves.toEqual({ teamId: TEAM_ID, room: ROOM });
+
+      expect(client.leave).toHaveBeenCalledWith('team-999');
+      expect(onlineUserService.isSocketRegistered).not.toHaveBeenCalled();
+      expect(onlineUserService.removeSocket).not.toHaveBeenCalled();
+      // 이전 팀 정리를 건너뛰었으니 새 팀 등록도 하지 않는다 — 매핑이 새 팀으로 덮이면 이전 팀의 죽은 id를 아무도 못 지운다
+      expect(onlineUserService.addUserToOnline).not.toHaveBeenCalled();
+      expect(client.data.teamId).toBe(TEAM_ID);
+    });
+
+    it('이전 팀 정리를 건너뛴 입장은 다른 탭이 목록에 있어도 입장 알림을 내지 않는다', async () => {
+      onlineUserService.isReady.mockReturnValue(false);
+      onlineUserService.getOnlineUsersForTeam.mockResolvedValue([{ userId: USER_ID, userName: '홍길동', connectionCount: 1 }]);
+      const client = createClient({ teamId: 999 });
+
+      await gateway.handleJoinTeam(client, { teamId: TEAM_ID });
+
+      expect(clientRoomEmit).not.toHaveBeenCalledWith(TeamSocketEvents.USER_JOINED, expect.anything());
+    });
+
+    it('같은 팀에 다시 입장하면 나가지 않는다', async () => {
+      const client = createClient({ teamId: TEAM_ID });
+
+      await gateway.handleJoinTeam(client, { teamId: TEAM_ID });
+
+      expect(client.leave).not.toHaveBeenCalled();
+      expect(onlineUserService.removeSocket).not.toHaveBeenCalled();
+    });
+
+    it('다른 팀 입장이 거부되면 지금 팀에 그대로 남는다', async () => {
+      teamService.verifyTeamMemberAccess.mockRejectedValueOnce(new Error('not member'));
+      const client = createClient({ teamId: 999 });
+
+      await expect(gateway.handleJoinTeam(client, { teamId: TEAM_ID })).rejects.toBeInstanceOf(WsException);
+
+      expect(client.leave).not.toHaveBeenCalled();
+      expect(client.data.teamId).toBe(999);
+    });
+
+    it('퇴장은 Redis 정리를 기다리기 전에 room과 팀 캐시부터 정리한다', async () => {
+      const registered = deferred<boolean>();
+      onlineUserService.isSocketRegistered.mockReturnValueOnce(registered.promise);
+      const client = createClient({ teamId: TEAM_ID });
+
+      const leaving = gateway.handleLeaveTeam(client, { teamId: TEAM_ID });
+      await new Promise((r) => setImmediate(r));
+
+      expect(client.leave).toHaveBeenCalledWith(ROOM);
+      expect(client.data.teamId).toBeUndefined();
+
+      registered.resolve(false);
+      await leaving;
+    });
+
+    it('퇴장 알림은 실제로 지운 등록의 팀 room으로 보낸다 (Redis 끊김 중 팀 전환으로 등록이 이전 팀에 남은 경우)', async () => {
+      onlineUserService.isSocketRegistered.mockResolvedValue(true);
+      onlineUserService.removeSocket.mockResolvedValue({ teamId: 999, userId: USER_ID, userName: '홍길동', isFullyOffline: true });
+      const client = createClient({ teamId: TEAM_ID });
+
+      await gateway.handleLeaveTeam(client, { teamId: TEAM_ID });
+
+      expect(gateway.server.to).toHaveBeenCalledWith('team-999');
+      expect(gateway.server.to).not.toHaveBeenCalledWith(ROOM);
+      expect(serverRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.USER_LEFT, expect.objectContaining({ teamId: 999 }));
+    });
+
+    it('지금 팀이 아닌 팀에서 나가면 지금 팀의 온라인 등록을 지우지 않는다', async () => {
+      onlineUserService.isSocketRegistered.mockResolvedValue(true);
+      const client = createClient({ teamId: TEAM_ID });
+
+      await gateway.handleLeaveTeam(client, { teamId: 999 });
+
+      // 소켓 매핑은 지금 팀 하나 — 지우면 지금 팀에서 오프라인으로 빠진다
+      expect(onlineUserService.removeSocket).not.toHaveBeenCalled();
+      expect(client.leave).toHaveBeenCalledWith('team-999');
     });
   });
 
