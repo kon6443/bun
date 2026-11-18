@@ -1,16 +1,11 @@
 import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { verify, JwtPayload } from 'jsonwebtoken';
 import { Socket } from 'socket.io';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
+import { extractSocketAccessToken, verifyAccessToken } from '../../common/utils/access-token.utils';
 import type { FishingRateWindows } from './fishing-rate-limit';
-
-type AccessTokenPayload = JwtPayload & {
-  sub: number;
-  loginType?: string;
-};
 
 /**
  * Socket에 저장되는 데이터 타입 (게스트 지원)
@@ -55,13 +50,14 @@ export class FishingWsGuard implements CanActivate {
       return true;
     }
 
-    const token = this.extractToken(client);
+    const token = extractSocketAccessToken(client);
+    const verified = token ? verifyAccessToken(token, this.configService.get<string>('JWT_SECRET')) : null;
 
-    if (token) {
+    // 토큰 검증 실패(없음·서명·sub·JWT_SECRET 없음)는 게스트로 처리
+    if (verified?.ok) {
       try {
-        const payload = this.verifyToken(token);
         const user = await this.userRepository.findOne({
-          where: { userId: payload.sub, isActivated: 1 },
+          where: { userId: verified.payload.sub, isActivated: 1 },
         });
 
         if (user) {
@@ -70,7 +66,7 @@ export class FishingWsGuard implements CanActivate {
           return true;
         }
       } catch {
-        // 토큰 검증 실패 → 게스트로 처리
+        // 사용자 조회 실패 → 게스트로 처리 (기존 동작)
       }
     }
 
@@ -85,33 +81,6 @@ export class FishingWsGuard implements CanActivate {
     this.logger.debug(`게스트 접속: guestId=${guestId}, name=${guestName}, socketId=${client.id}`);
 
     return true;
-  }
-
-  private extractToken(client: Socket): string | null {
-    const authToken = client.handshake.auth?.token;
-    if (authToken && typeof authToken === 'string') {
-      return authToken;
-    }
-
-    const authHeader = client.handshake.headers?.authorization;
-    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice(7);
-    }
-
-    return null;
-  }
-
-  private verifyToken(token: string): AccessTokenPayload {
-    const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret) {
-      throw new Error('JWT_SECRET이 설정되지 않았습니다.');
-    }
-
-    const payload = verify(token, secret) as AccessTokenPayload;
-    if (!payload?.sub) {
-      throw new Error('유효하지 않은 토큰입니다.');
-    }
-    return payload;
   }
 
   /**

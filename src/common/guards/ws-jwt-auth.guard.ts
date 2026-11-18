@@ -2,18 +2,10 @@ import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { WsException } from '@nestjs/websockets';
-import { verify, JwtPayload } from 'jsonwebtoken';
 import { Socket } from 'socket.io';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/User';
-
-/**
- * WebSocket용 JWT payload 타입
- */
-type AccessTokenPayload = JwtPayload & {
-  sub: number;
-  loginType?: string;
-};
+import { AccessTokenPayload, extractSocketAccessToken, verifyAccessToken } from '../utils/access-token.utils';
 
 /**
  * Socket에 저장되는 인증 정보 타입
@@ -71,45 +63,25 @@ export class WsJwtGuard implements CanActivate {
   }
 
   /**
-   * Socket handshake에서 토큰 추출
-   * 우선순위: auth.token > Authorization Bearer 헤더
+   * Socket handshake에서 토큰 추출 — auth.token > Authorization Bearer (규칙은 extractSocketAccessToken 한 곳)
    */
   private extractToken(client: Socket): string | null {
-    // 1. Socket.io auth 객체에서 추출 (권장 방식)
-    const authToken = client.handshake.auth?.token;
-    if (authToken && typeof authToken === 'string') {
-      return authToken;
-    }
-
-    // 2. Authorization 헤더에서 추출 (폴백)
-    const authHeader = client.handshake.headers?.authorization;
-    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice(7);
-    }
-
-    return null;
+    return extractSocketAccessToken(client);
   }
 
   /**
-   * JWT 토큰 검증
+   * JWT 토큰 검증 (판정은 verifyAccessToken 한 곳, 에러 모양만 여기서)
    */
   private verifyToken(token: string): AccessTokenPayload {
-    const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret) {
-      throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '서버 설정 오류: JWT_SECRET이 없습니다.' });
-    }
-
-    try {
-      const payload = verify(token, secret) as AccessTokenPayload;
-      if (!payload?.sub) {
+    const result = verifyAccessToken(token, this.configService.get<string>('JWT_SECRET'));
+    if (result.ok) return result.payload;
+    switch (result.reason) {
+      case 'NO_SECRET':
+        throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '서버 설정 오류: JWT_SECRET이 없습니다.' });
+      case 'NO_SUBJECT':
         throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '유효하지 않은 토큰입니다.' });
-      }
-      return payload;
-    } catch (error) {
-      if (error instanceof WsException) {
-        throw error;
-      }
-      throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '토큰 검증에 실패했습니다.' });
+      case 'INVALID':
+        throw new WsException({ code: 'AUTH_INVALID_TOKEN', message: '토큰 검증에 실패했습니다.' });
     }
   }
 }

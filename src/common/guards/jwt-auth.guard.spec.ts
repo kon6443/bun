@@ -121,6 +121,16 @@ describe('JwtAuthGuard', () => {
       expect(userRepository.findOne).not.toHaveBeenCalled();
     });
 
+    // 실패 사유별 메시지 — 판정은 verifyAccessToken 공용, 문구는 가드가 정한다(바꾸면 응답 message가 바뀐다)
+    it.each([
+      ['서명이 다른 토큰', () => sign({ sub: 1 }, 'wrong-secret', { expiresIn: '1h' }), '토큰 검증에 실패했습니다.'],
+      ['sub 없는 토큰', () => signAccessToken({ teamId: 1, userId: 2, jti: 'abc' }), '유효하지 않은 토큰입니다.'],
+    ])('%s의 메시지는 "%s"여야 함', async (_desc, make, message) => {
+      const request = { cookies: { access_token: make() }, headers: {} };
+
+      await expect(guard.canActivate(buildContext(request))).rejects.toThrow(message);
+    });
+
     it('JWT_SECRET이 설정되지 않으면 차단해야 함', async () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
@@ -135,6 +145,7 @@ describe('JwtAuthGuard', () => {
       await expect(
         guardWithoutSecret.canActivate(buildContext(request)),
       ).rejects.toThrow(AuthInvalidTokenErrorResponseDto);
+      await expect(guardWithoutSecret.canActivate(buildContext(request))).rejects.toThrow('JWT_SECRET이 설정되지 않았습니다.');
     });
   });
 
