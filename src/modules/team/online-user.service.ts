@@ -81,6 +81,11 @@ export class OnlineUserService implements OnModuleDestroy {
     return this.redis?.status === 'ready';
   }
 
+  /** 지금 Redis 명령이 바로 나가는지 — 정리를 기다리면 안 되는 경로(팀 전환 입장)가 끊긴 동안 오프라인 큐에서 멈추지 않게 본다 */
+  isReady(): boolean {
+    return this.isRedisReady();
+  }
+
   /**
    * TeamGateway.handleJoinTeam 에서 호출 — 60s 주기 재계산 대상 팀 등록.
    * count == 0 이 되면 refreshTeamOnlineMetric 에서 자동으로 Set/Gauge 에서 제거.
