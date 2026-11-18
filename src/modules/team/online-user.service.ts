@@ -27,6 +27,8 @@ if redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
 end
 return 0
 `;
+/** 온라인 목록 상한 — getOnlineUsersForTeam이 이만큼만 돌려준다(페이로드 무한 증가 방지) */
+export const ONLINE_USERS_LIST_LIMIT = 100;
 const TEAM_ONLINE_KEY_TTL = 7200; // 2시간 (online 해시 — 서버 재시작 시 고아 데이터 자동 정리)
 
 // 팀별 온라인 유저 수 Gauge 재계산 주기 (Prometheus scrape 15s 보다 길게 — 설계 결정 P3).
@@ -286,7 +288,7 @@ export class OnlineUserService implements OnModuleDestroy {
       const tKey = this.teamOnlineKey(teamId);
       const allUsers = await this.redis.hgetall(tKey);
 
-      const entries = Object.entries(allUsers).slice(0, 100);
+      const entries = Object.entries(allUsers).slice(0, ONLINE_USERS_LIST_LIMIT);
       if (entries.length === 0) return [];
 
       // 파이프라인으로 소켓 수 일괄 조회

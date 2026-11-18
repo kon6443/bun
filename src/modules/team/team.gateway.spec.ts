@@ -263,7 +263,8 @@ describe('TeamGateway', () => {
       });
     });
 
-    it('온라인 정보 조회에 실패하면 아무 알림도 보내지 않아야 함', async () => {
+    it('온라인 목록에 내가 없으면(등록·조회 실패) 아무 알림도 보내지 않아야 함', async () => {
+      onlineUserService.getOnlineUsersForTeam.mockResolvedValue([]);
       onlineUserService.getUserOnlineInfo.mockResolvedValue(null);
       const client = createClient();
 
@@ -273,6 +274,25 @@ describe('TeamGateway', () => {
       });
       expect(client.emit).not.toHaveBeenCalled();
       expect(clientRoomEmit).not.toHaveBeenCalled();
+    });
+
+    // 왕복 절약 — 목록 한 번으로 내 접속 정보까지 얻는다 (docs/tasks/refactor-perf-b-2026-11 B4)
+    it('내 접속 정보는 온라인 목록에서 얻고 따로 조회하지 않아야 함', async () => {
+      await gateway.handleJoinTeam(createClient(), { teamId: TEAM_ID });
+
+      expect(onlineUserService.getOnlineUsersForTeam).toHaveBeenCalledTimes(1);
+      expect(onlineUserService.getUserOnlineInfo).not.toHaveBeenCalled();
+    });
+
+    it('목록이 상한(100명)으로 잘려 내가 없으면 따로 조회해 알려야 함', async () => {
+      const others = Array.from({ length: 100 }, (_, i) => ({ userId: 1000 + i, userName: `u${i}`, connectionCount: 1 }));
+      onlineUserService.getOnlineUsersForTeam.mockResolvedValue(others);
+      onlineUserService.addUserToOnline.mockResolvedValue({ wasAlreadyOnline: false });
+
+      await gateway.handleJoinTeam(createClient(), { teamId: TEAM_ID });
+
+      expect(onlineUserService.getUserOnlineInfo).toHaveBeenCalledWith(TEAM_ID, USER_ID);
+      expect(clientRoomEmit).toHaveBeenCalledWith(TeamSocketEvents.USER_JOINED, expect.objectContaining({ userId: USER_ID, totalOnlineCount: 100 }));
     });
 
     // 핸드셰이크 때 읽은 계정 닉네임이 아니라 지금의 팀 안 표시 이름으로 등록한다 (team-nickname)
