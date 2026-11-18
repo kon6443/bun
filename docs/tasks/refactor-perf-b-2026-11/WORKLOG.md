@@ -52,3 +52,10 @@
 
 ## 2026-11-18 — 커밋·배포 (사용자 지시 "main < develop < ft 배포까지 백프 모두 진행")
 - 백 커밋(의도별, 섞인 파일은 최종본 백업 → 중간본 커밋 → 복원으로 분리, 최종본과 cmp 일치): af840cf refactor(auth) B1 · cf088c9 refactor(team) B3 · e598ce6 refactor(game-room) B2 · 682b5e6 perf(game-room) B4 게이트 · a75b397 perf(team) B4 joinTeam · 7e2621a fix(infra) B4 TASK_SLOT · 문서
+- 백 PR #338 ft→develop(CI check·lint·e2e 통과, 머지 `c6dde33`) → #339 develop→main(check·lint·e2e·docker-build 통과, 머지 `aecaca8`, dependabot node 이미지 갱신 #332 동반) → Deploy NestJS run 44211177900 success
+  - 운영 확인: `GET /teams` 401 · `GET /games/tetris/rankings` 200 · 연동 라우트(`/teams/121/telegram/status`) 무토큰 401 · 잘못된 토큰 `AUTH_INVALID_TOKEN` "토큰 검증에 실패했습니다."
+- 프론트(next-bun-fe): 6커밋(3bf791b perf(teams) B5 · 9ad53f2 refactor(services) B6 · 17cecef perf(games) B7 · 54038b3 refactor(hooks) B8a · aa3973a refactor(games) B8b · 833b003 perf(teams) B9), 커밋 전 ci:core 통과(2588 tests) → #415 develop(`a7b9126`) → #416 main(`41fd452`), CI verify·verify-sim 통과, Deploy Next run 44211104902 success
+  - 운영 확인: `/`·`/games`·`/fishing`·`/teams` 200 · 게스트 Playwright로 4경로 콘솔 오류 0, 낚시 포인트 접근·캐스팅→입질 대기 정상
+- 미검증: 로그인이 필요한 운영 화면, 텔레그램·디스코드 연결·해제
+- 운영 DB 테스트 흔적(로컬=운영 DB): 팀 121 채팅 2건, 태스크 226 삭제된 댓글 2건, 태스크 1401 "B5 캘린더 검증"
+- 롤백: 백 `aecaca8`·프 `41fd452` revert(DB 변경 없음). 커밋이 의도별이라 개별 revert도 가능
