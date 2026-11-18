@@ -26,3 +26,22 @@
 - **맥락**: D-002 적용 중 스케줄러 spec이 "미설정이면 1로 간주해 실행"을 고정하고 있었다. 이는 `backend-audit-2026-10` 원표 M6("값이 없으면 1로 간주해 단일 실행 작업이 중복 실행될 수 있음")으로 지적된 동작이다
 - **결정**: spec을 D-002 정책으로 바꾼다(미설정·숫자 아님 → 실행 안 함). M6은 이 변경으로 해소
 - **근거**: `infra/docker-stack.app.yml` `TASK_SLOT: "{{.Task.Slot}}"` — 운영·QA 스택은 항상 주입하므로 운영 동작은 그대로다
+
+## D-005 — 종료는 앱(소켓 서버) 먼저, Redis는 정리 대기 뒤 (2026-11-18)
+- **맥락**: dev watch 재시작마다 ioredis "Connection is closed" Unhandled Rejection(앱 프레임 없음). `main.ts` shutdown이 `redisAdapter.disconnect()`(quit) → `app.close()` 순서였고 `enableShutdownHooks()`도 동시에 앱을 닫았다. `@socket.io/redis-adapter` 8.3.0 `close()`가 punsubscribe·unsubscribe를 await 없이 부른다 — 이미 quit한 연결이라 네임스페이스마다 거부가 버려진다(오프라인 재현: quit 뒤 두 호출 → UNHANDLED 2건). 같은 이유로 각 소켓의 연결 해제 정리(팀·낚시 온라인 제거, 게임 방 끊김 표시)가 전부 실패한다 — 배포마다 그 레플리카에 붙어 있던 유저가 TTL(소켓 집합 1시간, 재입장마다 갱신)까지 온라인으로 남는다(정리 스윕 없음)
+- **결정**: `closeAppThenRedis(app, adapter)` — `app.close()`(훅·소켓 서버·http) → `SHUTDOWN_REDIS_DRAIN_MS`(1초) → Redis quit. `enableShutdownHooks()`는 제거(훅은 `app.close()`가 부른다, 이중 close 경합 제거)
+- **근거**: Nest `close()` = destroy 훅 → beforeShutdown → dispose(소켓 → http) → shutdown 훅. socket.io `close()`는 소켓 `_onclose`를 먼저 동기로 불러 정리 명령이 Redis 종료 전에 출발한다. 정리의 두 번째 왕복(조회 뒤 제거)은 대기 1초 안에 끝난다
+- **버린 대안**: 진행 중 정리 작업을 추적해 기다리기 — 게이트웨이마다 추적 장치가 필요해 복잡도 대비 이득이 작다(남는 경우: 종료 순간 Oracle 대기 중인 입장 뒤에 줄 선 정리 — 드묾)
+- **영향**: `main.ts`, `common/utils/graceful-shutdown.ts`. SIGHUP·SIGQUIT는 훅 없이 기본 종료(스웜·dev는 SIGTERM·SIGINT)
+
+## D-006 — 팀 소켓 소속 변경을 소켓별로 직렬화 (2026-11-18)
+- **맥락**: 조사 후속 "leaveTeam이 room 이탈 전에 Redis 정리를 기다림 · leave→join 경합". 프론트는 leaveTeam을 보내지 않고 팀마다 새 연결, connect마다 joinTeam 1회(프론트 세션 `TeamSocketContext.tsx:140-154·290-302`). 실제로 나는 경합은 **joinTeam이 멤버십·표시 이름 조회(DB)를 기다리는 사이 끊김** — 연결 해제 정리가 먼저 끝나고 뒤이어 죽은 소켓이 등록돼 유령 온라인(스윕 없음)
+- **결정**: 낚시(D-007)와 같은 소켓별 큐로 join·leave·disconnect를 직렬화, 큐 안 join 시작 시 끊긴 소켓이면 등록하지 않음. 방어 경로: 다른 팀 입장 시 이전 팀부터 정리(Redis 미준비면 등록 정리는 건너뜀 — 오프라인 큐에서 입장이 멈추지 않게), leaveTeam은 room·캐시를 먼저 정리하고 지금 팀일 때만 온라인 등록을 지운다
+- **근거**: 경합 조합마다 가드보다 겹침 제거가 단순(survey D-007과 같은 근거). 단위 테스트 9건 + 변이 7건 검출
+- **영향**: `team.gateway.ts`, `online-user.service.ts`(`isReady`). 이벤트·ack 계약 불변
+
+## D-007 — Redis가 끊긴 채 종료하면 quit 대신 바로 끊는다 (2026-11-18)
+- **맥락**: D-005 브라우저 수준 검증 중 Redis 미기동으로 SIGTERM → `quit()`이 오프라인 큐(maxRetriesPerRequest: null)에서 재연결을 기다려 강제 종료 타이머(30초)까지 멈추고 exit 1. 예전 순서도 같다(스웜 10초 SIGKILL)
+- **결정**: `RedisIoAdapter.disconnect()` — 클라이언트 status가 `ready`면 `quit()`(보낸 명령 처리 뒤 닫기), 아니면 `disconnect()` + warn 로그
+- **근거**: 구독 모드에서도 status는 ready(ioredis `Redis.js:261-269`) — 정상 경로는 quit 그대로. 실측 종료 약 1.1초, Unhandled Rejection 없음
+- **버린 대안**: 그대로 두기 — 종료 순간 끊긴 Redis에 정리 명령이 전달될 수는 있지만 종료가 30초 멈추고 스웜에선 어차피 10초에 SIGKILL

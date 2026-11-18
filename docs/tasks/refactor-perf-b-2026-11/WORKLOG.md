@@ -59,3 +59,20 @@
 - 미검증: 로그인이 필요한 운영 화면, 텔레그램·디스코드 연결·해제
 - 운영 DB 테스트 흔적(로컬=운영 DB): 팀 121 채팅 2건, 태스크 226 삭제된 댓글 2건, 태스크 1401 "B5 캘린더 검증"
 - 롤백: 백 `aecaca8`·프 `41fd452` revert(DB 변경 없음). 커밋이 의도별이라 개별 revert도 가능
+
+## 2026-11-18 — 후속: 종료 순서(ioredis 로그)·팀 소속 변경 경합 (브랜치 `fix-onam-team-membership-shutdown`)
+- 정리: 백 dev(3510) 종료, Redis 테스트 컨테이너는 이미 없음(--rm), 원격 브랜치 백 51→main·develop / 프 44개 삭제(머지됨·열린 PR 없음 확인, 미머지 dependabot 1개는 PR #333 CLOSED라 사용자 지시 범위로 삭제)
+- ioredis 원인 → D-005. 오프라인 재현(quit 뒤 punsubscribe·unsubscribe → UNHANDLED "Connection is closed" 2건)
+- 팀 경합 → D-006. 프론트 사용 방식은 프론트 세션 답(leaveTeam 미사용·팀마다 새 연결)
+- 검증: `ci:core` 통과(단위 2337 → 리뷰 반영 후 팀 395/395), lint 경고 6(기준선, team.gateway의 기존 1건 그대로), build · E2E team-gateway·fishing-gateway·main 29/29 · 변이 7/7 검출(disconnect 직렬화·끊긴 소켓 가드·이전 팀 정리·지금 팀 판정·join 직렬화·Redis 미준비 건너뜀 2)
+- 리뷰 R1: review-flow 확정 0 · Opus 확정 0, PLAUSIBLE "Redis 끊긴 동안 다른 팀 입장이 오프라인 큐에서 멈춤"(양쪽 공통) → `isReady()`로 건너뜀 + 테스트. 나머지(시간 기반 대기·스웜 유예·SIGHUP·퇴장자 본인 USER_LEFT·전환 중 실패 상태)는 D-005·D-006에 수용 기록
+- 미실행: 실 Redis opt-in `test/graceful-shutdown.redis.e2e-spec.ts`(예전 순서 거부 발생·키 잔존 / 새 순서 거부 0·정리 완료) — Redis 컨테이너 기동이 권한 분류기에 막힘
+- 리뷰 R2: review-flow 확정 0 · Opus 확정 0. PLAUSIBLE(낮음) "Redis 미준비로 이전 팀 정리를 건너뛴 뒤 재연결되면 새 팀 등록이 매핑을 덮어 이전 팀 죽은 id가 남음" → 건너뛴 입장은 온라인 등록도 하지 않음 + 테스트(변이 검출). "검사 직후 Redis 끊김으로 정리가 재연결까지 대기"는 창이 µs·재연결로 끝나 수용. nit: 가짜 타이머 afterEach 복원 → 루프 종료
+- 리뷰 R3(사용자 지시로 루프 재개): 메인 자체 검토 — Redis 미준비 팀 전환에서 등록하지 않았는데 다른 탭이 목록에 있으면 입장 알림이 나가던 것 → 알림 생략 + 테스트. Opus — CONFIRMED(테스트) opt-in E2E가 `process.on('unhandledRejection')`에 기대는데 Jest가 그 이벤트를 테스트 리스너에 넘기지 않음(메인 탐침으로 재확인: SEEN 0, 테스트 실패로 잡힘) → sub 연결의 `punsubscribe` 호출 시점 status를 기록해 단정(새 순서 ready, 예전 순서 ready 아님)으로 교체. PLAUSIBLE leaveTeam의 USER_LEFT가 인자 teamId로 감 → 지운 등록의 팀(`result.teamId`)으로 + 테스트. nit: 대기는 Redis만(DB는 shutdown 훅에서 닫힘) 주석
+- 리뷰 R4: Opus CONFIRMED(테스트) socket.io가 루트 '/' 네임스페이스도 만들어 구독 해제가 2번 → 프로브 채널만 기록(메인이 `socket.io/dist/index.js:117` `this.sockets = this.of("/")`로 재확인), 클라이언트 finally 정리
+- 리뷰 R5: Opus — 어댑터 close의 `unsubscribe` 거부도 Jest가 테스트 실패로 잡음 → 같이 삼킴(어댑터 소스 690-696으로 재확인). 운영 코드 확정 0
+- 리뷰 R6: Opus CONFIRMED(테스트) quit()은 +OK에서 끝나고 status는 소켓 close 때 바뀌어 직후 punsubscribe에도 'ready' → status 대신 punsubscribe 결과(resolved / rejected:Connection is closed.)로 단정. Opus가 만든 루프백 가짜 RESP Redis(스크래치패드 `fake-redis.js`, 127.0.0.1 전용)로 메인이 실제 실행: 3/3 통과, closeAppThenRedis 순서를 뒤집으면 실패(변이 검출). 운영 코드 확정 0
+- 리뷰 R7: Opus 확정 0·PLAUSIBLE 0, 메인 확정 0 → **루프 종료**. nit 수용: joinTeam 소요 시간 지표에 큐 대기가 포함됨(겹칠 때만) · 끊긴 소켓 입장의 ack는 버려짐(주석 추가)
+- 브라우저 수준(백 dev 3510 — Redis 없이(6399 미기동), 프 dev 3000 프론트 세션): 2계정 8/8(팀 입장·실시간 채팅 배지·댓글 작성·수정·삭제 실시간, 콘솔 오류 0). 온라인 프레즌스는 Redis가 없어 브라우저로는 미확인(단위·E2E로만)
+- 브라우저 수준에서 새로 발견: Redis가 끊긴 상태에서 SIGTERM → `quit()`이 오프라인 큐에서 재연결을 기다려 강제 종료 타이머(30초)까지 멈추고 exit 1(예전 순서도 같음, 스웜은 10초에 SIGKILL) → `RedisIoAdapter.disconnect()`가 ready가 아니면 바로 `disconnect()`(+ warn 로그). 실측: SIGTERM 뒤 약 1.1초에 "Redis 연결 정리 완료"·"Graceful shutdown 완료", Unhandled Rejection 없음. 단위 spec 2 + 변이 검출
+- 리뷰 R8(어댑터 변경): Opus 확정 0 — 구독 모드에서도 status는 ready(ioredis `Redis.js:261-269`, quit은 구독 모드 허용 명령), 메인도 status 전이 목록으로 재확인. PLAUSIBLE 수용: 종료 순간 Redis가 잠깐 끊기면 대기 중 정리 명령이 버려짐(예전엔 30초 멈춤) · nit 반영: 바로 끊을 때 warn → **루프 종료**. 실 Redis 대체로 가짜 RESP Redis E2E 재실행 2/2
