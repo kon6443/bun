@@ -81,3 +81,16 @@
   - 효과 확인 시점: 새 종료 순서는 **다음 배포에서 이번 레플리카가 내려갈 때** 처음 적용된다(이번 배포에서 내려간 레플리카는 옛 코드). 그때 Loki에서 "Connection is closed" Unhandled Rejection이 사라졌는지 본다
 - 롤백: `857f79c` revert(DB 변경 없음), 커밋별 revert 가능
 - 정리: 백 dev 종료, 프 dev 종료 요청, 원격 브랜치 `fix-onam-team-membership-shutdown`·이 문서 브랜치는 머지 뒤 삭제
+
+## 2026-11-18 — 실제 Redis 검증 (사용자 로컬 docker 허가) · 로컬 정리
+- 로컬 Redis 컨테이너(127.0.0.1:6380)로 opt-in 실 Redis E2E 7스위트 70/70 통과(`graceful-shutdown` 포함 — 가짜 Redis 대신 실제 Redis로 재확인)
+- 브라우저 프레즌스(빌드본 `node dist/main` 3510 + Redis 6380, 프 dev 3000, 2계정): 입장 시 Redis 온라인 등록·A 화면 2명 → B 탭 닫으면 1명(USER_LEFT)·Redis에서 제거·소켓 키 정리 → A도 닫으면 비어 있음 **8/8**
+- 배포 상황 재현(두 계정 접속 중 SIGTERM) — 같은 절차로 옛 코드(`d3f8250`)와 대조:
+
+| | 종료 시간 | 종료 뒤 팀 온라인 | 소켓 키·유저 집합 | 로그 |
+|---|---|---|---|---|
+| 옛 코드 | 31초(강제 종료 타이머, exit 1) | **[43, 1] 남음(유령)** | 2 · 2 남음 | Unhandled Rejection ×2, `removeSocket 실패: Connection is closed.` ×2 |
+| 새 코드 | 2초 | 비어 있음 | 0 · 0 | `Redis 연결 정리 완료` → `Graceful shutdown 완료` |
+
+  - 옛 코드는 Redis가 살아 있어도 종료가 30초 타임아웃까지 멈췄다(스웜에선 10초 SIGKILL) — 이번 변경으로 함께 해소
+- 로컬 정리: 백 worktree 15개 제거(로컬 브랜치는 유지). 보존 — 각 worktree의 `docs/handoff` 22개와 미커밋 문서 변경 4개(chat-persistence·claude-sessions·fortress·tetris-audit, develop보다 옛 진행 메모)를 패치로 메인 체크아웃 `docs/handoff/worktree-cleanup-20261118/`에 둠(gitignore). 원격에 없는 문서 마감 커밋 4개 브랜치(`docs-onam-defense-refactor-close`·`docs-onam-game-settings-close`·`docs-onam-games-ux-close`·`docs-onam-tetris-bundle-close` — 배포 기록 절)는 로컬 브랜치로 남음. 프 worktree는 프론트 세션이 정리(team-nickname은 그 세션 작업 폴더라 유지)
